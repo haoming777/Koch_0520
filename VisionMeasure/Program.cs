@@ -1,8 +1,13 @@
-﻿// Program.cs
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Utils;
+using VisionMeasure.From;
+using VisionMeasure.Utils;
+using CommonLib;
+using Config;
+using Hardware;
+using Models;
 
 namespace VisionMeasure
 {
@@ -11,43 +16,72 @@ namespace VisionMeasure
 		[STAThread]
 		static void Main()
 		{
-			// 全局异常处理
-			Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-			Application.ThreadException += Application_ThreadException;
-			AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
 
-			try
+			SystemConfig config = SystemConfig.Load();
+			bool useLoadingScreen = true;
+
+			if (useLoadingScreen)
+			{
+				Loading loadingFrm = Loading.ShowLoadingScreen();
+
+				Task.Run(() =>
+				{
+					try
+					{
+						loadingFrm.UpdateProgress(10, "正在加载检测参数...");
+						var detectionParams = DetectionParameters.Instance;
+
+						loadingFrm.UpdateProgress(20, "正在加载SKU数据...");
+						var skuDb = new SkuDatabase();
+						skuDb.LoadData();
+
+						loadingFrm.UpdateProgress(30, "正在加载Yolo/Vimo AI模型...");
+						var modelConfig = ModelPathConfig.LoadFromSysConfig();
+						var aiModels = new AiModelManager(modelConfig);
+						aiModels.LoadAllModels();
+
+						loadingFrm.UpdateProgress(60, "正在连接运动控制卡...");
+						string controlIp = SystemConfig.GetValue("MotionControlIp", "192.168.0.11");
+						var motionMgr = new MotionControlManager(controlIp, detectionParams.Camera.GetSimulateMode());
+						motionMgr.Connect();
+
+						loadingFrm.UpdateProgress(75, "正在连接PLC...");
+						string plcIp = SystemConfig.GetValue("PlcIp", "192.168.1.101");
+						int plcPort = SystemConfig.GetInt("PlcPort", 502);
+						var plcComm = new PlcCommunication(plcIp, plcPort, detectionParams.Camera.GetSimulateMode());
+						plcComm.Connect();
+
+						loadingFrm.UpdateProgress(90, "正在初始化8个相机SDK（并行加载）...");
+						var cameraMgr = new CameraManager(detectionParams.Camera.GetSimulateMode());
+						cameraMgr.InitializeAll();
+						cameraMgr.StartAll();
+
+						loadingFrm.UpdateProgress(100, "加载完成，准备启动...");
+						Thread.Sleep(300);
+					}
+					catch (Exception ex)
+					{
+						MessageBox.Show($"初始化失败，系统将退出:\n{ex.Message}", "严重错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+						Environment.Exit(0);
+					}
+				}).ContinueWith(t =>
+				{
+					loadingFrm.Invoke(new Action(() =>
+					{
+						Loading.CloseLoadingScreen(loadingFrm);
+						var mainFrm = new MainFrm();
+						mainFrm.ShowDialog();
+						Application.Exit();
+					}));
+				});
+
+				Application.Run();
+			}
+			else
 			{
 				Application.Run(new MainFrm());
-			}
-			catch (Exception ex)
-			{
-				Logger.Error($"程序崩溃: {ex.Message}\n{ex.StackTrace}");
-				MessageBox.Show($"程序发生严重错误:\n{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-			}
-			finally
-			{
-				Logger.Shutdown();
-			}
-		}
-
-		private static void Application_ThreadException(object sender, System.Threading.ThreadExceptionEventArgs e)
-		{
-			Logger.Error($"UI线程异常: {e.Exception.Message}\n{e.Exception.StackTrace}");
-			MessageBox.Show($"发生错误:\n{e.Exception.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-		}
-
-		private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-		{
-			var ex = e.ExceptionObject as Exception;
-			Logger.Error($"未处理异常: {ex?.Message}\n{ex?.StackTrace}");
-
-			if (!e.IsTerminating)
-			{
-				MessageBox.Show($"发生错误:\n{ex?.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
 			}
 		}
 	}

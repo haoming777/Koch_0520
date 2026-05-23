@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="packages\SmartMore.ViMo.Inference.3.18.2.4\build\netstandard\SmartMore.ViMo.Inference.props" Condition="Exists('packages\SmartMore.ViMo.Inference.3.18.2.4\build\netstandard\SmartMore.ViMo.Inference.props')" />
   <Import Project="packages\OpenCvSharp4.runtime.win.4.5.5.20211231\build\netstandard\OpenCvSharp4.runtime.win.props" Condition="Exists('packages\OpenCvSharp4.runtime.win.4.5.5.20211231\build\netstandard\OpenCvSharp4.runtime.win.props')" />
@@ -169,7 +169,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AI\AiModelManager.cs" />
     <Compile Include="AI\ModelOutputs.cs" />
     <Compile Include="AI\Vimo.cs" />
     <Compile Include="AI\YoloOnnxSegmentation.cs" />
@@ -181,7 +180,6 @@
     <Compile Include="Config\CameraTriggerConfig.cs" />
     <Compile Include="Config\DetectionParameters.cs" />
     <Compile Include="Config\ModelPathConfig.cs" />
-    <Compile Include="Config\SkuData.cs" />
     <Compile Include="DeleteDir.cs" />
     <Compile Include="Detection\DefectDetectionService.cs" />
     <Compile Include="Detection\FrontDamageInspection.cs" />
@@ -263,18 +261,17 @@
     <Compile Include="Stations\FrontStationProcessor.cs" />
     <Compile Include="Stations\SideStationProcessor.cs" />
     <Compile Include="Utils\BitmapFastConverter.cs" />
-    <Compile Include="Utils\HighSpeedImageSaver.cs" />
+    <Compile Include="Utils\DataManager.cs" />
     <Compile Include="Utils\ImageBufferPool.cs" />
     <Compile Include="Utils\ImageCropper.cs" />
     <Compile Include="Utils\IniHelper.cs" />
-    <Compile Include="Utils\Logger.cs" />
     <Compile Include="Utils\MatExtensions.cs" />
     <Compile Include="Utils\PerformanceLogger.cs" />
     <Compile Include="Utils\PerformanceMonitor.cs" />
     <Compile Include="Utils\SkuDatabase.cs" />
     <Compile Include="Utils\SQLiteHelper.cs" />
     <Compile Include="Utils\StopwatchScope.cs" />
-    <Compile Include="Utils\SystemConfig.cs" />
+    <Compile Include="Utils\ResultDrawer.cs" />
     <EmbeddedResource Include="From\Loading.resx">
       <DependentUpon>Loading.cs</DependentUpon>
     </EmbeddedResource>

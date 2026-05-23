@@ -11,8 +11,8 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using XL.Tool;
-using Utils;                // 工具类
-
+using VisionMeasure.Utils;using CommonLib;                // 工具类
+using VisionMeasure.Utils;using CommonLib;
 
 namespace AIsdk
 {

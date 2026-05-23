@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 using Config;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 
 namespace VisionMeasure.From
 {

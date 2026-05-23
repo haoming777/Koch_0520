@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -211,6 +211,16 @@ namespace Ini
             if (bytesReturned != 0)
             {
                 value = sb.ToString();
+                
+                // 去除分号后的注释部分
+                int commentIndex = value.IndexOf(';');
+                if (commentIndex >= 0)
+                {
+                    value = value.Substring(0, commentIndex);
+                }
+                
+                // 去除首尾空白
+                value = value.Trim();
             }
             sb = null;
 
@@ -221,21 +231,41 @@ namespace Ini
         {
             StringBuilder lpReturnedString = new StringBuilder(1024);
             GetPrivateProfileString(lpAppName, lpKeyName, Convert.ToString(Default), lpReturnedString, 1024, lpFileName);
-           
-            return Convert.ToInt32(lpReturnedString.ToString());
+            
+            string value = lpReturnedString.ToString();
+            if (int.TryParse(value, out int result))
+            {
+                return result;
+            }
+            return Default;
         }
         public static double GetPrivateProfileDouble(string lpAppName, string lpKeyName, double Default, string lpFielName)
         {
             StringBuilder lpReturnedString = new StringBuilder(1024);
             GetPrivateProfileString(lpAppName, lpKeyName, Convert.ToString(Default), lpReturnedString, 1024, lpFielName);
-            //ZazaniaoDll.GetPrivateprofileString(lpAppName,lpKeyName,Convert.ToString(Default),lpReturnedString,1024,lpFielName);
-            return Convert.ToDouble(lpReturnedString.ToString());
+            
+            string value = lpReturnedString.ToString();
+            if (double.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double result))
+            {
+                return result;
+            }
+            return Default;
         }
         public static string GetPrivateProfileString(string lpAppName, string lpKeyName, string Default, string lpFileName)
         {
             StringBuilder lpReturnedString = new StringBuilder(1024);
             GetPrivateProfileString(lpAppName, lpKeyName, Default, lpReturnedString, 1024, lpFileName);
-            return lpReturnedString.ToString();
+            string value = lpReturnedString.ToString();
+            
+            // 去除分号后的注释部分
+            int commentIndex = value.IndexOf(';');
+            if (commentIndex >= 0)
+            {
+                value = value.Substring(0, commentIndex);
+            }
+            
+            // 去除首尾空白
+            return value.Trim();
         }
         /// <summary>
         /// 在INI文件中，将指定的键值对写到指定的节点，如果已经存在则替换

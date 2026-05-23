@@ -1,9 +1,10 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
+using CommonLib;
 
 namespace Config
 {
@@ -111,14 +112,14 @@ namespace Config
 		public class CameraParams
 		{
 			[JsonProperty("触发脉冲宽度(ms)")] public int PulseWidthMs { get; set; } = 50;
-			[JsonProperty("相机1序列号")] public string Camera1SN { get; set; } = "";
-			[JsonProperty("相机2序列号")] public string Camera2SN { get; set; } = "";
-			[JsonProperty("相机3序列号")] public string Camera3SN { get; set; } = "";
-			[JsonProperty("相机4序列号")] public string Camera4SN { get; set; } = "";
-			[JsonProperty("相机5序列号")] public string Camera5SN { get; set; } = "";
-			[JsonProperty("相机6序列号")] public string Camera6SN { get; set; } = "";
-			[JsonProperty("相机7序列号")] public string Camera7SN { get; set; } = "";
-			[JsonProperty("相机8序列号")] public string Camera8SN { get; set; } = "";
+			[JsonProperty("相机1序列号")] public string Camera1SN { get; set; } = "FC79423AAK00087";
+			[JsonProperty("相机2序列号")] public string Camera2SN { get; set; } = "FC79423AAK00060";
+			[JsonProperty("相机3序列号")] public string Camera3SN { get; set; } = "FB12474AAK00017";
+			[JsonProperty("相机4序列号")] public string Camera4SN { get; set; } = "FB12474AAK00006";
+			[JsonProperty("相机5序列号")] public string Camera5SN { get; set; } = "EM57578AAK00046";
+			[JsonProperty("相机6序列号")] public string Camera6SN { get; set; } = "EM57578AAK00010";
+			[JsonProperty("相机7序列号")] public string Camera7SN { get; set; } = "EK64117CAK00003";
+			[JsonProperty("相机8序列号")] public string Camera8SN { get; set; } = "EK64117CAK00004";
 			[JsonProperty("相机1曝光时间(us)")] public double ExposureTime1 { get; set; } = 5000;
 			[JsonProperty("相机2曝光时间(us)")] public double ExposureTime2 { get; set; } = 5000;
 			[JsonProperty("相机3曝光时间(us)")] public double ExposureTime3 { get; set; } = 5000;
@@ -127,6 +128,9 @@ namespace Config
 			[JsonProperty("相机6曝光时间(us)")] public double ExposureTime6 { get; set; } = 5000;
 			[JsonProperty("相机7曝光时间(us)")] public double ExposureTime7 { get; set; } = 5000;
 			[JsonProperty("相机8曝光时间(us)")] public double ExposureTime8 { get; set; } = 5000;
+			[JsonProperty("模拟模式")] public bool SimulateMode { get; set; } = false;
+
+			public bool GetSimulateMode() => SimulateMode;
 		}
 
 		public class MotionParams

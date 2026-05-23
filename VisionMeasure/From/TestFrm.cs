@@ -1,4 +1,4 @@
-﻿using Config;
+using Config;
 using Detection;
 using Hardware;
 using Models;
@@ -12,7 +12,8 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Utils;
+using VisionMeasure.Utils;
+using CommonLib;
 using XL.Controls;
 using BmpConverter = OpenCvSharp.Extensions.BitmapConverter;
 // 解决 Point 和 Size 二义性问题
@@ -76,10 +77,11 @@ namespace UI
 		private UILabel _statusLabel;
 		private UILabel _memLabel;
 
-		public TestForm(MotionControlManager motion, CameraManager cameraMgr)
+		public TestForm(MotionControlManager motion, CameraManager cameraMgr, AiModelManager aiModels = null)
 		{
 			_motion = motion;
 			_cameraMgr = cameraMgr;
+			_aiModels = aiModels;
 			InitializeComponent();
 
 			// 延迟加载，等待窗体完全创建
@@ -88,7 +90,18 @@ namespace UI
 
 		private void TestForm_Load(object sender, EventArgs e)
 		{
-			LoadAiModels();
+			if (_aiModels == null)
+			{
+				LoadAiModels();
+			}
+			else
+			{
+				AddLog("使用主界面的AI模型实例");
+				UpdateUI(() =>
+				{
+					_statusLabel.Text = "AI模型已就绪（使用主界面实例）";
+				});
+			}
 			InitSkuData();
 		}
 
@@ -666,6 +679,8 @@ namespace UI
 
 			AddLog($"P数: {_currentSku.P}, halfP: {halfP}, 图像尺寸: {w}x{h}");
 
+			Mat resultImage = null;
+
 			if (_aiModels.FrontOcrModel != null)
 			{
 				AddLog("开始P号码OCR识别...");
@@ -725,10 +740,15 @@ namespace UI
 				}
 
 				AddLog($"P号码识别完成，发现 {detectedCount} 个错误");
+
+				resultImage = ResultDrawer.DrawOcrResult(_currentLeftMat, null, _currentSku.FrontPCode);
 			}
 			else
 			{
 				AddLog("警告: 正面P号码OCR模型未加载！");
+				resultImage = _currentLeftMat.Clone();
+				Cv2.PutText(resultImage, "OCR Model Not Loaded", new OpenCvSharp.Point(10, 30),
+					HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 0, 255), 2);
 			}
 
 			bool isOk = statusList.All(s => s == "OK");
@@ -751,6 +771,13 @@ namespace UI
 					_defectListBox.Items.Add("无缺陷");
 				}
 				_detailLabel.Text = $"P={_currentSku.P}, 检测盒子数: {statusList.Count}";
+
+				if (resultImage != null)
+				{
+					var bmp = BmpConverter.ToBitmap(resultImage);
+					_picResult.Image = bmp;
+					resultImage.Dispose();
+				}
 			});
 
 			AddLog($"正面检测结果: {(isOk ? "OK" : "NG")}");
@@ -763,11 +790,13 @@ namespace UI
 			var statusList = new List<string>(_currentSku.P);
 			for (int i = 0; i < _currentSku.P; i++) statusList.Add("OK");
 
+			Detection.HookInspectionOutput result = null;
+
 			if (_aiModels.BackHookModel != null && _aiModels.HookSlightModel != null)
 			{
 				AddLog("开始挂钩错位检测...");
 
-				var result = HookDamageDetector.CheckAllHookDamages(
+				result = HookDamageDetector.CheckAllHookDamages(
 					_currentLeftMat, _currentRightMat, _currentSku.P,
 					_aiModels.BackHookModel, _aiModels.HookSlightModel,
 					thicknessThreshold: 30.0,
@@ -789,6 +818,8 @@ namespace UI
 
 			bool isOk = statusList.All(s => s == "OK");
 
+			Mat resultImage = ResultDrawer.DrawHookDamageResult(_currentLeftMat, _currentRightMat, result);
+
 			UpdateUI(() =>
 			{
 				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
@@ -805,6 +836,13 @@ namespace UI
 				if (_defectListBox.Items.Count == 0)
 				{
 					_defectListBox.Items.Add("无缺陷");
+				}
+
+				if (resultImage != null)
+				{
+					var bmp = BmpConverter.ToBitmap(resultImage);
+					_picResult.Image = bmp;
+					resultImage.Dispose();
 				}
 			});
 
@@ -852,6 +890,8 @@ namespace UI
 
 			bool isOk = defects.Count == 0;
 
+			Mat resultImage = ResultDrawer.DrawEndFaceResult(_currentUpperMat, results != null && results.Count > 0 ? results[0] : null);
+
 			UpdateUI(() =>
 			{
 				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
@@ -865,6 +905,13 @@ namespace UI
 				if (_defectListBox.Items.Count == 0)
 				{
 					_defectListBox.Items.Add("无缺陷");
+				}
+
+				if (resultImage != null)
+				{
+					var bmp = BmpConverter.ToBitmap(resultImage);
+					_picResult.Image = bmp;
+					resultImage.Dispose();
 				}
 			});
 
@@ -912,6 +959,8 @@ namespace UI
 
 			bool isOk = defects.Count == 0;
 
+			Mat resultImage = ResultDrawer.DrawEndFaceResult(_currentUpperMat, results != null && results.Count > 0 ? results[0] : null);
+
 			UpdateUI(() =>
 			{
 				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
@@ -926,6 +975,13 @@ namespace UI
 				{
 					_defectListBox.Items.Add("无缺陷");
 				}
+
+				if (resultImage != null)
+				{
+					var bmp = BmpConverter.ToBitmap(resultImage);
+					_picResult.Image = bmp;
+					resultImage.Dispose();
+				}
 			});
 
 			AddLog($"下端面检测结果: {(isOk ? "OK" : "NG")}");
@@ -935,15 +991,67 @@ namespace UI
 		{
 			AddLog("侧面缺陷检测开始...");
 
+			Mat resultImage = null;
+			var defects = new List<string>();
+
+			if (_aiModels.SideDefectModel != null)
+			{
+				var yoloResult = _aiModels.SideDefectModel.Predict(_currentSideMat);
+				
+				if (yoloResult != null && yoloResult.Boxes != null && yoloResult.Boxes.Length > 0)
+				{
+					AddLog($"检测到 {yoloResult.Boxes.Length} 个侧面缺陷");
+					for (int i = 0; i < yoloResult.Boxes.Length; i++)
+					{
+						int classId = yoloResult.ClassIds[i];
+						float score = yoloResult.Scores[i];
+						string defectType = $"缺陷{classId}";
+						defects.Add(defectType);
+						AddLog($"  缺陷{i + 1}: 类别={classId}, 置信度={score:F4}");
+					}
+					resultImage = ResultDrawer.DrawSideDefectResult(_currentSideMat, yoloResult);
+				}
+				else
+				{
+					AddLog("未检测到侧面缺陷");
+					resultImage = _currentSideMat.Clone();
+					Cv2.PutText(resultImage, "No side defects detected", new OpenCvSharp.Point(10, 30),
+						HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 255, 0), 2);
+				}
+			}
+			else
+			{
+				AddLog("警告: 侧面缺陷检测模型未加载！");
+				resultImage = _currentSideMat.Clone();
+				Cv2.PutText(resultImage, "Side Model Not Loaded", new OpenCvSharp.Point(10, 30),
+					HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 0, 255), 2);
+			}
+
+			bool isOk = defects.Count == 0;
+
 			UpdateUI(() =>
 			{
-				_resultLabel.Text = "检测完成";
-				_resultLabel.ForeColor = Color.Green;
+				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
+				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
 				_defectListBox.Items.Clear();
-				_defectListBox.Items.Add("侧面检测完成（详细结果待模型输出）");
+				foreach (var defect in defects)
+				{
+					_defectListBox.Items.Add($"检测到: {defect}");
+				}
+				if (_defectListBox.Items.Count == 0)
+				{
+					_defectListBox.Items.Add("无缺陷");
+				}
+
+				if (resultImage != null)
+				{
+					var bmp = BmpConverter.ToBitmap(resultImage);
+					_picResult.Image = bmp;
+					resultImage.Dispose();
+				}
 			});
 
-			AddLog("侧面检测完成");
+			AddLog($"侧面检测结果: {(isOk ? "OK" : "NG")}");
 		}
 
 		#endregion

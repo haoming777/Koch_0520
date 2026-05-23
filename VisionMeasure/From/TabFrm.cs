@@ -1,9 +1,9 @@
-﻿using CommonLib;
+using CommonLib;
 using Sunny.UI;
 using System;
 using System.Windows.Forms;
 using UI;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 using System.Drawing;
 
 namespace VisionMeasure.From
@@ -66,7 +66,8 @@ namespace VisionMeasure.From
 					case "手动调试":
 						if (_mainFrm != null && _mainFrm.GetMotionHandle() != IntPtr.Zero)
 						{
-							var controlFrm = new PLC监控.ControlFrm(_mainFrm.GetMotionHandle());
+							var controlFrm = new PLC监控.ControlFrm();
+							//var controlFrm = new PLC监控.ControlFrm(_mainFrm.GetMotionHandle());
 							controlFrm.ShowDialog();
 						}
 						break;
@@ -87,7 +88,8 @@ namespace VisionMeasure.From
         {
             var motionMgr = _mainFrm.GetMotionControlManager();
             var cameraMgr = _mainFrm.GetCameraManager();
-            var testForm = new UI.TestForm(motionMgr, cameraMgr);
+            var aiModels = _mainFrm.GetAiModelManager();
+            var testForm = new UI.TestForm(motionMgr, cameraMgr, aiModels);
             testForm.ShowDialog();
         }
     }

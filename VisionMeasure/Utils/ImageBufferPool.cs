@@ -8,7 +8,7 @@ using System.Drawing.Imaging;
 using System.Threading;
 using XL.Tool;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	public class ImageBufferPool : IDisposable
 	{

@@ -110,10 +110,12 @@
   <ItemGroup>
     <Compile Include="Class_Config.cs" />
     <Compile Include="GlobalVar.cs" />
+    <Compile Include="HighSpeedImageSaver.cs" />
     <Compile Include="IFormPlugin.cs" />
     <Compile Include="IMainListener.cs" />
     <Compile Include="IniAPI.cs" />
     <Compile Include="IPLCListener.cs" />
+    <Compile Include="Logger.cs" />
     <Compile Include="SaveImage\SaveImageQueues2_R.cs" />
     <Compile Include="SaveImage\SaveImageQueues3_R.cs" />
     <Compile Include="SaveImage\SaveImageQueues4_R.cs" />
@@ -124,10 +126,14 @@
     <Compile Include="SaveImage\SaveImageQueues3.cs" />
     <Compile Include="SaveImage\SaveImageQueues.cs" />
     <Compile Include="SaveImage\SaveImageQueues2.cs" />
+    <Compile Include="SkuData.cs" />
     <Compile Include="SQLiteHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SystemConfig.cs" />
     <Compile Include="UserClass.cs" />
     <Compile Include="Vision.cs" />
+    <Compile Include="ZmcManager.cs" />
+    <Compile Include="ZmcUniversalController.cs" />
     <Compile Include="正运动\ControlParms.cs" />
     <Compile Include="正运动\takephotoVm.cs" />
     <Compile Include="正运动\Zmcaux.cs" />

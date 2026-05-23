@@ -1,4 +1,3 @@
-﻿using AI;
 using Config;
 using Hardware;
 using Models;
@@ -14,8 +13,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Utils;
+using VisionMeasure.Utils;
+using CommonLib;
 using YoloInference;
+using AI;
 using CvRect = OpenCvSharp.Rect;
 using Rect = System.Drawing.Rectangle;
 using static CommonLib.Class_Config;
@@ -228,7 +229,7 @@ namespace Stations
 					cropped = new Mat(mat, new CvRect(startX, 0, cropW, h)).Clone();
 				}
 
-				YoloResult yoloResult = null;
+				YoloInference.YoloResult yoloResult = null;
 				using (var inferScope = new StopwatchScope(t => { })) { }
 
 				var defects = new List<BoxDefect>();

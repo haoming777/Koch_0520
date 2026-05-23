@@ -2,9 +2,9 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	public class PerformanceMonitor : IDisposable
 	{

@@ -1,4 +1,3 @@
-﻿using AI;
 using Config;
 using Models;
 using OpenCvSharp;
@@ -13,8 +12,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Utils;
+using VisionMeasure.Utils;
+using CommonLib;
 using YoloInference;
+using AI;
 using CvRect = OpenCvSharp.Rect;
 using Rect = System.Drawing.Rectangle;
 using static CommonLib.Class_Config;
@@ -152,7 +153,7 @@ namespace Stations
 					lowerMats = CropImagesBatch(lowerImages);
 				}
 
-				List<YoloResult> upperResults = null, lowerResults = null;
+				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
 				using (var inferScope = new StopwatchScope(t => inferenceTime = t))
 				{
 					var upperTask = Task.Run(() => RunInference(upperMats, _models.EndFaceUpperModel));
@@ -250,13 +251,13 @@ namespace Stations
 			return mats;
 		}
 
-		private List<YoloResult> RunInference(List<Mat> images, YoloOnnx model)
+		private List<YoloInference.YoloResult> RunInference(List<Mat> images, YoloOnnx model)
 		{
-			if (model == null) return new List<YoloResult>();
+			if (model == null) return new List<YoloInference.YoloResult>();
 			return model.PredictBatch(images, ConfThreshold, IouThreshold);
 		}
 
-		private Dictionary<int, List<BoxDefect>> ParseResults(List<YoloResult> results)
+		private Dictionary<int, List<BoxDefect>> ParseResults(List<YoloInference.YoloResult> results)
 		{
 			var defects = new Dictionary<int, List<BoxDefect>>();
 			for (int i = 0; i < results.Count; i++)

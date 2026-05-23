@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.IO;
 using AIsdk;
 using Config;
-using Utils;
+using CommonLib;
 using YoloInference;
 using YoloSegmentationEnd2End;
+using CommonLib;
 
 namespace Models
 {
@@ -30,7 +31,7 @@ namespace Models
 		public Vimo BackCutCharModel { get; private set; }         // Vimo -> .vimosln
 
 		// 侧面模型
-		public Vimo SideDefectModel { get; private set; }          // Vimo -> .vimosln
+		public YoloOnnx SideDefectModel { get; private set; }        // Yolo -> .onnx + meta.json
 
 		public event Action<string, int, int> OnModelLoadProgress;
 
@@ -68,30 +69,32 @@ namespace Models
 			try
 			{
 				// P号码OCR模型 (Vimo)
-				if (!string.IsNullOrEmpty(_config.FrontPCodeOcrModel))
-				{
-					string fullPath = _config.GetFullPath(_config.FrontPCodeOcrModel);
-					if (File.Exists(fullPath))
+					if (!string.IsNullOrEmpty(_config.FrontPCodeOcrModel))
 					{
-						try
+						string fullPath = _config.GetFullPath(_config.FrontPCodeOcrModel);
+						if (File.Exists(fullPath))
 						{
-							FrontOcrModel = new Vimo();
-							int ret = FrontOcrModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, "3");
-							if (ret == 0)
-								Logger.Info($"正面P号码OCR模型加载成功: {fullPath}");
-							else
-								Logger.Error($"正面P号码OCR模型加载失败: {FrontOcrModel.ErrorInfo}");
+							try
+							{
+								FrontOcrModel = new Vimo();
+								// 使用配置的moduleId
+								string moduleId = _config.FrontPCodeOcrModuleId ?? "3";
+								int ret = FrontOcrModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
+								if (ret == 0)
+									Logger.Info($"正面P号码OCR模型加载成功: {fullPath} (moduleId={moduleId})");
+								else
+									Logger.Error($"正面P号码OCR模型加载失败: {FrontOcrModel.ErrorInfo}");
+							}
+							catch (Exception ex)
+							{
+								Logger.Error($"正面P号码OCR模型加载异常: {ex.Message}");
+							}
 						}
-						catch (Exception ex)
+						else
 						{
-							Logger.Error($"正面P号码OCR模型加载异常: {ex.Message}");
+							Logger.Warning($"正面P号码OCR模型文件不存在: {fullPath}");
 						}
 					}
-					else
-					{
-						Logger.Warning($"正面P号码OCR模型文件不存在: {fullPath}");
-					}
-				}
 
 				// 盒子破检测模型 (Yolo)
 				if (!string.IsNullOrEmpty(_config.FrontBoxBreakModel))
@@ -205,9 +208,10 @@ namespace Models
 					if (File.Exists(fullPath))
 					{
 						BackDateCodeModel = new Vimo();
-						int ret = BackDateCodeModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, null);
+						string moduleId = _config.BackDateCodeModuleId ?? "0";
+						int ret = BackDateCodeModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
 						if (ret == 0)
-							Logger.Info($"背面日期码OCR模型加载成功(显卡{_config.VimoGpuDeviceId})");
+							Logger.Info($"背面日期码OCR模型加载成功(显卡{_config.VimoGpuDeviceId}, moduleId={moduleId})");
 						else
 							Logger.Error($"背面日期码OCR模型加载失败: {BackDateCodeModel.ErrorInfo}");
 					}
@@ -261,9 +265,10 @@ namespace Models
 					if (File.Exists(fullPath))
 					{
 						BackCutCharModel = new Vimo();
-						int ret = BackCutCharModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, null);
+						string moduleId = _config.BackCutCharModuleId ?? "0";
+						int ret = BackCutCharModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
 						if (ret == 0)
-							Logger.Info($"背面切字识别模型加载成功(显卡{_config.VimoGpuDeviceId})");
+							Logger.Info($"背面切字识别模型加载成功(显卡{_config.VimoGpuDeviceId}, moduleId={moduleId})");
 						else
 							Logger.Error($"背面切字识别模型加载失败: {BackCutCharModel.ErrorInfo}");
 					}
@@ -286,24 +291,28 @@ namespace Models
 		{
 			try
 			{
-				// 侧面缺陷模型 (Vimo -> .vimosln, 显卡1)
+				// 侧面缺陷模型 (Yolo -> .onnx + meta.json, 显卡0)
 				if (!string.IsNullOrEmpty(_config.SideDefectModel))
 				{
 					string fullPath = _config.GetFullPath(_config.SideDefectModel);
-					ReportProgress($"正在加载侧面缺陷检测模型(Vimo, 显卡{_config.VimoGpuDeviceId}): {fullPath}", 90, 100);
+					string metaPath = Path.ChangeExtension(fullPath, "json");
+					ReportProgress($"正在加载侧面缺陷检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 90, 100);
 
-					if (File.Exists(fullPath))
+					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						SideDefectModel = new Vimo();
-						int ret = SideDefectModel.Init_Class(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, null);
-						if (ret == 0)
-							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
-						else
-							Logger.Error($"侧面缺陷检测模型加载失败: {SideDefectModel.ErrorInfo}");
+						try
+						{
+							SideDefectModel = new YoloOnnx(fullPath, metaPath, 2);
+							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						}
+						catch (Exception ex)
+						{
+							Logger.Error($"侧面缺陷检测模型加载异常: {ex.Message}");
+						}
 					}
 					else
 					{
-						Logger.Warning($"侧面缺陷检测模型文件不存在: {fullPath}");
+						Logger.Warning($"侧面缺陷检测模型文件不存在: {fullPath} 或 {metaPath}");
 					}
 				}
 

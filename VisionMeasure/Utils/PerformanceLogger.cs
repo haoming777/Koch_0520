@@ -3,8 +3,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Diagnostics;
+using CommonLib;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	/// <summary>
 	/// 性能日志专用记录器

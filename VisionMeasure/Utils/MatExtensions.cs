@@ -1,7 +1,7 @@
 ﻿using OpenCvSharp;
 using System.Drawing;
-
-namespace Utils
+using CommonLib;
+namespace VisionMeasure.Utils
 {
 	public static class MatExtensions
 	{

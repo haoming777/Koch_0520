@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -2415,6 +2415,12 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "FrontPCodeOcrModel", value);
 		}
 
+		public string FrontPCodeOcrModuleId
+		{
+			get => GetPrivateProfileString("AI_Models", "FrontPCodeOcrModuleId", "3", _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "FrontPCodeOcrModuleId", value);
+		}
+
 		public string FrontBoxBreakModel
 		{
 			get => GetPrivateProfileString("AI_Models", "FrontBoxBreakModel", "", _iniPath);
@@ -2453,6 +2459,12 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "BackDateCodeModel", value);
 		}
 
+		public string BackDateCodeModuleId
+		{
+			get => GetPrivateProfileString("AI_Models", "BackDateCodeModuleId", "0", _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "BackDateCodeModuleId", value);
+		}
+
 		public string BackHookDamageModel
 		{
 			get => GetPrivateProfileString("AI_Models", "BackHookDamageModel", "", _iniPath);
@@ -2471,11 +2483,23 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "BackCutCharModel", value);
 		}
 
+		public string BackCutCharModuleId
+		{
+			get => GetPrivateProfileString("AI_Models", "BackCutCharModuleId", "0", _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "BackCutCharModuleId", value);
+		}
+
 		// 侧面模型
 		public string SideDefectModel
 		{
 			get => GetPrivateProfileString("AI_Models", "SideDefectModel", "", _iniPath);
 			set => INIWriteValue(_iniPath, "AI_Models", "SideDefectModel", value);
+		}
+
+		public string SideDefectModuleId
+		{
+			get => GetPrivateProfileString("AI_Models", "SideDefectModuleId", "0", _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "SideDefectModuleId", value);
 		}
 
 

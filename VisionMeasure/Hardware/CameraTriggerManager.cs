@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 
 namespace Hardware
 {

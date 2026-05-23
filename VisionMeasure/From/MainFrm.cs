@@ -1,4 +1,4 @@
-﻿using CommonLib;
+using CommonLib;
 using Config;
 using Hardware;
 using Models;
@@ -15,7 +15,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 using VisionMeasure.From;
 using XL.Controls;
 using static CommonLib.Class_Config;
@@ -26,6 +26,8 @@ using CvSize = OpenCvSharp.Size;
 using DrawPoint = System.Drawing.Point;
 using DrawSize = System.Drawing.Size;
 using Timer = System.Windows.Forms.Timer;
+using VisionMeasure.Stations;  // 引入 FrontStationProcessor 所在的命名空间
+using VisionMeasure.Utils;using CommonLib;     // 引入 SystemConfig 所在的命名空间
 
 namespace VisionMeasure
 {
@@ -81,6 +83,7 @@ namespace VisionMeasure
 
 		// ========== 工具类 ==========
 		private bool _isClosing = false;
+		private Loading _loadingForm;
 
 		// ========== 公共成员（供其他窗体访问）==========
 		public IntPtr g_handle = IntPtr.Zero;
@@ -107,11 +110,16 @@ namespace VisionMeasure
 		public DaHuaSDK GetCamera7() => camera7SDK;
 		public DaHuaSDK GetCamera8() => camera8SDK;
 
-		public MainFrm()
+		public MainFrm(Loading loadingForm = null)
 		{
+			_loadingForm = loadingForm;
 			InitializeComponent();
-			this.Load += MainFrm_Load;
 			this.FormClosing += MainFrm_FormClosing;
+		}
+
+		private void UpdateLoadingProgress(int percent, string message)
+		{
+			_loadingForm?.UpdateProgress(percent, message);
 		}
 
 		#region 窗体加载
@@ -123,43 +131,61 @@ namespace VisionMeasure
 				Logger.Info("========== 系统启动 ==========");
 
 				// 初始化数据库
+				UpdateLoadingProgress(5, "正在初始化数据库...");
 				Logger.Info("正在初始化数据库...");
 				_dbHelper = new SQLiteHelper();
 
 				// 加载检测参数
+				UpdateLoadingProgress(10, "正在加载检测参数...");
 				Logger.Info("正在加载检测参数...");
 				_detectionParams = DetectionParameters.Instance;
 
 				// 初始化SKU数据库
+				UpdateLoadingProgress(15, "正在加载SKU数据...");
 				Logger.Info("正在加载SKU数据...");
 				_skuDb = new SkuDatabase();
 				_skuDb.LoadData();
 
 				// 初始化性能监控
+				UpdateLoadingProgress(20, "正在初始化性能监控...");
 				Logger.Info("正在初始化性能监控...");
 				_perfMonitor = new PerformanceMonitor();
 
 				// 初始化高速保存器
+				UpdateLoadingProgress(25, "正在初始化图像保存器...");
 				Logger.Info("正在初始化图像保存器...");
 				_imageSaver = new HighSpeedImageSaver("主保存器", 4, 500);
 
-				// 初始化硬件
+				// 初始化硬件（运动控制卡 + PLC）
+				UpdateLoadingProgress(30, "正在连接运动控制卡...");
 				Logger.Info("正在初始化硬件...");
 				InitHardware();
+				UpdateLoadingProgress(45, "运动控制卡连接成功");
+
+				// 初始化相机
+				UpdateLoadingProgress(50, "正在初始化相机SDK...");
+				Logger.Info("正在初始化相机SDK...");
+				InitCameras();
+				UpdateLoadingProgress(65, "相机初始化完成");
 
 				// 初始化AI模型
+				UpdateLoadingProgress(70, "正在加载AI模型...");
 				Logger.Info("正在加载AI模型...");
-				//InitAiModels();
+				InitAiModels();
+				UpdateLoadingProgress(85, "AI模型加载完成");
 
 				// 初始化工位处理器
+				UpdateLoadingProgress(88, "正在初始化工位处理器...");
 				Logger.Info("正在初始化工位处理器...");
 				InitStations();
 
 				// 初始化UI
+				UpdateLoadingProgress(90, "正在初始化界面...");
 				Logger.Info("正在初始化界面...");
 				InitUI();
 
 				// 绑定统计控件
+				UpdateLoadingProgress(92, "正在绑定统计控件...");
 				Logger.Info("正在绑定统计控件...");
 				BindStatisticsControls();
 
@@ -180,6 +206,7 @@ namespace VisionMeasure
 
 				this.WindowState = FormWindowState.Maximized;
 
+				UpdateLoadingProgress(100, "系统初始化完成，准备启动...");
 				Logger.Info("系统初始化完成");
 			}
 			catch (Exception ex)
@@ -187,7 +214,6 @@ namespace VisionMeasure
 				Logger.Error($"系统初始化失败: {ex.Message}\r\n{ex.StackTrace}");
 				MessageBox.Show($"系统初始化失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
 				Application.Exit();
-				//test
 			}
 		}
 
@@ -231,8 +257,11 @@ namespace VisionMeasure
 				if (PlcState != null) PlcState.State = UILightState.Off;
 				Logger.Warning("PLC连接失败，将使用模拟模式");
 			}
+		}
 
-			// 相机管理
+		private void InitCameras()
+		{
+			bool useSimulateMode = _detectionParams.Camera.GetSimulateMode();
 			_cameraMgr = new CameraManager(useSimulateMode);
 			_cameraMgr.OnImageReceived += OnCameraImageReceived;
 			_cameraMgr.OnConnectionChanged += OnCameraConnectionChanged;
@@ -247,8 +276,7 @@ namespace VisionMeasure
 				Logger.Warning("部分相机初始化失败");
 			}
 
-			// 触发管理器
-			if (_motionMgr.IsConnected && !useSimulateMode)
+			if (_motionMgr != null && _motionMgr.IsConnected && !useSimulateMode)
 			{
 				_triggerMgr = new CameraTriggerManager(_motionMgr, useSimulateMode);
 				_triggerMgr.OnTriggered += OnCameraTriggered;
@@ -260,6 +288,7 @@ namespace VisionMeasure
 				Logger.Warning("运动控制卡未连接或模拟模式，跳过触发管理器初始化");
 			}
 		}
+
 		/// <summary>
 		/// 相机触发回调 - 当检测到触发信号并输出脉冲后调用
 		/// </summary>
@@ -308,7 +337,7 @@ namespace VisionMeasure
 		{
 			var modelConfig = ModelPathConfig.LoadFromSysConfig();
 			_aiModels = new AiModelManager(modelConfig);
-			//_aiModels.LoadAllModels();
+			_aiModels.LoadAllModels();
 		}
 
 		private void InitStations()
@@ -316,7 +345,7 @@ namespace VisionMeasure
 			string imgPath = _detectionParams.Save.ImageSavePath;
 			_currentSku = _skuDb.Search("").FirstOrDefault() ?? new SkuData { P = 8, Z = 2, MM = 42 };
 
-			_frontStation = new FrontStationProcessor(_aiModels, imgPath, _currentSku, _imageSaver, _perfMonitor);
+			_frontStation = new FrontStationProcessor(_aiModels, _detectionParams);
 			_frontStation.OnResultReady += OnStationResult;
 			_frontStation.Start();
 
@@ -380,6 +409,14 @@ namespace VisionMeasure
 
 		#region 工位结果回调
 
+		private void OnStationResult(Bitmap mergedImage, bool[] ngArray, int okCount, int ngCount)
+		{
+			if (this.InvokeRequired)
+			{
+				this.BeginInvoke(new Action(() => OnStationResult(mergedImage, ngArray, okCount, ngCount)));
+				return;
+			}
+		}
 		private void OnStationResult(ProductResult result)
 		{
 			if (result.IsComplete)
@@ -907,6 +944,7 @@ namespace VisionMeasure
 				_endFaceStation?.Dispose();
 				_sideStation?.Dispose();
 
+				_triggerMgr?.Dispose();  // 释放触发管理器（包含后台线程）
 				_cameraMgr?.Dispose();
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
@@ -953,6 +991,14 @@ namespace VisionMeasure
 		public CameraManager GetCameraManager()
 		{
 			return _cameraMgr;
+		}
+
+		/// <summary>
+		/// 获取AI模型管理器
+		/// </summary>
+		public AiModelManager GetAiModelManager()
+		{
+			return _aiModels;
 		}
 		#endregion
 	}

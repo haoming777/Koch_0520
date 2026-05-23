@@ -1,10 +1,12 @@
-﻿using MT.Camera.SDK;
+using MT.Camera.SDK;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
 using System.Threading.Tasks;
-using Utils;
+using VisionMeasure.Utils;
+using CommonLib;
+using Config;
 
 namespace Hardware
 {
@@ -34,16 +36,18 @@ namespace Hardware
 		{
 			_simulateMode = simulateMode;
 
+			var cameraParams = DetectionParameters.Instance.Camera;
+
 			var configs = new (int id, string sn, string name, string station)[]
 			{
-				(1, SystemConfig.GetValue("Camera1SN", ""), "正面左", "Front"),
-				(2, SystemConfig.GetValue("Camera2SN", ""), "正面右", "Front"),
-				(3, SystemConfig.GetValue("Camera3SN", ""), "背面左", "Back"),
-				(4, SystemConfig.GetValue("Camera4SN", ""), "背面右", "Back"),
-				(5, SystemConfig.GetValue("Camera5SN", ""), "上端面", "EndFace"),
-				(6, SystemConfig.GetValue("Camera6SN", ""), "下端面", "EndFace"),
-				(7, SystemConfig.GetValue("Camera7SN", ""), "左侧面", "Side"),
-				(8, SystemConfig.GetValue("Camera8SN", ""), "右侧面", "Side"),
+				(1, cameraParams.Camera1SN, "正面左", "Front"),
+				(2, cameraParams.Camera2SN, "正面右", "Front"),
+				(3, cameraParams.Camera3SN, "背面左", "Back"),
+				(4, cameraParams.Camera4SN, "背面右", "Back"),
+				(5, cameraParams.Camera5SN, "上端面", "EndFace"),
+				(6, cameraParams.Camera6SN, "下端面", "EndFace"),
+				(7, cameraParams.Camera7SN, "左侧面", "Side"),
+				(8, cameraParams.Camera8SN, "右侧面", "Side"),
 			};
 
 			foreach (var cfg in configs)
@@ -63,15 +67,19 @@ namespace Hardware
 		public bool InitializeAll()
 		{
 			Logger.Info($"========== 初始化相机（模拟模式: {_simulateMode}） ==========");
-			bool allOk = true;
 
-			foreach (var info in _cameraInfos.Values)
+			var cameraList = new List<CameraInfo>(_cameraInfos.Values);
+			int successCount = 0;
+			int totalCount = cameraList.Count;
+
+			Parallel.ForEach(cameraList, info =>
 			{
 				bool success = InitializeSingleCamera(info);
-				if (!success) allOk = false;
-			}
+				if (success) Interlocked.Increment(ref successCount);
+			});
 
-			Logger.Info($"========== 相机初始化{(allOk ? "全部成功" : "部分失败")} ==========");
+			bool allOk = successCount == totalCount;
+			Logger.Info($"========== 相机初始化{(allOk ? "全部成功" : $"部分失败({successCount}/{totalCount})")} ==========");
 			return allOk;
 		}
 
@@ -111,7 +119,7 @@ namespace Hardware
 
 				camera.SetAcquisitionMode(0);
 				camera.SetTriggerMode(1);
-				camera.setTriggerSource(0);
+				camera.setTriggerSource(1);
 
 				_cameras[info.CameraId] = camera;
 				info.IsConnected = true;

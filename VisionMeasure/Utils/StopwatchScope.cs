@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	/// <summary>
 	/// 计时器作用域 - using 语句自动记录耗时

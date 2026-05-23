@@ -4,9 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Config;
-using Utils;
+using CommonLib;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	public class SkuDatabase
 	{

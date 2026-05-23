@@ -1,7 +1,7 @@
 ﻿using System.Drawing;
 using OpenCvSharp;
 
-namespace Utils
+namespace VisionMeasure.Utils
 {
 	public class ImageCropper
 	{

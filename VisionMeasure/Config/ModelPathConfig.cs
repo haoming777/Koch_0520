@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using static CommonLib.Class_Config;
 
@@ -10,6 +10,7 @@ namespace Config
 
 		// ========== 正面模型 ==========
 		public string FrontPCodeOcrModel { get; set; }
+		public string FrontPCodeOcrModuleId { get; set; } = "3";  // Vimo模型的moduleId
 		public string FrontBoxBreakModel { get; set; }
 		public string FrontFilmBreakModel { get; set; }
 
@@ -20,12 +21,15 @@ namespace Config
 		// ========== 背面模型 ==========
 		public string BackBarcodeModel { get; set; }
 		public string BackDateCodeModel { get; set; }
+		public string BackDateCodeModuleId { get; set; } = "0";    // Vimo模型的moduleId
 		public string BackHookDamageModel { get; set; }
 		public string BackHookSlightModel { get; set; }
 		public string BackCutCharModel { get; set; }
+		public string BackCutCharModuleId { get; set; } = "0";     // Vimo模型的moduleId
 
 		// ========== 侧面模型 ==========
 		public string SideDefectModel { get; set; }
+		public string SideDefectModuleId { get; set; } = "0";       // Vimo模型的moduleId
 
 		// ========== 全局GPU配置 ==========
 		public bool UseGpu { get; set; } = true;
@@ -51,23 +55,27 @@ namespace Config
 			config.ModelRootPath = _Config.ModelRootPath ?? @".\AI\Models";
 
 			// 正面模型
-			config.FrontPCodeOcrModel = _Config.FrontPCodeOcrModel ?? @"正面\P号码识别\model.onnx";
-			config.FrontBoxBreakModel = _Config.FrontBoxBreakModel ?? @"正面\盒子破检测\model.onnx";
-			config.FrontFilmBreakModel = _Config.FrontFilmBreakModel ?? @"正面\薄膜破检测\model.onnx";
+			config.FrontPCodeOcrModel = _Config.FrontPCodeOcrModel ?? @"正面\P号码识别\model.vimosln";
+			config.FrontPCodeOcrModuleId = _Config.FrontPCodeOcrModuleId ?? "3";
+			config.FrontBoxBreakModel = _Config.FrontBoxBreakModel ?? @"正面\盒子破检测\best.onnx";
+			config.FrontFilmBreakModel = _Config.FrontFilmBreakModel ?? @"正面\薄膜破检测\best.onnx";
 
 			// 端面模型
-			config.EndFaceUpperModel = _Config.EndFaceUpperModel ?? @"端面\上端面\model.onnx";
-			config.EndFaceLowerModel = _Config.EndFaceLowerModel ?? @"端面\下端面\model.onnx";
+			config.EndFaceUpperModel = _Config.EndFaceUpperModel ?? @"端面\上端面\best.onnx";
+			config.EndFaceLowerModel = _Config.EndFaceLowerModel ?? @"端面\下端面\best.onnx";
 
 			// 背面模型
-			config.BackBarcodeModel = _Config.BackBarcodeModel ?? @"背面\条形码识别\model.onnx";
-			config.BackDateCodeModel = _Config.BackDateCodeModel ?? @"背面\日期码识别\model.onnx";
-			config.BackHookDamageModel = _Config.BackHookDamageModel ?? @"背面\明显挂钩错位\model.onnx";
-			config.BackHookSlightModel = _Config.BackHookSlightModel ?? @"背面\轻微挂钩错位\model.onnx";
-			config.BackCutCharModel = _Config.BackCutCharModel ?? @"背面\切字识别\model.onnx";
+			config.BackBarcodeModel = _Config.BackBarcodeModel ?? @"背面\条形码识别\best.onnx";
+			config.BackDateCodeModel = _Config.BackDateCodeModel ?? @"背面\日期码识别\model.vimosln";
+			config.BackDateCodeModuleId = _Config.BackDateCodeModuleId ?? "0";
+			config.BackHookDamageModel = _Config.BackHookDamageModel ?? @"背面\明显挂钩错位\best.onnx";
+			config.BackHookSlightModel = _Config.BackHookSlightModel ?? @"背面\轻微挂钩错位\best.onnx";
+			config.BackCutCharModel = _Config.BackCutCharModel ?? @"背面\切字识别\model.vimosln";
+			config.BackCutCharModuleId = _Config.BackCutCharModuleId ?? "0";
 
 			// 侧面模型
-			config.SideDefectModel = _Config.SideDefectModel ?? @"侧面\缺陷检测\model.onnx";
+			config.SideDefectModel = _Config.SideDefectModel ?? @"侧面\缺陷检测\best.onnx";
+			config.SideDefectModuleId = _Config.SideDefectModuleId ?? "0";
 
 			// GPU配置
 			config.UseGpu = _Config.UseGpu;
@@ -82,16 +90,20 @@ namespace Config
 		{
 			_Config.ModelRootPath = ModelRootPath;
 			_Config.FrontPCodeOcrModel = FrontPCodeOcrModel;
+			_Config.FrontPCodeOcrModuleId = FrontPCodeOcrModuleId;
 			_Config.FrontBoxBreakModel = FrontBoxBreakModel;
 			_Config.FrontFilmBreakModel = FrontFilmBreakModel;
 			_Config.EndFaceUpperModel = EndFaceUpperModel;
 			_Config.EndFaceLowerModel = EndFaceLowerModel;
 			_Config.BackBarcodeModel = BackBarcodeModel;
 			_Config.BackDateCodeModel = BackDateCodeModel;
+			_Config.BackDateCodeModuleId = BackDateCodeModuleId;
 			_Config.BackHookDamageModel = BackHookDamageModel;
 			_Config.BackHookSlightModel = BackHookSlightModel;
 			_Config.BackCutCharModel = BackCutCharModel;
+			_Config.BackCutCharModuleId = BackCutCharModuleId;
 			_Config.SideDefectModel = SideDefectModel;
+			_Config.SideDefectModuleId = SideDefectModuleId;
 			_Config.UseGpu = UseGpu;
 			_Config.DefaultGpuDeviceId = DefaultGpuDeviceId;
 			_Config.VimoGpuDeviceId = VimoGpuDeviceId;

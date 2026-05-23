@@ -2,7 +2,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Utils;
+using VisionMeasure.Utils;using CommonLib;
 using static cszmcaux.zmcaux;
 
 namespace Hardware
