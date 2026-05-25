@@ -79,7 +79,7 @@ namespace Models
 								FrontOcrModel = new Vimo();
 								// 使用配置的moduleId
 								string moduleId = _config.FrontPCodeOcrModuleId ?? "3";
-								int ret = FrontOcrModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
+								int ret = FrontOcrModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
 								if (ret == 0)
 									Logger.Info($"正面P号码OCR模型加载成功: {fullPath} (moduleId={moduleId})");
 								else
@@ -209,7 +209,7 @@ namespace Models
 					{
 						BackDateCodeModel = new Vimo();
 						string moduleId = _config.BackDateCodeModuleId ?? "0";
-						int ret = BackDateCodeModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
+						int ret = BackDateCodeModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
 						if (ret == 0)
 							Logger.Info($"背面日期码OCR模型加载成功(显卡{_config.VimoGpuDeviceId}, moduleId={moduleId})");
 						else
@@ -266,7 +266,7 @@ namespace Models
 					{
 						BackCutCharModel = new Vimo();
 						string moduleId = _config.BackCutCharModuleId ?? "0";
-						int ret = BackCutCharModel.Init_OrderOcr(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
+						int ret = BackCutCharModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
 						if (ret == 0)
 							Logger.Info($"背面切字识别模型加载成功(显卡{_config.VimoGpuDeviceId}, moduleId={moduleId})");
 						else

@@ -49,7 +49,6 @@ namespace AIsdk
 		}
 
 
-
 		public int Init(string modelPath, bool usegup, int deviceid, string modelid)
 		{
 			try
