@@ -111,9 +111,6 @@
 			this.tableLayoutPanel21 = new System.Windows.Forms.TableLayoutPanel();
 			this.leftBtn = new Sunny.UI.UISymbolButton();
 			this.panel2 = new System.Windows.Forms.Panel();
-			this.panel11 = new System.Windows.Forms.Panel();
-			this.uiLine13 = new Sunny.UI.UILine();
-			this.uiToolTip1 = new Sunny.UI.UIToolTip(this.components);
 			this.tableLayoutPanel17 = new System.Windows.Forms.TableLayoutPanel();
 			this.tableLayoutPanel27 = new System.Windows.Forms.TableLayoutPanel();
 			this.location1_Txt = new System.Windows.Forms.Label();
@@ -126,6 +123,9 @@
 			this.tableLayoutPanel30 = new System.Windows.Forms.TableLayoutPanel();
 			this.location3_Txt = new System.Windows.Forms.Label();
 			this.uiLabel10 = new Sunny.UI.UILabel();
+			this.panel11 = new System.Windows.Forms.Panel();
+			this.uiLine13 = new Sunny.UI.UILine();
+			this.uiToolTip1 = new Sunny.UI.UIToolTip(this.components);
 			this.tableLayoutPanel1.SuspendLayout();
 			this.tableLayoutPanel2.SuspendLayout();
 			this.tableLayoutPanel5.SuspendLayout();
@@ -164,11 +164,11 @@
 			this.panel21.SuspendLayout();
 			this.tableLayoutPanel21.SuspendLayout();
 			this.panel2.SuspendLayout();
-			this.panel11.SuspendLayout();
 			this.tableLayoutPanel17.SuspendLayout();
 			this.tableLayoutPanel27.SuspendLayout();
 			this.tableLayoutPanel29.SuspendLayout();
 			this.tableLayoutPanel30.SuspendLayout();
+			this.panel11.SuspendLayout();
 			this.SuspendLayout();
 			// 
 			// tableLayoutPanel1
@@ -652,7 +652,7 @@
 			this.tableLayoutPanel6.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 10F));
 			this.tableLayoutPanel6.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 15F));
 			this.tableLayoutPanel6.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 12F));
-			this.tableLayoutPanel6.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 218F));
+			this.tableLayoutPanel6.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 219F));
 			this.tableLayoutPanel6.Controls.Add(this.uiLine3, 8, 0);
 			this.tableLayoutPanel6.Controls.Add(this.uiLine2, 5, 0);
 			this.tableLayoutPanel6.Controls.Add(this.uiLine1, 2, 0);
@@ -680,7 +680,7 @@
 			this.uiLine3.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
 			this.uiLine3.LineColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
 			this.uiLine3.LineColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
-			this.uiLine3.Location = new System.Drawing.Point(607, 0);
+			this.uiLine3.Location = new System.Drawing.Point(604, 0);
 			this.uiLine3.Margin = new System.Windows.Forms.Padding(0);
 			this.uiLine3.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiLine3.Name = "uiLine3";
@@ -699,7 +699,7 @@
 			this.uiLine2.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
 			this.uiLine2.LineColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
 			this.uiLine2.LineColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
-			this.uiLine2.Location = new System.Drawing.Point(394, 0);
+			this.uiLine2.Location = new System.Drawing.Point(392, 0);
 			this.uiLine2.Margin = new System.Windows.Forms.Padding(0);
 			this.uiLine2.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiLine2.Name = "uiLine2";
@@ -718,7 +718,7 @@
 			this.uiLine1.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
 			this.uiLine1.LineColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
 			this.uiLine1.LineColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
-			this.uiLine1.Location = new System.Drawing.Point(181, 0);
+			this.uiLine1.Location = new System.Drawing.Point(180, 0);
 			this.uiLine1.Margin = new System.Windows.Forms.Padding(0);
 			this.uiLine1.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiLine1.Name = "uiLine1";
@@ -732,11 +732,11 @@
 			this.panel7.Controls.Add(this.gainTxt);
 			this.panel7.Controls.Add(this.uiLabel5);
 			this.panel7.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel7.Location = new System.Drawing.Point(399, 0);
+			this.panel7.Location = new System.Drawing.Point(397, 0);
 			this.panel7.Margin = new System.Windows.Forms.Padding(0);
 			this.panel7.Name = "panel7";
 			this.panel7.Padding = new System.Windows.Forms.Padding(5);
-			this.panel7.Size = new System.Drawing.Size(203, 55);
+			this.panel7.Size = new System.Drawing.Size(202, 55);
 			this.panel7.TabIndex = 7;
 			// 
 			// gainTxt
@@ -750,7 +750,7 @@
 			this.gainTxt.Name = "gainTxt";
 			this.gainTxt.Padding = new System.Windows.Forms.Padding(5);
 			this.gainTxt.ShowText = false;
-			this.gainTxt.Size = new System.Drawing.Size(108, 45);
+			this.gainTxt.Size = new System.Drawing.Size(107, 45);
 			this.gainTxt.TabIndex = 1;
 			this.gainTxt.TextAlignment = System.Drawing.ContentAlignment.MiddleLeft;
 			this.uiToolTip1.SetToolTip(this.gainTxt, "参数修改后，焦点保持在对应输入框按下 “Enter” 键，保存当前属性");
@@ -773,10 +773,10 @@
 			// 
 			this.panel6.Controls.Add(this.saveImageBtn);
 			this.panel6.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel6.Location = new System.Drawing.Point(1068, 5);
+			this.panel6.Location = new System.Drawing.Point(1063, 5);
 			this.panel6.Margin = new System.Windows.Forms.Padding(30, 5, 30, 5);
 			this.panel6.Name = "panel6";
-			this.panel6.Size = new System.Drawing.Size(143, 45);
+			this.panel6.Size = new System.Drawing.Size(142, 45);
 			this.panel6.TabIndex = 5;
 			// 
 			// saveImageBtn
@@ -788,7 +788,7 @@
 			this.saveImageBtn.Margin = new System.Windows.Forms.Padding(5);
 			this.saveImageBtn.MinimumSize = new System.Drawing.Size(1, 1);
 			this.saveImageBtn.Name = "saveImageBtn";
-			this.saveImageBtn.Size = new System.Drawing.Size(143, 45);
+			this.saveImageBtn.Size = new System.Drawing.Size(142, 45);
 			this.saveImageBtn.TabIndex = 0;
 			this.saveImageBtn.Text = "保存图像";
 			this.saveImageBtn.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
@@ -798,10 +798,10 @@
 			// 
 			this.panel5.Controls.Add(this.uiButton4);
 			this.panel5.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel5.Location = new System.Drawing.Point(855, 5);
+			this.panel5.Location = new System.Drawing.Point(851, 5);
 			this.panel5.Margin = new System.Windows.Forms.Padding(30, 5, 30, 5);
 			this.panel5.Name = "panel5";
-			this.panel5.Size = new System.Drawing.Size(143, 45);
+			this.panel5.Size = new System.Drawing.Size(142, 45);
 			this.panel5.TabIndex = 4;
 			// 
 			// uiButton4
@@ -813,7 +813,7 @@
 			this.uiButton4.Margin = new System.Windows.Forms.Padding(5);
 			this.uiButton4.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiButton4.Name = "uiButton4";
-			this.uiButton4.Size = new System.Drawing.Size(143, 45);
+			this.uiButton4.Size = new System.Drawing.Size(142, 45);
 			this.uiButton4.TabIndex = 0;
 			this.uiButton4.Text = "实时取像";
 			this.uiButton4.TipsFont = new System.Drawing.Font("微软雅黑", 9F);
@@ -823,10 +823,10 @@
 			// 
 			this.panel4.Controls.Add(this.uiButton3);
 			this.panel4.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel4.Location = new System.Drawing.Point(642, 5);
+			this.panel4.Location = new System.Drawing.Point(639, 5);
 			this.panel4.Margin = new System.Windows.Forms.Padding(30, 5, 30, 5);
 			this.panel4.Name = "panel4";
-			this.panel4.Size = new System.Drawing.Size(143, 45);
+			this.panel4.Size = new System.Drawing.Size(142, 45);
 			this.panel4.TabIndex = 3;
 			// 
 			// uiButton3
@@ -838,7 +838,7 @@
 			this.uiButton3.Margin = new System.Windows.Forms.Padding(5);
 			this.uiButton3.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiButton3.Name = "uiButton3";
-			this.uiButton3.Size = new System.Drawing.Size(143, 45);
+			this.uiButton3.Size = new System.Drawing.Size(142, 45);
 			this.uiButton3.TabIndex = 0;
 			this.uiButton3.Text = "单张取像";
 			this.uiButton3.TipsFont = new System.Drawing.Font("微软雅黑", 9F);
@@ -852,11 +852,14 @@
 			this.uiComboBox_cam.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.uiComboBox_cam.ItemHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(155)))), ((int)(((byte)(200)))), ((int)(((byte)(255)))));
 			this.uiComboBox_cam.Items.AddRange(new object[] {
-            "相机一 ( 底部异物 )",
-            "相机二 ( 瓶盖有无 )",
-            "相机三 ( 管口圆度 )",
-            "相机四 ( 正面相机 )",
-            "相机五 ( 反面相机 )"});
+            "相机一 ( 正面相机1 )",
+            "相机二 ( 正面相机2 )",
+            "相机三 ( 背面相机1 )",
+            "相机四 ( 背面相机2 )",
+            "相机五 ( 上端面相机 )",
+            "相机六 ( 下端面相机 )",
+            "相机七 ( 左侧相机 )",
+            "相机八 ( 右侧相机 )"});
 			this.uiComboBox_cam.ItemSelectForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(235)))), ((int)(((byte)(243)))), ((int)(((byte)(255)))));
 			this.uiComboBox_cam.Location = new System.Drawing.Point(5, 5);
 			this.uiComboBox_cam.Margin = new System.Windows.Forms.Padding(5);
@@ -864,7 +867,7 @@
 			this.uiComboBox_cam.Name = "uiComboBox_cam";
 			this.uiComboBox_cam.Padding = new System.Windows.Forms.Padding(0, 0, 30, 2);
 			this.uiComboBox_cam.Radius = 10;
-			this.uiComboBox_cam.Size = new System.Drawing.Size(166, 45);
+			this.uiComboBox_cam.Size = new System.Drawing.Size(165, 45);
 			this.uiComboBox_cam.SymbolSize = 24;
 			this.uiComboBox_cam.TabIndex = 0;
 			this.uiComboBox_cam.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
@@ -876,11 +879,11 @@
 			this.panel3.Controls.Add(this.exposureTxt);
 			this.panel3.Controls.Add(this.uiLabel4);
 			this.panel3.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel3.Location = new System.Drawing.Point(186, 0);
+			this.panel3.Location = new System.Drawing.Point(185, 0);
 			this.panel3.Margin = new System.Windows.Forms.Padding(0);
 			this.panel3.Name = "panel3";
 			this.panel3.Padding = new System.Windows.Forms.Padding(5);
-			this.panel3.Size = new System.Drawing.Size(203, 55);
+			this.panel3.Size = new System.Drawing.Size(202, 55);
 			this.panel3.TabIndex = 6;
 			// 
 			// exposureTxt
@@ -894,7 +897,7 @@
 			this.exposureTxt.Name = "exposureTxt";
 			this.exposureTxt.Padding = new System.Windows.Forms.Padding(5);
 			this.exposureTxt.ShowText = false;
-			this.exposureTxt.Size = new System.Drawing.Size(108, 45);
+			this.exposureTxt.Size = new System.Drawing.Size(107, 45);
 			this.exposureTxt.TabIndex = 1;
 			this.exposureTxt.TextAlignment = System.Drawing.ContentAlignment.MiddleLeft;
 			this.uiToolTip1.SetToolTip(this.exposureTxt, "参数修改后，焦点保持在对应输入框按下 “Enter” 键，保存当前属性");
@@ -1435,42 +1438,6 @@
 			this.panel2.Size = new System.Drawing.Size(429, 55);
 			this.panel2.TabIndex = 12;
 			// 
-			// panel11
-			// 
-			this.panel11.Controls.Add(this.uiLine13);
-			this.panel11.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel11.Location = new System.Drawing.Point(1044, 0);
-			this.panel11.Margin = new System.Windows.Forms.Padding(0);
-			this.panel11.Name = "panel11";
-			this.panel11.Size = new System.Drawing.Size(10, 55);
-			this.panel11.TabIndex = 13;
-			// 
-			// uiLine13
-			// 
-			this.uiLine13.BackColor = System.Drawing.Color.Transparent;
-			this.uiLine13.Direction = Sunny.UI.UILine.LineDirection.Vertical;
-			this.uiLine13.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.uiLine13.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-			this.uiLine13.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
-			this.uiLine13.LineColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
-			this.uiLine13.LineColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
-			this.uiLine13.Location = new System.Drawing.Point(0, 0);
-			this.uiLine13.Margin = new System.Windows.Forms.Padding(0);
-			this.uiLine13.MinimumSize = new System.Drawing.Size(1, 1);
-			this.uiLine13.Name = "uiLine13";
-			this.uiLine13.Size = new System.Drawing.Size(10, 55);
-			this.uiLine13.Style = Sunny.UI.UIStyle.Custom;
-			this.uiLine13.TabIndex = 12;
-			this.uiLine13.Text = "uiLine13";
-			// 
-			// uiToolTip1
-			// 
-			this.uiToolTip1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(54)))), ((int)(((byte)(54)))), ((int)(((byte)(54)))));
-			this.uiToolTip1.Font = new System.Drawing.Font("微软雅黑", 9F);
-			this.uiToolTip1.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(239)))), ((int)(((byte)(239)))), ((int)(((byte)(239)))));
-			this.uiToolTip1.OwnerDraw = true;
-			this.uiToolTip1.TitleFont = new System.Drawing.Font("微软雅黑", 12F);
-			// 
 			// tableLayoutPanel17
 			// 
 			this.tableLayoutPanel17.ColumnCount = 5;
@@ -1649,9 +1616,45 @@
 			this.uiLabel10.Text = "管圆 轴实时位置";
 			this.uiLabel10.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
 			// 
+			// panel11
+			// 
+			this.panel11.Controls.Add(this.uiLine13);
+			this.panel11.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.panel11.Location = new System.Drawing.Point(1044, 0);
+			this.panel11.Margin = new System.Windows.Forms.Padding(0);
+			this.panel11.Name = "panel11";
+			this.panel11.Size = new System.Drawing.Size(10, 55);
+			this.panel11.TabIndex = 13;
+			// 
+			// uiLine13
+			// 
+			this.uiLine13.BackColor = System.Drawing.Color.Transparent;
+			this.uiLine13.Direction = Sunny.UI.UILine.LineDirection.Vertical;
+			this.uiLine13.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.uiLine13.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			this.uiLine13.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
+			this.uiLine13.LineColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.uiLine13.LineColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.uiLine13.Location = new System.Drawing.Point(0, 0);
+			this.uiLine13.Margin = new System.Windows.Forms.Padding(0);
+			this.uiLine13.MinimumSize = new System.Drawing.Size(1, 1);
+			this.uiLine13.Name = "uiLine13";
+			this.uiLine13.Size = new System.Drawing.Size(10, 55);
+			this.uiLine13.Style = Sunny.UI.UIStyle.Custom;
+			this.uiLine13.TabIndex = 12;
+			this.uiLine13.Text = "uiLine13";
+			// 
+			// uiToolTip1
+			// 
+			this.uiToolTip1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(54)))), ((int)(((byte)(54)))), ((int)(((byte)(54)))));
+			this.uiToolTip1.Font = new System.Drawing.Font("微软雅黑", 9F);
+			this.uiToolTip1.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(239)))), ((int)(((byte)(239)))), ((int)(((byte)(239)))));
+			this.uiToolTip1.OwnerDraw = true;
+			this.uiToolTip1.TitleFont = new System.Drawing.Font("微软雅黑", 12F);
+			// 
 			// MainFrm
 			// 
-			this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
+			this.AutoScaleDimensions = new System.Drawing.SizeF(11F, 24F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 			this.BackColor = System.Drawing.Color.White;
 			this.ClientSize = new System.Drawing.Size(1634, 961);
@@ -1706,11 +1709,11 @@
 			this.panel21.ResumeLayout(false);
 			this.tableLayoutPanel21.ResumeLayout(false);
 			this.panel2.ResumeLayout(false);
-			this.panel11.ResumeLayout(false);
 			this.tableLayoutPanel17.ResumeLayout(false);
 			this.tableLayoutPanel27.ResumeLayout(false);
 			this.tableLayoutPanel29.ResumeLayout(false);
 			this.tableLayoutPanel30.ResumeLayout(false);
+			this.panel11.ResumeLayout(false);
 			this.ResumeLayout(false);
 
 		}

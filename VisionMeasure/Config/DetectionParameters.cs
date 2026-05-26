@@ -19,6 +19,7 @@ namespace Config
 
 		// 版本号
 		public string Version { get; set; } = "1.0";
+	[JsonProperty("上次SKU")] public string LastSkuNumber { get; set; } = "";
 
 		// 最后修改时间
 		public DateTime LastModified { get; set; } = DateTime.Now;
@@ -114,10 +115,10 @@ namespace Config
 			[JsonProperty("触发脉冲宽度(ms)")] public int PulseWidthMs { get; set; } = 50;
 			[JsonProperty("相机1序列号")] public string Camera1SN { get; set; } = "FC79423AAK00087";
 			[JsonProperty("相机2序列号")] public string Camera2SN { get; set; } = "FC79423AAK00060";
-			[JsonProperty("相机3序列号")] public string Camera3SN { get; set; } = "FB12474AAK00017";
-			[JsonProperty("相机4序列号")] public string Camera4SN { get; set; } = "FB12474AAK00006";
-			[JsonProperty("相机5序列号")] public string Camera5SN { get; set; } = "EM57578AAK00046";
-			[JsonProperty("相机6序列号")] public string Camera6SN { get; set; } = "EM57578AAK00010";
+			[JsonProperty("相机3序列号")] public string Camera3SN { get; set; } = "EM57578AAK00046";
+			[JsonProperty("相机4序列号")] public string Camera4SN { get; set; } = "EM57578AAK00010";
+			[JsonProperty("相机5序列号")] public string Camera5SN { get; set; } = "FB12474AAK00017";
+			[JsonProperty("相机6序列号")] public string Camera6SN { get; set; } = "FB12474AAK00006";
 			[JsonProperty("相机7序列号")] public string Camera7SN { get; set; } = "EK64117CAK00003";
 			[JsonProperty("相机8序列号")] public string Camera8SN { get; set; } = "EK64117CAK00004";
 			[JsonProperty("相机1曝光时间(us)")] public double ExposureTime1 { get; set; } = 5000;
@@ -161,7 +162,7 @@ namespace Config
 			[JsonProperty("端面工位启用")] public bool EndFaceEnabled { get; set; } = true;
 			[JsonProperty("背面工位启用")] public bool BackEnabled { get; set; } = true;
 			[JsonProperty("侧面工位启用")] public bool SideEnabled { get; set; } = true;
-			[JsonProperty("输入IN9端口")] public int InPortFront { get; set; } = 9;
+			[JsonProperty("输入IN4端口")] public int InPortFront { get; set; } = 4;
 			[JsonProperty("输入IN10端口")] public int InPortEndFace { get; set; } = 10;
 			[JsonProperty("输入IN11端口")] public int InPortBack { get; set; } = 11;
 			[JsonProperty("输入IN12端口")] public int InPortSideTrigger { get; set; } = 12;

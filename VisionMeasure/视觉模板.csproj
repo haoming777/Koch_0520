@@ -240,9 +240,7 @@
     <Compile Include="From\TempForm.Designer.cs">
       <DependentUpon>TempForm.cs</DependentUpon>
     </Compile>
-    <Compile Include="From\TestFrm.cs">
-      <SubType>Form</SubType>
-    </Compile>
+    <Compile Include="From\TestFrm.cs" />
     <Compile Include="From\TestFrm.Designer.cs">
       <DependentUpon>TestFrm.cs</DependentUpon>
     </Compile>
@@ -264,6 +262,7 @@
     <Compile Include="Utils\DataManager.cs" />
     <Compile Include="Utils\ImageBufferPool.cs" />
     <Compile Include="Utils\ImageCropper.cs" />
+    <Compile Include="Utils\ImageHelper.cs" />
     <Compile Include="Utils\IniHelper.cs" />
     <Compile Include="Utils\MatExtensions.cs" />
     <Compile Include="Utils\PerformanceLogger.cs" />

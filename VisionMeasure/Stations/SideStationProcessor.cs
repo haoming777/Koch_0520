@@ -101,6 +101,7 @@ namespace Stations
 			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
 			queue.Enqueue(ctx);
 			_processQueue.Add((side, ctx));
+			Logger.Debug($"[Side] 图像入队 side={side}, ProductId={productId}, LeftQ={_leftQueue.Count}, RightQ={_rightQueue.Count}, ProcessQ={_processQueue.Count}");
 		}
 
 		public void Start()
@@ -128,11 +129,12 @@ namespace Stations
 		{
 			if (_motionMgr == null || !_motionMgr.IsConnected)
 			{
-				Logger.Warning("运动控制卡未连接，跳过侧面运动控制");
+				Logger.Warning("[Side] 运动控制卡未连接，跳过侧面运动控制");
 				_batchCollecting = false;
 				return;
 			}
 
+			Logger.Info($"[Side] 运动控制开始: 起点={_startPosition}, 终点={_endPosition}, P={_sku.P}, 模式={(UseContinuousMode ? "连续" : "步进")}, EdgeMode={EdgeMode}");
 			_isMoving = true;
 			try
 			{
@@ -180,9 +182,14 @@ namespace Stations
 			{
 				int cameraId = EdgeMode == TriggerEdgeMode.RisingLeftFallingRight ?
 					(sensorState ? 7 : 8) : (sensorState ? 8 : 7);
+				Logger.Debug($"[Side] IN12={(sensorState ? "高" : "低")}, EdgeMode={EdgeMode}, 触发Camera{cameraId}");
 				_motionMgr.SetOutput(cameraId + 7, true);
 				Thread.Sleep(50);
 				_motionMgr.SetOutput(cameraId + 7, false);
+			}
+			else
+			{
+				Logger.Warning("[Side] 无法读取IN12传感器状态");
 			}
 		}
 
@@ -229,10 +236,23 @@ namespace Stations
 					cropped = new Mat(mat, new CvRect(startX, 0, cropW, h)).Clone();
 				}
 
-				YoloInference.YoloResult yoloResult = null;
-				using (var inferScope = new StopwatchScope(t => { })) { }
-
+			YoloInference.YoloResult yoloResult = null;
+				double inferTime = 0;
+				using (var inferScope = new StopwatchScope(t => inferTime = t))
+				{
+					if (_models.SideDefectModel != null)
+						yoloResult = _models.SideDefectModel.Predict(cropped, ConfThreshold, IouThreshold);
+				}
 				var defects = new List<BoxDefect>();
+				if (yoloResult != null && yoloResult.Boxes != null)
+				{
+					for (int i = 0; i < yoloResult.Boxes.Length; i++)
+					{
+						var box = yoloResult.BoxesN[i];
+						defects.Add(new BoxDefect(i, "缺陷" + yoloResult.ClassIds[i],
+							new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }, yoloResult.Scores[i]));
+					}
+				}
 				bool isOk = defects.Count == 0;
 
 				double drawTime = 0;

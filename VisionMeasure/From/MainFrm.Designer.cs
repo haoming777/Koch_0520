@@ -425,7 +425,7 @@
 			this.PlcState.Dock = System.Windows.Forms.DockStyle.Left;
 			this.PlcState.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.PlcState.ForeColor = System.Drawing.Color.White;
-			this.PlcState.Location = new System.Drawing.Point(1094, 7);
+			this.PlcState.Location = new System.Drawing.Point(1134, 7);
 			this.PlcState.MinimumSize = new System.Drawing.Size(1, 1);
 			this.PlcState.Name = "PlcState";
 			this.PlcState.OnCenterColor = System.Drawing.Color.PaleGreen;
@@ -444,7 +444,7 @@
 			this.InitState.Dock = System.Windows.Forms.DockStyle.Left;
 			this.InitState.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.InitState.ForeColor = System.Drawing.Color.White;
-			this.InitState.Location = new System.Drawing.Point(997, 7);
+			this.InitState.Location = new System.Drawing.Point(1037, 7);
 			this.InitState.MinimumSize = new System.Drawing.Size(1, 1);
 			this.InitState.Name = "InitState";
 			this.InitState.OffCenterColor = System.Drawing.Color.Salmon;
@@ -465,7 +465,7 @@
 			this.MotionState.Dock = System.Windows.Forms.DockStyle.Left;
 			this.MotionState.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.MotionState.ForeColor = System.Drawing.Color.White;
-			this.MotionState.Location = new System.Drawing.Point(882, 7);
+			this.MotionState.Location = new System.Drawing.Point(922, 7);
 			this.MotionState.MinimumSize = new System.Drawing.Size(1, 1);
 			this.MotionState.Name = "MotionState";
 			this.MotionState.OnCenterColor = System.Drawing.Color.PaleGreen;
@@ -484,14 +484,14 @@
 			this.camera8State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera8State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera8State.ForeColor = System.Drawing.Color.White;
-			this.camera8State.Location = new System.Drawing.Point(770, 7);
+			this.camera8State.Location = new System.Drawing.Point(805, 7);
 			this.camera8State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera8State.Name = "camera8State";
 			this.camera8State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera8State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera8State.Radius = 21;
 			this.camera8State.ShowText = true;
-			this.camera8State.Size = new System.Drawing.Size(112, 21);
+			this.camera8State.Size = new System.Drawing.Size(117, 21);
 			this.camera8State.State = Sunny.UI.UILightState.Off;
 			this.camera8State.TabIndex = 33;
 			this.camera8State.Text = "右侧面相机";
@@ -503,14 +503,14 @@
 			this.camera7State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera7State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera7State.ForeColor = System.Drawing.Color.White;
-			this.camera7State.Location = new System.Drawing.Point(658, 7);
+			this.camera7State.Location = new System.Drawing.Point(688, 7);
 			this.camera7State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera7State.Name = "camera7State";
 			this.camera7State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera7State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera7State.Radius = 21;
 			this.camera7State.ShowText = true;
-			this.camera7State.Size = new System.Drawing.Size(112, 21);
+			this.camera7State.Size = new System.Drawing.Size(117, 21);
 			this.camera7State.State = Sunny.UI.UILightState.Off;
 			this.camera7State.TabIndex = 32;
 			this.camera7State.Text = "左侧面相机";
@@ -522,17 +522,17 @@
 			this.camera6State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera6State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera6State.ForeColor = System.Drawing.Color.White;
-			this.camera6State.Location = new System.Drawing.Point(546, 7);
+			this.camera6State.Location = new System.Drawing.Point(571, 7);
 			this.camera6State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera6State.Name = "camera6State";
 			this.camera6State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera6State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera6State.Radius = 21;
 			this.camera6State.ShowText = true;
-			this.camera6State.Size = new System.Drawing.Size(112, 21);
+			this.camera6State.Size = new System.Drawing.Size(117, 21);
 			this.camera6State.State = Sunny.UI.UILightState.Off;
 			this.camera6State.TabIndex = 31;
-			this.camera6State.Text = "下端面相机";
+			this.camera6State.Text = "背面相机右";
 			this.camera6State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// camera5State
@@ -541,17 +541,17 @@
 			this.camera5State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera5State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera5State.ForeColor = System.Drawing.Color.White;
-			this.camera5State.Location = new System.Drawing.Point(434, 7);
+			this.camera5State.Location = new System.Drawing.Point(454, 7);
 			this.camera5State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera5State.Name = "camera5State";
 			this.camera5State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera5State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera5State.Radius = 21;
 			this.camera5State.ShowText = true;
-			this.camera5State.Size = new System.Drawing.Size(112, 21);
+			this.camera5State.Size = new System.Drawing.Size(117, 21);
 			this.camera5State.State = Sunny.UI.UILightState.Off;
 			this.camera5State.TabIndex = 26;
-			this.camera5State.Text = "上端面相机";
+			this.camera5State.Text = "背面相机左";
 			this.camera5State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// camera4State
@@ -560,17 +560,17 @@
 			this.camera4State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera4State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera4State.ForeColor = System.Drawing.Color.White;
-			this.camera4State.Location = new System.Drawing.Point(328, 7);
+			this.camera4State.Location = new System.Drawing.Point(343, 7);
 			this.camera4State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera4State.Name = "camera4State";
 			this.camera4State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera4State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera4State.Radius = 21;
 			this.camera4State.ShowText = true;
-			this.camera4State.Size = new System.Drawing.Size(106, 21);
+			this.camera4State.Size = new System.Drawing.Size(111, 21);
 			this.camera4State.State = Sunny.UI.UILightState.Off;
 			this.camera4State.TabIndex = 25;
-			this.camera4State.Text = "反面相机2";
+			this.camera4State.Text = "下端面相机";
 			this.camera4State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// camera3State
@@ -579,17 +579,17 @@
 			this.camera3State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera3State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera3State.ForeColor = System.Drawing.Color.White;
-			this.camera3State.Location = new System.Drawing.Point(222, 7);
+			this.camera3State.Location = new System.Drawing.Point(232, 7);
 			this.camera3State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera3State.Name = "camera3State";
 			this.camera3State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera3State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera3State.Radius = 21;
 			this.camera3State.ShowText = true;
-			this.camera3State.Size = new System.Drawing.Size(106, 21);
+			this.camera3State.Size = new System.Drawing.Size(111, 21);
 			this.camera3State.State = Sunny.UI.UILightState.Off;
 			this.camera3State.TabIndex = 24;
-			this.camera3State.Text = "反面相机1";
+			this.camera3State.Text = "上端面相机";
 			this.camera3State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// panel62
@@ -727,17 +727,17 @@
 			this.camera2State.Dock = System.Windows.Forms.DockStyle.Left;
 			this.camera2State.Font = new System.Drawing.Font("微软雅黑", 12F);
 			this.camera2State.ForeColor = System.Drawing.Color.White;
-			this.camera2State.Location = new System.Drawing.Point(116, 7);
+			this.camera2State.Location = new System.Drawing.Point(121, 7);
 			this.camera2State.MinimumSize = new System.Drawing.Size(1, 1);
 			this.camera2State.Name = "camera2State";
 			this.camera2State.OnCenterColor = System.Drawing.Color.PaleGreen;
 			this.camera2State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera2State.Radius = 21;
 			this.camera2State.ShowText = true;
-			this.camera2State.Size = new System.Drawing.Size(106, 21);
+			this.camera2State.Size = new System.Drawing.Size(111, 21);
 			this.camera2State.State = Sunny.UI.UILightState.Off;
 			this.camera2State.TabIndex = 6;
-			this.camera2State.Text = "正面相机2";
+			this.camera2State.Text = "正面相机右";
 			this.camera2State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// camera1State
@@ -753,10 +753,10 @@
 			this.camera1State.OnColor = System.Drawing.Color.ForestGreen;
 			this.camera1State.Radius = 21;
 			this.camera1State.ShowText = true;
-			this.camera1State.Size = new System.Drawing.Size(106, 21);
+			this.camera1State.Size = new System.Drawing.Size(111, 21);
 			this.camera1State.State = Sunny.UI.UILightState.Off;
 			this.camera1State.TabIndex = 2;
-			this.camera1State.Text = "正面相机1";
+			this.camera1State.Text = "正面相机左";
 			this.camera1State.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// panel3
@@ -3118,7 +3118,7 @@
 			// 
 			// MainFrm
 			// 
-			this.AutoScaleDimensions = new System.Drawing.SizeF(11F, 24F);
+			this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 			this.BackColor = System.Drawing.Color.White;
 			this.ClientSize = new System.Drawing.Size(1711, 1048);

@@ -57,6 +57,8 @@ namespace CommonLib
 		{
 			if (bmp == null || _isDisposed) return;
 			_queue.Add(new ImageTask { Image = (Bitmap)bmp.Clone(), FilePath = path, Format = format });
+			if (_queue.Count > 100)
+				Logger.Warning($"[ImageSaver] 存图队列积压: {_queue.Count}");
 		}
 
 		// ================== 兼容旧代码 ==================

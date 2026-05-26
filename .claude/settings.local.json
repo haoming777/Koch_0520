@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(awk 'NR==1245{print \"\\\\t\\\\t/// <summary>释放所有相机SDK实例</summary>\"; print \"\\\\t\\\\tprivate void DisposeAllCameras\\(\\)\"; print \"\\\\t\\\\t{\"; print \"\\\\t\\\\t\\\\tvar cameras = new[] { camera1SDK, camera2SDK, camera3SDK, camera4SDK, camera5SDK, camera6SDK, camera7SDK, camera8SDK };\"; print \"\\\\t\\\\t\\\\tforeach \\(var cam in cameras\\)\"; print \"\\\\t\\\\t\\\\t{\"; print \"\\\\t\\\\t\\\\t\\\\tif \\(cam == null\\) continue;\"; print \"\\\\t\\\\t\\\\t\\\\ttry { cam.StopStreamGrabber\\(\\); } catch \\(Exception ex\\) { Logger.Error\\($\\\\\"相机StopStreamGrabber异常: {ex.Message}\\\\\"\\); }\"; print \"\\\\t\\\\t\\\\t\\\\ttry { cam.Close\\(\\); } catch \\(Exception ex\\) { Logger.Error\\($\\\\\"相机Close异常: {ex.Message}\\\\\"\\); }\"; print \"\\\\t\\\\t\\\\t}\"; print \"\\\\t\\\\t\\\\tLogger.Info\\(\\\\\"所有相机已释放\\\\\"\\);\"; print \"\\\\t\\\\t}\"; print \"\"}1' VisionMeasure/From/MainFrm.cs)",
+      "Bash(mv /tmp/MainFrm_tmp.cs VisionMeasure/From/MainFrm.cs)"
+    ]
+  }
+}

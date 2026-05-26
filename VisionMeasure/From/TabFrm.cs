@@ -3,7 +3,8 @@ using Sunny.UI;
 using System;
 using System.Windows.Forms;
 using UI;
-using VisionMeasure.Utils;using CommonLib;
+using VisionMeasure.Utils;
+using CommonLib;
 using System.Drawing;
 
 namespace VisionMeasure.From
@@ -37,7 +38,9 @@ namespace VisionMeasure.From
 					case "相机设置":
 						if (_mainFrm == null) return;
 
-						var setCameraForm = new SetCamera.MainFrm(_mainFrm.GetMotionHandle(), _mainFrm.GetModbusClass());
+						var setCameraForm = new SetCamera.MainFrm(_mainFrm.GetMotionHandle(), _mainFrm.GetModbusClass(),
+								_mainFrm.GetCamera1(), _mainFrm.GetCamera2(), _mainFrm.GetCamera3(), _mainFrm.GetCamera4(),
+								_mainFrm.GetCamera5(), _mainFrm.GetCamera6(), _mainFrm.GetCamera7(), _mainFrm.GetCamera8());
 						setCameraForm.cam1 = _mainFrm.GetCamera1();
 						setCameraForm.cam2 = _mainFrm.GetCamera2();
 						setCameraForm.cam3 = _mainFrm.GetCamera3();
@@ -81,24 +84,24 @@ namespace VisionMeasure.From
 		}
 
 		private void OpenTestForm()
-{
-    try
-    {
-        if (_mainFrm != null)
-        {
-            var motionMgr = _mainFrm.GetMotionControlManager();
-            var cameraMgr = _mainFrm.GetCameraManager();
-            var aiModels = _mainFrm.GetAiModelManager();
-            var testForm = new UI.TestForm(motionMgr, cameraMgr, aiModels);
-            testForm.ShowDialog();
-        }
-    }
-    catch (Exception ex)
-    {
-        Logger.Error($"打开测试工具失败: {ex.Message}");
-        MessageBox.Show($"打开测试工具失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    }
-}
+		{
+			try
+			{
+				if (_mainFrm != null)
+				{
+					var motionMgr = _mainFrm.GetMotionControlManager();
+					var cameraMgr = _mainFrm.GetCameraManager(); // 已弃用，相机现在由MainFrm直接管理
+					var aiModels = _mainFrm.GetAiModelManager();
+					var testForm = new UI.TestForm(motionMgr, cameraMgr, aiModels);
+					testForm.ShowDialog();
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"打开测试工具失败: {ex.Message}");
+				MessageBox.Show($"打开测试工具失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		}
 
 		private void closeBtn_Click(object sender, EventArgs e)
 		{

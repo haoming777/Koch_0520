@@ -2,12 +2,15 @@ using Config;
 using Detection;
 using Hardware;
 using Models;
+using MT.Camera.SDK;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using Sunny.UI;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,1525 +18,239 @@ using System.Windows.Forms;
 using VisionMeasure.Utils;
 using CommonLib;
 using XL.Controls;
+using YoloInference;
+using YoloSegmentationEnd2End;
 using BmpConverter = OpenCvSharp.Extensions.BitmapConverter;
-// 解决 Point 和 Size 二义性问题
-using CvPoint = OpenCvSharp.Point;
 using CvRect = OpenCvSharp.Rect;
-using CvSize = OpenCvSharp.Size;
 using DrawPoint = System.Drawing.Point;
 using DrawSize = System.Drawing.Size;
+using Rect = System.Drawing.Rectangle;
+using DetResult = YoloInference.YoloResult;
+using SegResult = YoloSegmentationEnd2End.YoloResult;
 
 namespace UI
 {
+	internal class TestDefect { public string Type; public float[] Box; public float Score; public TestDefect(string t, float[] b, float s) { Type = t; Box = b; Score = s; } }
+
 	public partial class TestForm : UIForm
 	{
+		private static readonly Color PriC = Color.FromArgb(0, 122, 204);
+		private static readonly Color OkC = Color.FromArgb(39, 174, 96);
+		private static readonly Color NgC = Color.FromArgb(231, 76, 60);
+		private static readonly Color BgC = Color.FromArgb(245, 247, 250);
+		private static readonly Color CardC = Color.White;
+
 		private readonly MotionControlManager _motion;
-		private readonly CameraManager _cameraMgr;
+		private readonly DaHuaSDK[] _cameras;
 		private AiModelManager _aiModels;
-		private SkuData _currentSku;
+		private SkuData _sku = new SkuData { SkuNumber = "TEST", P = 8, Z = 2, MM = 42 };
+		private string _st = "正面";
+		private Mat _m1, _m2, _m3;
+		private List<Mat> _batch = new List<Mat>(); private int _bi;
+		private List<Mat> _mbatch = new List<Mat>(); private int _mbi;
+		private double _tMs;
 
-		// 当前加载的图像
-		private Mat _currentLeftMat;
-		private Mat _currentRightMat;
-		private Mat _currentUpperMat;
-		private Mat _currentLowerMat;
-		private Mat _currentSideMat;
+		private TabControl _tab;
+		private UIComboBox _cmbSt, _cmbM;
+		private UIButton _bImg, _bCam, _bRun, _bMImg, _bMCam, _bMRun, _bPrv, _bNxt, _bMPrv, _bMNxt;
+		private XLPictureBox _pi1, _pi2, _po, _pm1, _pm2;
+		private DataGridView _grd; private RichTextBox _log, _mlog;
+		private NumericUpDown _nConf, _nIou, _nP, _nCrop, _nThick, _nBlue, _nHole, _nMConf, _nMIou, _nMBatch, _nMCrop, _nMThick, _nMBlue, _nMHole;
+		private UILabel _lblT, _lblMT, _lblPg, _lblMPg, _lblMI, _lblS;
+		private ProgressBar _pb;
 
-		// 当前工位选择
-		private string _currentStation = "正面";
+		public TestForm(MotionControlManager m, CameraManager cm, AiModelManager a = null) { _motion = m; _cameras = null; _aiModels = a; Bld(); this.Load += OnLd; }
+		public TestForm(MotionControlManager m, DaHuaSDK[] c, AiModelManager a = null) { _motion = m; _cameras = c; _aiModels = a; Bld(); this.Load += OnLd; }
 
-		// TabControl
-		private TabControl _mainTab;
-		private TabPage _tabStationTest;
-		private TabPage _tabModelTest;
+		private void OnLd(object s, EventArgs e) { VisionMeasure.MainFrm.ManualTestMode = true; Log("手动测试模式已启用"); if (_aiModels == null) { try { _aiModels = new AiModelManager(ModelPathConfig.LoadFromSysConfig()); _aiModels.LoadAllModels(); Log("模型加载完成"); } catch (Exception ex) { Log("加载失败:" + ex.Message, true); } } else Log("使用主界面模型"); }
 
-		// ========== 工位测试页控件 ==========
-		private UIComboBox _stationCombo;
-		private UIButton _loadImageBtn;
-		private UIButton _runTestBtn;
-		private XLPictureBox _picInputLeft;
-		private XLPictureBox _picInputRight;
-		private XLPictureBox _picResult;
-		private UILabel _resultLabel;
-		private UILabel _detailLabel;
-		private UILabel _timeLabel;
-		private UIListBox _defectListBox;
-		private UITextBox _logTextBox;
-
-		// ========== 模型单独测试页控件 ==========
-		private UIComboBox _modelCombo;
-		private UIButton _loadModelBtn;
-		private UIButton _loadModelImageBtn;
-		private UIButton _runModelBtn;
-		private XLPictureBox _picModelInput;
-		private XLPictureBox _picModelOutput;
-		private UILabel _modelInfoLabel;
-		private UILabel _modelTimeLabel;
-		private UITextBox _modelResultBox;
-		private UITextBox _modelLogTextBox;
-
-		// ========== 状态栏 ==========
-		private UILight _testStateLight;
-		private UILabel _statusLabel;
-		private UILabel _memLabel;
-
-		public TestForm(MotionControlManager motion, CameraManager cameraMgr, AiModelManager aiModels = null)
+		void Bld()
 		{
-			_motion = motion;
-			_cameraMgr = cameraMgr;
-			_aiModels = aiModels;
-			InitializeComponent();
+			this.Text = "KOCH 测试工具"; this.Size = new DrawSize(1500, 950); this.StartPosition = FormStartPosition.CenterParent; this.BackColor = BgC;
+			_tab = new TabControl { Dock = DockStyle.Fill, Font = new Font("微软雅黑", 10F) }; _tab.TabPages.Add(TabSt()); _tab.TabPages.Add(TabM()); this.Controls.Add(_tab);
+			var bar = new Panel { Dock = DockStyle.Bottom, Height = 28, BackColor = Color.FromArgb(47, 60, 76) };
+			_lblS = new UILabel { Text = "就绪", ForeColor = Color.White, Location = new DrawPoint(12, 4), Size = new DrawSize(900, 20), Font = new Font("微软雅黑", 9F) };
+			_pb = new ProgressBar { Style = ProgressBarStyle.Marquee, Width = 150, Height = 16, Location = new DrawPoint(1320, 6), Visible = false };
+			bar.Controls.Add(_lblS); bar.Controls.Add(_pb); this.Controls.Add(bar);
+		}
+		Panel Cd(int w, int h) => new Panel { Width = w, Height = h, BackColor = CardC, Margin = new Padding(4), BorderStyle = BorderStyle.None };
+		XLPictureBox Pc() => new XLPictureBox { Dock = DockStyle.Fill, BackColor1 = Color.FromArgb(50, 50, 50), BackColor2 = Color.FromArgb(70, 70, 70), BackgroundGridSize = 20 };
+		Panel Wp(XLPictureBox p, string t) { var r = new Panel { Dock = DockStyle.Fill, Padding = new Padding(4) }; r.Controls.Add(p); r.Controls.Add(new Label { Text = "  " + t, Dock = DockStyle.Top, Height = 20, BackColor = Color.FromArgb(240, 242, 245), Font = new Font("微软雅黑", 8F, FontStyle.Bold) }); return r; }
+		NumericUpDown Nu(decimal v, decimal mn, decimal mx, int w = 65) => new NumericUpDown { Width = w, Minimum = mn, Maximum = mx, Value = v, DecimalPlaces = 2, Increment = 0.05m, Font = new Font("微软雅黑", 9F) };
 
-			// 延迟加载，等待窗体完全创建
-			this.Load += TestForm_Load;
+		// ====== STATION TAB ======
+		TabPage TabSt()
+		{
+			var pg = new TabPage("工位测试"); var lo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+			lo.RowStyles.Add(new RowStyle(SizeType.Absolute, 160)); lo.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); lo.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+			lo.Controls.Add(TopSt(), 0, 0); lo.Controls.Add(ImgSt(), 0, 1); lo.Controls.Add(BtmSt(), 0, 2); pg.Controls.Add(lo); return pg;
+		}
+		Panel TopSt()
+		{
+			var pn = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), BackColor = BgC };
+			var c1 = Cd(260, 140);
+			_cmbSt = new UIComboBox { Location = new DrawPoint(10, 28), Size = new DrawSize(240, 28), DropDownStyle = UIDropDownStyle.DropDownList };
+			_cmbSt.Items.AddRange(new object[] { "正面", "背面", "上端面", "下端面", "侧面" }); _cmbSt.SelectedIndex = 0;
+			_cmbSt.SelectedIndexChanged += (s, e) => { _st = _cmbSt.SelectedItem.ToString(); Clr(); };
+			c1.Controls.Add(_cmbSt); c1.Controls.Add(Lbl("P数:", 10, 65, 30)); _nP = Nu(8, 1, 20, 55); _nP.Location = new DrawPoint(45, 63); _nP.DecimalPlaces = 0; _nP.Increment = 1; c1.Controls.Add(_nP);
+			c1.Controls.Add(Lbl("裁底:", 10, 95, 40)); _nCrop = Nu(0.33m, 0, 1, 55); _nCrop.Location = new DrawPoint(50, 93); c1.Controls.Add(_nCrop); pn.Controls.Add(c1);
+
+			var c2 = Cd(260, 140);
+			_bImg = new UIButton { Text = "加载离线图", Location = new DrawPoint(10, 15), Size = new DrawSize(240, 35), Font = new Font("微软雅黑", 9F), Radius = 6, Cursor = Cursors.Hand }; _bImg.Click += BtnImg;
+			_bCam = new UIButton { Text = "相机采图", Location = new DrawPoint(10, 55), Size = new DrawSize(240, 35), Font = new Font("微软雅黑", 9F), Radius = 6, Cursor = Cursors.Hand, FillColor = PriC }; _bCam.Click += BtnCam;
+			c2.Controls.Add(_bImg); c2.Controls.Add(_bCam);
+			_bPrv = new UIButton { Text = "<", Location = new DrawPoint(60, 100), Size = new DrawSize(60, 28), Font = new Font("微软雅黑", 9F), Radius = 4, Cursor = Cursors.Hand, Enabled = false }; _bPrv.Click += (s, e) => { if (_batch.Count > 0) { _bi = (_bi - 1 + _batch.Count) % _batch.Count; ShwB(); } };
+			_bNxt = new UIButton { Text = ">", Location = new DrawPoint(140, 100), Size = new DrawSize(60, 28), Font = new Font("微软雅黑", 9F), Radius = 4, Cursor = Cursors.Hand, Enabled = false }; _bNxt.Click += (s, e) => { if (_batch.Count > 0) { _bi = (_bi + 1) % _batch.Count; ShwB(); } };
+			_lblPg = new UILabel { Text = "", Location = new DrawPoint(80, 130), Size = new DrawSize(100, 12), TextAlign = ContentAlignment.MiddleCenter, Font = new Font("微软雅黑", 7F) };
+			c2.Controls.Add(_bPrv); c2.Controls.Add(_bNxt); c2.Controls.Add(_lblPg); pn.Controls.Add(c2);
+
+			var c3 = Cd(240, 140);
+			c3.Controls.Add(Lbl("Conf:", 10, 18, 45)); _nConf = Nu(0.5m, 0.05m, 1.0m); _nConf.Location = new DrawPoint(52, 16); c3.Controls.Add(_nConf);
+			c3.Controls.Add(Lbl("IOU:", 125, 18, 35)); _nIou = Nu(0.45m, 0.05m, 1.0m); _nIou.Location = new DrawPoint(158, 16); c3.Controls.Add(_nIou);
+			c3.Controls.Add(Lbl("厚度:", 10, 48, 45, 8)); _nThick = Nu(30, 1, 200, 55); _nThick.Location = new DrawPoint(52, 46); _nThick.DecimalPlaces = 1; c3.Controls.Add(_nThick);
+			c3.Controls.Add(Lbl("蓝区/孔:", 10, 76, 55, 8)); _nBlue = Nu(0, 0, 10, 40); _nBlue.Location = new DrawPoint(65, 74); _nBlue.DecimalPlaces = 0; _nBlue.Increment = 1; c3.Controls.Add(_nBlue);
+			_nHole = Nu(1, 0, 10, 40); _nHole.Location = new DrawPoint(110, 74); _nHole.DecimalPlaces = 0; _nHole.Increment = 1; c3.Controls.Add(_nHole); pn.Controls.Add(c3);
+
+			var c4 = Cd(200, 140);
+			_bRun = new UIButton { Text = "执行检测", Location = new DrawPoint(10, 20), Size = new DrawSize(180, 50), Font = new Font("微软雅黑", 12F, FontStyle.Bold), Radius = 8, Cursor = Cursors.Hand, FillColor = OkC, Enabled = false }; _bRun.Click += BtnRun;
+			_lblT = new UILabel { Text = "耗时: --", Location = new DrawPoint(10, 80), Size = new DrawSize(180, 20), TextAlign = ContentAlignment.MiddleCenter, Font = new Font("微软雅黑", 9F) };
+			c4.Controls.Add(_bRun); c4.Controls.Add(_lblT); pn.Controls.Add(c4); return pn;
+		}
+		Panel ImgSt() { var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 }; p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33)); p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33)); p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34)); _pi1 = Pc(); _pi2 = Pc(); _po = Pc(); p.Controls.Add(Wp(_pi1, "输入1"), 0, 0); p.Controls.Add(Wp(_pi2, "输入2"), 1, 0); p.Controls.Add(Wp(_po, "结果"), 2, 0); return p; }
+		Panel BtmSt()
+		{
+			var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 }; p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45)); p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+			_grd = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, BackgroundColor = Color.White, Font = new Font("微软雅黑", 9F) };
+			_grd.Columns.Add("Box", "#"); _grd.Columns.Add("St", "状态"); _grd.Columns.Add("Def", "缺陷"); _grd.Columns.Add("Conf", "置信度");
+			_log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(30, 30, 30), ForeColor = Color.FromArgb(180, 180, 180), Font = new Font("Consolas", 9F), BorderStyle = BorderStyle.None };
+			var a = new Panel { Dock = DockStyle.Fill }; a.Controls.Add(new Label { Text = "  缺陷详情", Dock = DockStyle.Top, Height = 22, BackColor = Color.FromArgb(240, 242, 245), Font = new Font("微软雅黑", 9F, FontStyle.Bold) }); a.Controls.Add(_grd);
+			var b = new Panel { Dock = DockStyle.Fill }; b.Controls.Add(new Label { Text = "  日志", Dock = DockStyle.Top, Height = 22, BackColor = Color.FromArgb(240, 242, 245), Font = new Font("微软雅黑", 9F, FontStyle.Bold) }); b.Controls.Add(_log);
+			p.Controls.Add(a, 0, 0); p.Controls.Add(b, 1, 0); return p;
 		}
 
-		private void TestForm_Load(object sender, EventArgs e)
+		// ====== MODEL TAB ======
+		TabPage TabM()
 		{
-			if (_aiModels == null)
-			{
-				LoadAiModels();
-			}
-			else
-			{
-				AddLog("使用主界面的AI模型实例");
-				UpdateUI(() =>
-				{
-					_statusLabel.Text = "AI模型已就绪（使用主界面实例）";
-				});
-			}
-			InitSkuData();
+			var pg = new TabPage("模型测试"); var lo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+			lo.RowStyles.Add(new RowStyle(SizeType.Absolute, 155)); lo.RowStyles.Add(new RowStyle(SizeType.Percent, 45)); lo.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+			lo.Controls.Add(TopM(), 0, 0); lo.Controls.Add(ImgM(), 0, 1); lo.Controls.Add(BtmM(), 0, 2); pg.Controls.Add(lo); return pg;
+		}
+		Panel TopM()
+		{
+			var pn = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), BackColor = BgC };
+			var c1 = Cd(320, 135);
+			_cmbM = new UIComboBox { Location = new DrawPoint(10, 28), Size = new DrawSize(300, 28), DropDownStyle = UIDropDownStyle.DropDownList };
+			_cmbM.Items.AddRange(new object[] { "正面-盒子破检测", "正面-P号码OCR", "上端面-缺陷检测", "下端面-缺陷检测", "背面-条形码检测", "背面-日期码OCR", "背面-明显挂钩错位", "背面-轻微挂钩错位", "背面-挂钩综合(双模型)", "侧面-缺陷检测" });
+			_cmbM.SelectedIndex = 0; c1.Controls.Add(_cmbM);
+			_lblMI = new UILabel { Text = "选择模型后加载图像执行推理", Location = new DrawPoint(10, 65), Size = new DrawSize(300, 55), Font = new Font("微软雅黑", 8F), ForeColor = Color.Gray }; c1.Controls.Add(_lblMI); pn.Controls.Add(c1);
+
+			var c2 = Cd(260, 135);
+			_bMImg = new UIButton { Text = "加载图像", Location = new DrawPoint(10, 12), Size = new DrawSize(240, 32), Font = new Font("微软雅黑", 8F), Radius = 4, Cursor = Cursors.Hand }; _bMImg.Click += BtnMImg;
+			_bMCam = new UIButton { Text = "相机采图", Location = new DrawPoint(10, 48), Size = new DrawSize(240, 32), Font = new Font("微软雅黑", 8F), Radius = 4, Cursor = Cursors.Hand, FillColor = PriC }; _bMCam.Click += BtnMCam;
+			_bMRun = new UIButton { Text = "执行推理", Location = new DrawPoint(10, 84), Size = new DrawSize(240, 38), Font = new Font("微软雅黑", 10F, FontStyle.Bold), Radius = 6, Cursor = Cursors.Hand, FillColor = OkC, Enabled = false }; _bMRun.Click += BtnMRun;
+			c2.Controls.Add(_bMImg); c2.Controls.Add(_bMCam); c2.Controls.Add(_bMRun); pn.Controls.Add(c2);
+
+			var c3 = Cd(300, 135);
+			c3.Controls.Add(Lbl("Conf:", 8, 12, 38, 8)); _nMConf = Nu(0.5m, 0.05m, 1.0m, 50); _nMConf.Location = new DrawPoint(45, 10); c3.Controls.Add(_nMConf);
+			c3.Controls.Add(Lbl("IOU:", 100, 12, 32, 8)); _nMIou = Nu(0.45m, 0.05m, 1.0m, 50); _nMIou.Location = new DrawPoint(130, 10); c3.Controls.Add(_nMIou);
+			c3.Controls.Add(Lbl("Batch:", 185, 12, 42, 8)); _nMBatch = Nu(1, 1, 20, 48); _nMBatch.Location = new DrawPoint(225, 10); _nMBatch.DecimalPlaces = 0; _nMBatch.Increment = 1; c3.Controls.Add(_nMBatch);
+			c3.Controls.Add(Lbl("裁底:", 8, 40, 40, 8)); _nMCrop = Nu(0.33m, 0, 1, 50); _nMCrop.Location = new DrawPoint(48, 38); c3.Controls.Add(_nMCrop);
+			c3.Controls.Add(Lbl("厚度:", 105, 40, 38, 8)); _nMThick = Nu(30, 1, 200, 50); _nMThick.Location = new DrawPoint(140, 38); _nMThick.DecimalPlaces = 1; c3.Controls.Add(_nMThick);
+			c3.Controls.Add(Lbl("蓝区/孔:", 8, 66, 60, 8)); _nMBlue = Nu(0, 0, 10, 38); _nMBlue.Location = new DrawPoint(65, 64); _nMBlue.DecimalPlaces = 0; _nMBlue.Increment = 1; c3.Controls.Add(_nMBlue);
+			_nMHole = Nu(1, 0, 10, 38); _nMHole.Location = new DrawPoint(108, 64); _nMHole.DecimalPlaces = 0; _nMHole.Increment = 1; c3.Controls.Add(_nMHole);
+			_lblMT = new UILabel { Text = "时间: --", Location = new DrawPoint(8, 95), Size = new DrawSize(140, 18), Font = new Font("微软雅黑", 8F, FontStyle.Bold) };
+			_bMPrv = new UIButton { Text = "<", Location = new DrawPoint(150, 92), Size = new DrawSize(40, 26), Font = new Font("微软雅黑", 8F), Radius = 3, Cursor = Cursors.Hand, Enabled = false }; _bMPrv.Click += (s, e) => { if (_mbatch.Count > 0) { _mbi = (_mbi - 1 + _mbatch.Count) % _mbatch.Count; ShwMB(); } };
+			_bMNxt = new UIButton { Text = ">", Location = new DrawPoint(194, 92), Size = new DrawSize(40, 26), Font = new Font("微软雅黑", 8F), Radius = 3, Cursor = Cursors.Hand, Enabled = false }; _bMNxt.Click += (s, e) => { if (_mbatch.Count > 0) { _mbi = (_mbi + 1) % _mbatch.Count; ShwMB(); } };
+			_lblMPg = new UILabel { Text = "", Location = new DrawPoint(240, 95), Size = new DrawSize(55, 18), Font = new Font("微软雅黑", 8F), TextAlign = ContentAlignment.MiddleCenter };
+			c3.Controls.Add(_lblMT); c3.Controls.Add(_bMPrv); c3.Controls.Add(_bMNxt); c3.Controls.Add(_lblMPg); pn.Controls.Add(c3); return pn;
+		}
+		Panel ImgM() { var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 }; _pm1 = Pc(); _pm2 = Pc(); p.Controls.Add(Wp(_pm1, "输入"), 0, 0); p.Controls.Add(Wp(_pm2, "结果"), 1, 0); return p; }
+		Panel BtmM() { _mlog = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(30, 30, 30), ForeColor = Color.FromArgb(180, 180, 180), Font = new Font("Consolas", 9F), BorderStyle = BorderStyle.None }; var p = new Panel { Dock = DockStyle.Fill }; p.Controls.Add(new Label { Text = "  推理日志", Dock = DockStyle.Top, Height = 22, BackColor = Color.FromArgb(240, 242, 245), Font = new Font("微软雅黑", 9F, FontStyle.Bold) }); p.Controls.Add(_mlog); return p; }
+
+		// ====== HANDLERS ======
+		Label Lbl(string t, int x, int y, int w, float sz = 9) => new Label { Text = t, Location = new DrawPoint(x, y), Size = new DrawSize(w, 22), Font = new Font("微软雅黑", sz) };
+		void UI(Action a) { this.BeginInvoke(a); }
+		void Busy(bool b) { UI(() => _pb.Visible = b); }
+		List<string> Ns(int p) { var s = new List<string>(p); for (int i = 0; i < p; i++) s.Add("OK"); return s; }
+		bool Ao(List<string> s) { for (int i = 0; i < s.Count; i++) if (s[i] != "OK") return false; return true; }
+
+		void Log(string m, bool e = false) { string l = "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + m; UI(() => { if (_log.IsDisposed) return; _log.SelectionStart = _log.TextLength; _log.SelectionColor = e ? NgC : Color.FromArgb(180, 180, 180); _log.AppendText(l + "\n"); _log.ScrollToCaret(); if (_log.TextLength > 10000) _log.Text = _log.Text.Substring(_log.TextLength - 8000); }); if (e) Logger.Error(m); else Logger.Info(m); }
+		void MLog(string m) { string l = "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + m; UI(() => { if (_mlog.IsDisposed) return; _mlog.AppendText(l + "\n"); _mlog.ScrollToCaret(); }); Logger.Info("[MT] " + m); }
+
+		void BtnImg(object s, EventArgs e)
+		{
+			bool fb = _st == "正面" || _st == "背面"; bool ef = _st == "上端面" || _st == "下端面";
+			using (var d = new OpenFileDialog { Title = "选择图像", Filter = "所有图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff", Multiselect = fb || ef })
+			{ if (d.ShowDialog() != DialogResult.OK) return; Clr(); try { if (fb) { if (d.FileNames.Length < 2) { MessageBox.Show("需要2张!"); return; } _m1 = Cv2.ImRead(d.FileNames[0]); _m2 = Cv2.ImRead(d.FileNames[1]); _pi1.Image = BmpConverter.ToBitmap(_m1); _pi2.Image = BmpConverter.ToBitmap(_m2); } else if (ef) { foreach (var f in d.FileNames) _batch.Add(Cv2.ImRead(f)); _bi = 0; UpPg(); ShwB(); Log("加载" + _batch.Count + "张"); } else { var m = Cv2.ImRead(d.FileName); if (ef) _m3 = m; else _m3 = m; _pi1.Image = BmpConverter.ToBitmap(m); } _bRun.Enabled = true; Log("图像就绪"); } catch (Exception ex) { Log("加载失败:" + ex.Message, true); } }
+		}
+		void BtnCam(object s, EventArgs e) { if (_cameras == null) { MessageBox.Show("相机未初始化"); return; } int ci = _st == "背面" ? 4 : _st == "上端面" ? 2 : _st == "下端面" ? 3 : _st == "侧面" ? 6 : 0; if (_cameras[ci] == null) { MessageBox.Show("Cam" + (ci + 1) + "未连接"); return; } Busy(true); var c = _cameras[ci]; Task.Run(() => { try { c.setTriggerSource(0); System.Threading.Thread.Sleep(50); c.ExecuteSoftwareTrigger(); System.Threading.Thread.Sleep(100); c.setTriggerSource(1); UI(() => Log("Cam" + (ci + 1) + "触发完成")); } catch (Exception ex) { UI(() => Log("失败:" + ex.Message, true)); } finally { UI(() => Busy(false)); } }); }
+
+		async void BtnRun(object s, EventArgs e)
+		{
+			if (_aiModels == null) { MessageBox.Show("模型未加载!"); return; }
+			Busy(true); _bRun.Enabled = false; var sw = Stopwatch.StartNew(); Log("===== " + _st + " =====");
+			try { await Task.Run(() => { if (_st == "正面") DoF(); else if (_st == "背面") DoB(); else if (_st == "上端面") DoE(true); else if (_st == "下端面") DoE(false); else DoS(); }); sw.Stop(); UI(() => { _lblT.Text = "耗时:" + sw.ElapsedMilliseconds + "ms(推理:" + _tMs.ToString("F0") + "ms)"; }); Log("完成:" + sw.ElapsedMilliseconds + "ms"); }
+			catch (Exception ex) { Log("失败:" + ex.Message, true); }
+			finally { UI(() => { _bRun.Enabled = true; Busy(false); }); }
 		}
 
-		private void InitializeComponent()
+		void DoF() { int p = (int)_nP.Value, h = p / 2; var st = Ns(p); var ad = new Dictionary<int, List<TestDefect>>(); if (_aiModels.FrontBoxBreakModel != null) { var s = Stopwatch.StartNew(); var lr = _aiModels.FrontBoxBreakModel.Predict(_m1, (float)_nConf.Value, (float)_nIou.Value); var rr = _aiModels.FrontBoxBreakModel.Predict(_m2, (float)_nConf.Value, (float)_nIou.Value); _tMs = s.Elapsed.TotalMilliseconds; Cl(lr, 0, h, "盒子破损", ad); Cl(rr, h, p, "盒子破损", ad); } foreach (var kv in ad) if (kv.Value.Count > 0) st[kv.Key] = string.Join(",", kv.Value.ConvertAll(d => d.Type)); bool ok = Ao(st); var mg = Mg(Dr(_m1, Fd(ad, 0, h), st, 0, h), Dr(_m2, Fd(ad, h, p), st, h, p)); UI(() => { _po.Image = mg; Gp(st, ad); }); }
+		void DoB() { int p = (int)_nP.Value, h = p / 2; var st = Ns(p); var ad = new Dictionary<int, List<TestDefect>>(); if (_aiModels.BackHookModel != null) { var s = Stopwatch.StartNew(); var lr = _aiModels.BackHookModel.Predict(_m1, (float)_nConf.Value, (float)_nIou.Value); var rr = _aiModels.BackHookModel.Predict(_m2, (float)_nConf.Value, (float)_nIou.Value); _tMs = s.Elapsed.TotalMilliseconds; Cl(lr, 0, h, "挂钩明显错位", ad); Cl(rr, h, p, "挂钩明显错位", ad); } if (_aiModels.HookSlightModel != null) { var lr = _aiModels.HookSlightModel.Predict(_m1, (float)_nConf.Value); var rr = _aiModels.HookSlightModel.Predict(_m2, (float)_nConf.Value); Cs(lr, 0, h, "轻微挂钩错位", ad); Cs(rr, h, p, "轻微挂钩错位", ad); } if (_aiModels.BackBarcodeModel != null) { var lr = _aiModels.BackBarcodeModel.Predict(_m1, (float)_nConf.Value, (float)_nIou.Value); var rr = _aiModels.BackBarcodeModel.Predict(_m2, (float)_nConf.Value, (float)_nIou.Value); Cl(lr, 0, h, "条形码错误", ad); Cl(rr, h, p, "条形码错误", ad); } foreach (var kv in ad) if (kv.Value.Count > 0) st[kv.Key] = string.Join(",", kv.Value.ConvertAll(d => d.Type)); bool ok = Ao(st); var mg = Mg(Dr(_m1, Fd(ad, 0, h), st, 0, h), Dr(_m2, Fd(ad, h, p), st, h, p)); UI(() => { _po.Image = mg; Gp(st, ad); }); }
+		void DoE(bool up) { var mdl = up ? _aiModels.EndFaceUpperModel : _aiModels.EndFaceLowerModel; var ms = _batch.Count > 0 ? _batch : (_m3 != null ? new List<Mat> { _m3 } : new List<Mat>()); if (mdl == null || ms.Count == 0) { Log("模型未加载或无图像"); return; } var s = Stopwatch.StartNew(); var rs = mdl.PredictBatch(ms, (float)_nConf.Value, (float)_nIou.Value); _tMs = s.Elapsed.TotalMilliseconds; _batch.Clear(); for (int j = 0; j < ms.Count; j++) { var bdf = new List<TestDefect>(); if (rs != null && j < rs.Count && rs[j].Boxes != null) for (int i = 0; i < rs[j].Boxes.Length; i++) { var bx = rs[j].BoxesN[i]; int cid = rs[j].ClassIds[i]; string tp = cid == 0 ? "搭舌缺陷" : cid == 1 ? "边缘问题" : cid == 2 ? "破损" : "缺陷" + cid; bdf.Add(new TestDefect(tp, new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, rs[j].Scores[i])); } _batch.Add(BmpConverter.ToMat(Dv(ms[j], bdf))); } _bi = 0; UpPg(); UI(() => { ShwB(); _grd.Rows.Clear(); _grd.Rows.Add("-", _batch.Count + "张完成", "-", "-"); }); Log((up ? "上" : "下") + "端面:" + ms.Count + "张," + _tMs.ToString("F0") + "ms"); }
+		void DoS() { if (_aiModels.SideDefectModel == null) { Log("侧面模型未加载"); return; } var s = Stopwatch.StartNew(); var r = _aiModels.SideDefectModel.Predict(_m3, (float)_nConf.Value, (float)_nIou.Value); _tMs = s.Elapsed.TotalMilliseconds; var df = new List<TestDefect>(); if (r?.Boxes != null) for (int i = 0; i < r.Boxes.Length; i++) { var bx = r.BoxesN[i]; df.Add(new TestDefect("缺陷" + r.ClassIds[i], new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, r.Scores[i])); } var rd = Dv(_m3, df); UI(() => { _po.Image = rd; _grd.Rows.Clear(); for (int i = 0; i < df.Count; i++) _grd.Rows.Add(i + 1, "NG", df[i].Type, df[i].Score.ToString("F3")); if (df.Count == 0) _grd.Rows.Add("-", "OK", "-", "-"); }); }
+
+		void BtnMImg(object s, EventArgs e) { int idx = _cmbM.SelectedIndex; if (idx == 2 || idx == 3) { using (var d = new FolderBrowserDialog { Description = "选择图像文件夹" }) { if (d.ShowDialog() != DialogResult.OK) return; _mbatch.Clear(); foreach (var f in Directory.GetFiles(d.SelectedPath).Where(f => f.EndsWith(".jpg") || f.EndsWith(".jpeg") || f.EndsWith(".png") || f.EndsWith(".bmp")).OrderBy(f => f).Take(50)) _mbatch.Add(Cv2.ImRead(f)); _mbi = 0; UpMPg(); ShwMB(); MLog("加载" + _mbatch.Count + "张"); _bMRun.Enabled = true; } } else { using (var d = new OpenFileDialog { Title = "选择图像", Filter = "所有图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff" }) { if (d.ShowDialog() != DialogResult.OK) return; var m = Cv2.ImRead(d.FileName); _pm1.Image = BmpConverter.ToBitmap(m); m.Dispose(); MLog("加载:" + Path.GetFileName(d.FileName)); _bMRun.Enabled = true; } } }
+		void BtnMCam(object s, EventArgs e) { if (_cameras == null) { MessageBox.Show("相机未初始化"); return; } int ci = _cmbM.SelectedIndex <= 1 ? 0 : _cmbM.SelectedIndex == 2 ? 2 : _cmbM.SelectedIndex == 3 ? 3 : _cmbM.SelectedIndex >= 4 && _cmbM.SelectedIndex <= 8 ? 4 : 6; if (_cameras[ci] == null) { MessageBox.Show("Cam" + (ci + 1) + "未连接"); return; } var c = _cameras[ci]; Task.Run(() => { try { c.setTriggerSource(0); System.Threading.Thread.Sleep(50); c.ExecuteSoftwareTrigger(); System.Threading.Thread.Sleep(100); c.setTriggerSource(1); UI(() => MLog("Cam" + (ci + 1) + "触发完成")); } catch (Exception ex) { UI(() => MLog("失败:" + ex.Message)); } }); }
+
+		async void BtnMRun(object s, EventArgs e)
 		{
-			this.Text = "KOCH 检测测试工具";
-			this.Size = new DrawSize(1400, 900);
-			this.StartPosition = FormStartPosition.CenterParent;
-
-			// 主TabControl
-			_mainTab = new TabControl
-			{
-				Dock = DockStyle.Fill,
-				Font = new Font("微软雅黑", 11F)
-			};
-
-			// ========== 工位测试页 ==========
-			_tabStationTest = new TabPage("工位测试");
-			BuildStationTestPage();
-			_mainTab.TabPages.Add(_tabStationTest);
-
-			// ========== 模型单独测试页 ==========
-			_tabModelTest = new TabPage("模型单独测试");
-			BuildModelTestPage();
-			_mainTab.TabPages.Add(_tabModelTest);
-
-			this.Controls.Add(_mainTab);
-
-			// 底部状态栏
-			var bottomPanel = new UIPanel
-			{
-				Dock = DockStyle.Bottom,
-				Height = 38,
-				FillColor = Color.FromArgb(47, 60, 76)
-			};
-
-			_testStateLight = new UILight
-			{
-				Location = new DrawPoint(10, 8),
-				Size = new DrawSize(100, 22),
-				Font = new Font("微软雅黑", 12F),
-				ForeColor = Color.White,
-				State = UILightState.On,
-				Text = "测试工具"
-			};
-			bottomPanel.Controls.Add(_testStateLight);
-
-			_statusLabel = new UILabel
-			{
-				Location = new DrawPoint(120, 8),
-				Size = new DrawSize(800, 22),
-				Font = new Font("微软雅黑", 11F),
-				ForeColor = Color.White,
-				Text = "就绪"
-			};
-			bottomPanel.Controls.Add(_statusLabel);
-
-			_memLabel = new UILabel
-			{
-				Location = new DrawPoint(1150, 8),
-				Size = new DrawSize(230, 22),
-				Font = new Font("微软雅黑", 11F),
-				ForeColor = Color.White,
-				Text = "内存: -- MB"
-			};
-			bottomPanel.Controls.Add(_memLabel);
-
-			this.Controls.Add(bottomPanel);
-
-			// 内存监控
-			var memTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-			memTimer.Tick += (s, e) =>
-			{
-				if (_memLabel != null && !_memLabel.IsDisposed)
-				{
-					_memLabel.Text = $"内存: {GC.GetTotalMemory(false) / 1024 / 1024} MB";
-				}
-			};
-			memTimer.Start();
-		}
-
-		#region 工位测试页
-
-		private void BuildStationTestPage()
-		{
-			var mainPanel = new UIPanel { Dock = DockStyle.Fill, FillColor = Color.White };
-
-			// 左侧控制面板
-			var leftPanel = new UIPanel
-			{
-				Location = new DrawPoint(10, 10),
-				Size = new DrawSize(300, 820),
-				FillColor = Color.White,
-				RectColor = Color.FromArgb(47, 60, 76),
-				RectSize = 1
-			};
-
-			int y = 15;
-
-			var stationLabel = new UILabel
-			{
-				Text = "选择工位:",
-				Location = new DrawPoint(15, y + 3),
-				Size = new DrawSize(80, 25),
-				Font = new Font("微软雅黑", 11F, FontStyle.Bold)
-			};
-			_stationCombo = new UIComboBox
-			{
-				Location = new DrawPoint(100, y),
-				Size = new DrawSize(180, 29),
-				DropDownStyle = UIDropDownStyle.DropDownList
-			};
-			_stationCombo.Items.AddRange(new object[] { "正面", "背面", "上端面", "下端面", "侧面" });
-			_stationCombo.SelectedIndex = 0;
-			_stationCombo.SelectedIndexChanged += StationCombo_SelectedIndexChanged;
-			y += 42;
-
-			_loadImageBtn = new UIButton
-			{
-				Text = "加载测试图像",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(270, 40),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-				Radius = 10,
-				Cursor = Cursors.Hand
-			};
-			_loadImageBtn.Click += LoadImageBtn_Click;
-			y += 50;
-
-			_runTestBtn = new UIButton
-			{
-				Text = "执行检测",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(270, 45),
-				Font = new Font("微软雅黑", 12F, FontStyle.Bold),
-				Radius = 10,
-				FillColor = Color.FromArgb(39, 174, 96),
-				Cursor = Cursors.Hand,
-				Enabled = false
-			};
-			_runTestBtn.Click += RunTestBtn_Click;
-			y += 55;
-
-			var resultGroup = new UIGroupBox
-			{
-				Text = "检测结果",
-				Location = new DrawPoint(10, y),
-				Size = new DrawSize(280, 100),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			_resultLabel = new UILabel
-			{
-				Text = "等待检测...",
-				Location = new DrawPoint(10, 25),
-				Size = new DrawSize(260, 30),
-				Font = new Font("微软雅黑", 14F, FontStyle.Bold),
-				TextAlign = ContentAlignment.MiddleCenter,
-				ForeColor = Color.FromArgb(100, 100, 100)
-			};
-			_detailLabel = new UILabel
-			{
-				Text = "",
-				Location = new DrawPoint(10, 60),
-				Size = new DrawSize(260, 30),
-				Font = new Font("微软雅黑", 10F),
-				TextAlign = ContentAlignment.MiddleCenter
-			};
-			resultGroup.Controls.Add(_resultLabel);
-			resultGroup.Controls.Add(_detailLabel);
-			y += 110;
-
-			var defectLabel = new UILabel
-			{
-				Text = "检测到的缺陷:",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(150, 25),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			y += 30;
-
-			_defectListBox = new UIListBox
-			{
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(270, 120),
-				Font = new Font("微软雅黑", 9F)
-			};
-			y += 130;
-
-			_timeLabel = new UILabel
-			{
-				Text = "耗时: -- ms",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(270, 25),
-				Font = new Font("微软雅黑", 10F),
-				BackColor = Color.FromArgb(255, 255, 200),
-				TextAlign = ContentAlignment.MiddleCenter
-			};
-			y += 35;
-
-			var logLabel = new UILabel
-			{
-				Text = "运行日志:",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(150, 25),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			y += 30;
-
-			_logTextBox = new UITextBox
-			{
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(270, 200),
-				Font = new Font("微软雅黑", 8F),
-				Multiline = true
-			};
-
-			leftPanel.Controls.AddRange(new Control[] {
-				stationLabel, _stationCombo,
-				_loadImageBtn, _runTestBtn,
-				resultGroup, defectLabel, _defectListBox, _timeLabel,
-				logLabel, _logTextBox
-			});
-
-			// 右侧图像显示区域
-			var rightPanel = new UIPanel
-			{
-				Location = new DrawPoint(320, 10),
-				Size = new DrawSize(1050, 820),
-				FillColor = Color.White,
-				RectColor = Color.FromArgb(47, 60, 76),
-				RectSize = 1
-			};
-
-			var inputGroup = new UIGroupBox
-			{
-				Text = "输入图像",
-				Location = new DrawPoint(10, 10),
-				Size = new DrawSize(500, 400),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			_picInputLeft = new XLPictureBox
-			{
-				Location = new DrawPoint(10, 25),
-				Size = new DrawSize(230, 360),
-				BackColor1 = Color.FromArgb(60, 60, 60),
-				BackColor2 = Color.FromArgb(80, 80, 80),
-				BackgroundGridSize = 15
-			};
-			_picInputRight = new XLPictureBox
-			{
-				Location = new DrawPoint(250, 25),
-				Size = new DrawSize(230, 360),
-				BackColor1 = Color.FromArgb(60, 60, 60),
-				BackColor2 = Color.FromArgb(80, 80, 80),
-				BackgroundGridSize = 15
-			};
-			inputGroup.Controls.Add(_picInputLeft);
-			inputGroup.Controls.Add(_picInputRight);
-
-			var resultGroupBox = new UIGroupBox
-			{
-				Text = "检测结果",
-				Location = new DrawPoint(520, 10),
-				Size = new DrawSize(520, 800),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			_picResult = new XLPictureBox
-			{
-				Location = new DrawPoint(10, 25),
-				Size = new DrawSize(500, 760),
-				BackColor1 = Color.FromArgb(60, 60, 60),
-				BackColor2 = Color.FromArgb(80, 80, 80),
-				BackgroundGridSize = 15
-			};
-			resultGroupBox.Controls.Add(_picResult);
-
-			rightPanel.Controls.Add(inputGroup);
-			rightPanel.Controls.Add(resultGroupBox);
-
-			mainPanel.Controls.Add(leftPanel);
-			mainPanel.Controls.Add(rightPanel);
-			_tabStationTest.Controls.Add(mainPanel);
-		}
-
-		private void SafeInvoke(Action action)
-		{
-			if (this.IsDisposed || !this.IsHandleCreated)
-			{
-				return;
-			}
-
-			if (this.InvokeRequired)
-			{
-				try
-				{
-					this.Invoke(action);
-				}
-				catch (ObjectDisposedException)
-				{
-					// 忽略
-				}
-			}
-			else
-			{
-				action();
-			}
-		}
-
-		private void AddLog(string message)
-		{
-			if (_logTextBox == null || _logTextBox.IsDisposed) return;
-
-			SafeInvoke(() =>
-			{
-				string timeStr = DateTime.Now.ToString("HH:mm:ss.fff");
-				_logTextBox.AppendText($"[{timeStr}] {message}\n");
-				if (_logTextBox.TextLength > 5000)
-				{
-					_logTextBox.Text = _logTextBox.Text.Substring(_logTextBox.TextLength - 4000);
-				}
-			});
-			Logger.Info(message);
-		}
-
-		private void AddModelLog(string message)
-		{
-			if (_modelLogTextBox == null || _modelLogTextBox.IsDisposed) return;
-
-			SafeInvoke(() =>
-			{
-				string timeStr = DateTime.Now.ToString("HH:mm:ss.fff");
-				_modelLogTextBox.AppendText($"[{timeStr}] {message}\n");
-				if (_modelLogTextBox.TextLength > 5000)
-				{
-					_modelLogTextBox.Text = _modelLogTextBox.Text.Substring(_modelLogTextBox.TextLength - 4000);
-				}
-			});
-			Logger.Info($"[模型测试] {message}");
-		}
-
-		private void UpdateUI(Action action)
-		{
-			if (this.IsDisposed || !this.IsHandleCreated) return;
-
-			if (this.InvokeRequired)
-			{
-				try
-				{
-					this.Invoke(action);
-				}
-				catch (ObjectDisposedException) { }
-			}
-			else
-			{
-				action();
-			}
-		}
-
-		private void StationCombo_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			_currentStation = _stationCombo.SelectedItem.ToString();
-
-			SafeInvoke(() =>
-			{
-				_picInputLeft.Image = null;
-				_picInputRight.Image = null;
-				_picResult.Image = null;
-				_resultLabel.Text = "等待检测...";
-				_resultLabel.ForeColor = Color.FromArgb(100, 100, 100);
-				_defectListBox.Items.Clear();
-				_detailLabel.Text = "";
-			});
-
-			_currentLeftMat?.Dispose();
-			_currentRightMat?.Dispose();
-			_currentUpperMat?.Dispose();
-			_currentLowerMat?.Dispose();
-			_currentSideMat?.Dispose();
-			_currentLeftMat = null;
-			_currentRightMat = null;
-
-			AddLog($"切换到 {_currentStation} 工位");
-			UpdateUI(() => _statusLabel.Text = $"已切换到 {_currentStation} 工位");
-		}
-
-		private void LoadImageBtn_Click(object sender, EventArgs e)
-		{
-			using (var ofd = new OpenFileDialog())
-			{
-				ofd.Title = $"选择{_currentStation}工位测试图像";
-				ofd.Filter = "图像文件|*.jpg;*.png;*.bmp;*.jpeg";
-
-				if (_currentStation == "正面" || _currentStation == "背面")
-				{
-					ofd.Multiselect = true;
-					ofd.Title = $"选择{_currentStation}工位左右两张图像（左图+右图）";
-				}
-
-				if (ofd.ShowDialog() == DialogResult.OK)
-				{
-					try
-					{
-						switch (_currentStation)
-						{
-							case "正面":
-							case "背面":
-								if (ofd.FileNames.Length >= 2)
-								{
-									_currentLeftMat?.Dispose();
-									_currentRightMat?.Dispose();
-									_currentLeftMat = Cv2.ImRead(ofd.FileNames[0]);
-									_currentRightMat = Cv2.ImRead(ofd.FileNames[1]);
-
-									var leftBmp = BmpConverter.ToBitmap(_currentLeftMat);
-									var rightBmp = BmpConverter.ToBitmap(_currentRightMat);
-
-									UpdateUI(() =>
-									{
-										_picInputLeft.Image = leftBmp;
-										_picInputRight.Image = rightBmp;
-									});
-
-									AddLog($"已加载左图: {Path.GetFileName(ofd.FileNames[0])}, 尺寸: {_currentLeftMat.Width}x{_currentLeftMat.Height}");
-									AddLog($"已加载右图: {Path.GetFileName(ofd.FileNames[1])}, 尺寸: {_currentRightMat.Width}x{_currentRightMat.Height}");
-									UpdateUI(() => _statusLabel.Text = $"已加载左图: {Path.GetFileName(ofd.FileNames[0])}, 右图: {Path.GetFileName(ofd.FileNames[1])}");
-								}
-								else
-								{
-									MessageBox.Show("正面/背面工位需要选择左右两张图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-								}
-								break;
-
-							case "上端面":
-							case "下端面":
-								_currentUpperMat?.Dispose();
-								_currentUpperMat = Cv2.ImRead(ofd.FileName);
-								var bmp = BmpConverter.ToBitmap(_currentUpperMat);
-								UpdateUI(() => _picInputLeft.Image = bmp);
-								AddLog($"已加载图像: {Path.GetFileName(ofd.FileName)}, 尺寸: {_currentUpperMat.Width}x{_currentUpperMat.Height}");
-								UpdateUI(() => _statusLabel.Text = $"已加载: {Path.GetFileName(ofd.FileName)}");
-								break;
-
-							case "侧面":
-								_currentSideMat?.Dispose();
-								_currentSideMat = Cv2.ImRead(ofd.FileName);
-								var sideBmp = BmpConverter.ToBitmap(_currentSideMat);
-								UpdateUI(() => _picInputLeft.Image = sideBmp);
-								AddLog($"已加载图像: {Path.GetFileName(ofd.FileName)}, 尺寸: {_currentSideMat.Width}x{_currentSideMat.Height}");
-								UpdateUI(() => _statusLabel.Text = $"已加载: {Path.GetFileName(ofd.FileName)}");
-								break;
-						}
-
-						UpdateUI(() =>
-						{
-							_runTestBtn.Enabled = true;
-							_resultLabel.Text = "等待检测...";
-							_resultLabel.ForeColor = Color.FromArgb(100, 100, 100);
-							_defectListBox.Items.Clear();
-						});
-					}
-					catch (Exception ex)
-					{
-						AddLog($"加载图像失败: {ex.Message}");
-						Logger.Error($"加载图像失败: {ex.Message}");
-						MessageBox.Show($"加载失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-					}
-				}
-			}
-		}
-
-		private async void RunTestBtn_Click(object sender, EventArgs e)
-		{
-			if (!CheckImageLoaded()) return;
-			if (_aiModels == null)
-			{
-				MessageBox.Show("AI模型未加载，请先加载模型！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-				return;
-			}
-
-			UpdateUI(() => _runTestBtn.Enabled = false);
-			UpdateUI(() => _statusLabel.Text = "正在检测...");
-			AddLog($"========== 开始 {_currentStation} 工位检测 ==========");
-			var sw = System.Diagnostics.Stopwatch.StartNew();
-
+			if (_pm1.Image == null && _mbatch.Count == 0) { MessageBox.Show("请先加载图像!"); return; }
+			_bMRun.Enabled = false; var sw = Stopwatch.StartNew(); MLog("===== 推理开始 =====");
 			try
 			{
 				await Task.Run(() =>
 				{
-					switch (_currentStation)
+					int idx = _cmbM.SelectedIndex; string mn = _cmbM.SelectedItem != null ? _cmbM.SelectedItem.ToString() : "";
+					YoloOnnx ym = null;
+					if (idx == 0) ym = _aiModels.FrontBoxBreakModel; else if (idx == 2) ym = _aiModels.EndFaceUpperModel; else if (idx == 3) ym = _aiModels.EndFaceLowerModel;
+					else if (idx == 4) ym = _aiModels.BackBarcodeModel; else if (idx == 6) ym = _aiModels.BackHookModel; else if (idx == 9) ym = _aiModels.SideDefectModel;
+
+					float cf = (float)_nMConf.Value, io = (float)_nMIou.Value;
+					Bitmap rdr = null; string inf = "";
+
+					if (ym != null)
 					{
-						case "正面":
-							RunFrontTest();
-							break;
-						case "背面":
-							RunBackTest();
-							break;
-						case "上端面":
-							RunUpperTest();
-							break;
-						case "下端面":
-							RunLowerTest();
-							break;
-						case "侧面":
-							RunSideTest();
-							break;
+						if (idx == 2 || idx == 3) { var ms = _mbatch.Count > 0 ? _mbatch : new List<Mat> { BmpConverter.ToMat((Bitmap)_pm1.Image) }; var rs = ym.PredictBatch(ms, cf, io); _mbatch.Clear(); for (int j = 0; j < ms.Count; j++) { var bdf = new List<TestDefect>(); if (rs != null && j < rs.Count && rs[j].Boxes != null) for (int i = 0; i < rs[j].Boxes.Length; i++) { var bx = rs[j].BoxesN[i]; int cid = rs[j].ClassIds[i]; string tp = cid == 0 ? "搭舌缺陷" : cid == 1 ? "边缘问题" : cid == 2 ? "破损" : "缺陷" + cid; bdf.Add(new TestDefect(tp, new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, rs[j].Scores[i])); } _mbatch.Add(BmpConverter.ToMat(Dv(ms[j], bdf))); } _mbi = 0; UpMPg(); inf = mn + ":" + ms.Count + "张"; MLog(inf); UI(() => { ShwMB(); _lblMT.Text = "耗时:" + sw.ElapsedMilliseconds + "ms"; _lblMI.Text = inf; }); return; }
+						var mat = BmpConverter.ToMat((Bitmap)_pm1.Image); Mat cr = mat; float crv = (float)_nMCrop.Value; if (crv > 0 && crv < 1) { int ch = (int)(mat.Height * crv); cr = new Mat(mat, new CvRect(0, mat.Height - ch, mat.Width, ch)).Clone(); mat.Dispose(); }
+						var res = ym.Predict(cr, cf, io); int cnt = res?.Boxes?.Length ?? 0; var df = new List<TestDefect>(); if (res?.Boxes != null) for (int i = 0; i < res.Boxes.Length; i++) { var bx = res.BoxesN[i]; string tp = (idx == 2 || idx == 3) ? (res.ClassIds[i] == 0 ? "搭舌缺陷" : res.ClassIds[i] == 1 ? "边缘问题" : res.ClassIds[i] == 2 ? "破损" : "缺陷" + res.ClassIds[i]) : "类别" + res.ClassIds[i]; df.Add(new TestDefect(tp, new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, res.Scores[i])); }
+						rdr = Dv(cr, df); cr.Dispose(); inf = mn + ":" + cnt + "个目标"; MLog(inf + " 推理" + (res != null ? res.InferenceTimeMs.ToString("F0") : "?") + "ms");
 					}
-				});
-
-				sw.Stop();
-				UpdateUI(() => _timeLabel.Text = $"耗时: {sw.ElapsedMilliseconds} ms");
-				AddLog($"检测完成，总耗时: {sw.ElapsedMilliseconds} ms");
-				UpdateUI(() => _statusLabel.Text = $"检测完成 - {_currentStation}工位");
-			}
-			catch (Exception ex)
-			{
-				AddLog($"检测失败: {ex.Message}");
-				Logger.Error($"检测失败: {ex.Message}");
-				UpdateUI(() =>
-				{
-					_resultLabel.Text = "检测失败";
-					_resultLabel.ForeColor = Color.Red;
-					_statusLabel.Text = $"检测失败: {ex.Message}";
-				});
-				MessageBox.Show($"检测失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-			}
-			finally
-			{
-				UpdateUI(() => _runTestBtn.Enabled = true);
-			}
-		}
-
-		private bool CheckImageLoaded()
-		{
-			switch (_currentStation)
-			{
-				case "正面":
-				case "背面":
-					if (_currentLeftMat == null || _currentRightMat == null)
-					{
-						MessageBox.Show("请先加载左右两张图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-						return false;
-					}
-					break;
-				case "上端面":
-				case "下端面":
-					if (_currentUpperMat == null)
-					{
-						MessageBox.Show("请先加载图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-						return false;
-					}
-					break;
-				case "侧面":
-					if (_currentSideMat == null)
-					{
-						MessageBox.Show("请先加载图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-						return false;
-					}
-					break;
-			}
-			return true;
-		}
-
-		private void RunFrontTest()
-		{
-			AddLog("正面工位检测开始...");
-
-			int halfP = _currentSku.P / 2;
-			int h = _currentLeftMat.Height;
-			int w = _currentLeftMat.Width;
-			int roiHeight = h / 4;
-			int boxWidth = w / halfP;
-
-			var statusList = new List<string>(_currentSku.P);
-			for (int i = 0; i < _currentSku.P; i++) statusList.Add("OK");
-
-			AddLog($"P数: {_currentSku.P}, halfP: {halfP}, 图像尺寸: {w}x{h}");
-
-			Mat resultImage = null;
-
-			if (_aiModels.FrontOcrModel != null)
-			{
-				AddLog("开始P号码OCR识别...");
-				int detectedCount = 0;
-
-				for (int i = 0; i < halfP; i++)
-				{
-					int x = i * boxWidth;
-					int y = h - roiHeight;
-					var roi = new CvRect(x, y, boxWidth, roiHeight);
-					using (var roiMat = new Mat(_currentLeftMat, roi))
-					using (var rotated = new Mat())
-					{
-						Cv2.Rotate(roiMat, rotated, RotateFlags.Rotate90Clockwise);
-						var ocrResult = _aiModels.FrontOcrModel.RunOrderOcr(rotated);
-						string recognizedText = "";
-						float confidence = 0;
-						if (ocrResult != null && ocrResult.Blocks != null && ocrResult.Blocks.Any())
-						{
-							recognizedText = string.Join("", ocrResult.Blocks.Select(b => b.Label));
-							confidence = ocrResult.Blocks.First().Score;
-						}
-						AddLog($"左侧盒子{i + 1}: 识别到 [{recognizedText}], 置信度={confidence:F2}, 标准={_currentSku.FrontPCode}");
-						if (!string.IsNullOrEmpty(recognizedText) && recognizedText != _currentSku.FrontPCode)
-						{
-							statusList[i] = "P号码错误";
-							detectedCount++;
-						}
-					}
-				}
-
-				for (int i = 0; i < halfP; i++)
-				{
-					int boxIndex = halfP + i;
-					int x = i * boxWidth;
-					int y = h - roiHeight;
-					var roi = new CvRect(x, y, boxWidth, roiHeight);
-					using (var roiMat = new Mat(_currentRightMat, roi))
-					using (var rotated = new Mat())
-					{
-						Cv2.Rotate(roiMat, rotated, RotateFlags.Rotate90Clockwise);
-						var ocrResult = _aiModels.FrontOcrModel.RunOrderOcr(rotated);
-						string recognizedText = "";
-						float confidence = 0;
-						if (ocrResult != null && ocrResult.Blocks != null && ocrResult.Blocks.Any())
-						{
-							recognizedText = string.Join("", ocrResult.Blocks.Select(b => b.Label));
-							confidence = ocrResult.Blocks.First().Score;
-						}
-						AddLog($"右侧盒子{i + 1}: 识别到 [{recognizedText}], 置信度={confidence:F2}, 标准={_currentSku.FrontPCode}");
-						if (!string.IsNullOrEmpty(recognizedText) && recognizedText != _currentSku.FrontPCode)
-						{
-							statusList[boxIndex] = "P号码错误";
-							detectedCount++;
-						}
-					}
-				}
-
-				AddLog($"P号码识别完成，发现 {detectedCount} 个错误");
-
-				resultImage = ResultDrawer.DrawOcrResult(_currentLeftMat, null, _currentSku.FrontPCode);
-			}
-			else
-			{
-				AddLog("警告: 正面P号码OCR模型未加载！");
-				resultImage = _currentLeftMat.Clone();
-				Cv2.PutText(resultImage, "OCR Model Not Loaded", new OpenCvSharp.Point(10, 30),
-					HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 0, 255), 2);
-			}
-
-			bool isOk = statusList.All(s => s == "OK");
-
-			UpdateUI(() =>
-			{
-				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
-				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
-
-				_defectListBox.Items.Clear();
-				for (int i = 0; i < statusList.Count; i++)
-				{
-					if (statusList[i] != "OK")
-					{
-						_defectListBox.Items.Add($"盒子 #{i + 1}: {statusList[i]}");
-					}
-				}
-				if (_defectListBox.Items.Count == 0)
-				{
-					_defectListBox.Items.Add("无缺陷");
-				}
-				_detailLabel.Text = $"P={_currentSku.P}, 检测盒子数: {statusList.Count}";
-
-				if (resultImage != null)
-				{
-					var bmp = BmpConverter.ToBitmap(resultImage);
-					_picResult.Image = bmp;
-					resultImage.Dispose();
-				}
-			});
-
-			AddLog($"正面检测结果: {(isOk ? "OK" : "NG")}");
-		}
-
-		private void RunBackTest()
-		{
-			AddLog("背面工位检测开始...");
-
-			var statusList = new List<string>(_currentSku.P);
-			for (int i = 0; i < _currentSku.P; i++) statusList.Add("OK");
-
-			Detection.HookInspectionOutput result = null;
-
-			if (_aiModels.BackHookModel != null && _aiModels.HookSlightModel != null)
-			{
-				AddLog("开始挂钩错位检测...");
-
-				result = HookDamageDetector.CheckAllHookDamages(
-					_currentLeftMat, _currentRightMat, _currentSku.P,
-					_aiModels.BackHookModel, _aiModels.HookSlightModel,
-					thicknessThreshold: 30.0,
-					blueAreaClassId: 0, hangHoleClassId: 1);
-
-				for (int i = 0; i < result.HookStatus.Count; i++)
-				{
-					if (result.HookStatus[i] != "缺少" && result.HookStatus[i] != "OK")
-					{
-						statusList[i] = result.HookStatus[i];
-						AddLog($"盒子{i + 1}: {result.HookStatus[i]}");
-					}
-				}
-			}
-			else
-			{
-				AddLog("警告: 挂钩检测模型未加载！");
-			}
-
-			bool isOk = statusList.All(s => s == "OK");
-
-			Mat resultImage = ResultDrawer.DrawHookDamageResult(_currentLeftMat, _currentRightMat, result);
-
-			UpdateUI(() =>
-			{
-				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
-				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
-
-				_defectListBox.Items.Clear();
-				for (int i = 0; i < statusList.Count; i++)
-				{
-					if (statusList[i] != "OK")
-					{
-						_defectListBox.Items.Add($"盒子 #{i + 1}: {statusList[i]}");
-					}
-				}
-				if (_defectListBox.Items.Count == 0)
-				{
-					_defectListBox.Items.Add("无缺陷");
-				}
-
-				if (resultImage != null)
-				{
-					var bmp = BmpConverter.ToBitmap(resultImage);
-					_picResult.Image = bmp;
-					resultImage.Dispose();
-				}
-			});
-
-			AddLog($"背面检测结果: {(isOk ? "OK" : "NG")}");
-		}
-
-		private void RunUpperTest()
-		{
-			AddLog("上端面缺陷检测开始...");
-
-			if (_aiModels.EndFaceUpperModel == null)
-			{
-				AddLog("错误: 上端面模型未加载！");
-				UpdateUI(() =>
-				{
-					_resultLabel.Text = "模型未加载";
-					_resultLabel.ForeColor = Color.Red;
-					_defectListBox.Items.Clear();
-					_defectListBox.Items.Add("上端面模型未加载");
-				});
-				return;
-			}
-
-			var results = _aiModels.EndFaceUpperModel.PredictBatch(new List<Mat> { _currentUpperMat }, 0.5f, 0.2f);
-
-			var defects = new List<string>();
-			if (results != null && results.Count > 0 && results[0].Boxes != null && results[0].Boxes.Length > 0)
-			{
-				AddLog($"检测到 {results[0].Boxes.Length} 个缺陷");
-				for (int i = 0; i < results[0].Boxes.Length; i++)
-				{
-					int classId = results[0].ClassIds[i];
-					string defectType;
-					if (classId == 0) defectType = "搭舌缺陷";
-					else if (classId == 1) defectType = "边缘问题";
-					else if (classId == 2) defectType = "破损";
-					else defectType = $"未知缺陷{classId}";
-					defects.Add(defectType);
-				}
-			}
-			else
-			{
-				AddLog("未检测到缺陷");
-			}
-
-			bool isOk = defects.Count == 0;
-
-			Mat resultImage = ResultDrawer.DrawEndFaceResult(_currentUpperMat, results != null && results.Count > 0 ? results[0] : null);
-
-			UpdateUI(() =>
-			{
-				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
-				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
-
-				_defectListBox.Items.Clear();
-				foreach (var defect in defects.Distinct())
-				{
-					_defectListBox.Items.Add($"检测到: {defect}");
-				}
-				if (_defectListBox.Items.Count == 0)
-				{
-					_defectListBox.Items.Add("无缺陷");
-				}
-
-				if (resultImage != null)
-				{
-					var bmp = BmpConverter.ToBitmap(resultImage);
-					_picResult.Image = bmp;
-					resultImage.Dispose();
-				}
-			});
-
-			AddLog($"上端面检测结果: {(isOk ? "OK" : "NG")}");
-		}
-
-		private void RunLowerTest()
-		{
-			AddLog("下端面缺陷检测开始...");
-
-			if (_aiModels.EndFaceLowerModel == null)
-			{
-				AddLog("错误: 下端面模型未加载！");
-				UpdateUI(() =>
-				{
-					_resultLabel.Text = "模型未加载";
-					_resultLabel.ForeColor = Color.Red;
-					_defectListBox.Items.Clear();
-					_defectListBox.Items.Add("下端面模型未加载");
-				});
-				return;
-			}
-
-			var results = _aiModels.EndFaceLowerModel.PredictBatch(new List<Mat> { _currentUpperMat }, 0.5f, 0.2f);
-
-			var defects = new List<string>();
-			if (results != null && results.Count > 0 && results[0].Boxes != null && results[0].Boxes.Length > 0)
-			{
-				AddLog($"检测到 {results[0].Boxes.Length} 个缺陷");
-				for (int i = 0; i < results[0].Boxes.Length; i++)
-				{
-					int classId = results[0].ClassIds[i];
-					string defectType;
-					if (classId == 0) defectType = "搭舌缺陷";
-					else if (classId == 1) defectType = "边缘问题";
-					else if (classId == 2) defectType = "破损";
-					else defectType = $"未知缺陷{classId}";
-					defects.Add(defectType);
-				}
-			}
-			else
-			{
-				AddLog("未检测到缺陷");
-			}
-
-			bool isOk = defects.Count == 0;
-
-			Mat resultImage = ResultDrawer.DrawEndFaceResult(_currentUpperMat, results != null && results.Count > 0 ? results[0] : null);
-
-			UpdateUI(() =>
-			{
-				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
-				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
-
-				_defectListBox.Items.Clear();
-				foreach (var defect in defects.Distinct())
-				{
-					_defectListBox.Items.Add($"检测到: {defect}");
-				}
-				if (_defectListBox.Items.Count == 0)
-				{
-					_defectListBox.Items.Add("无缺陷");
-				}
-
-				if (resultImage != null)
-				{
-					var bmp = BmpConverter.ToBitmap(resultImage);
-					_picResult.Image = bmp;
-					resultImage.Dispose();
-				}
-			});
-
-			AddLog($"下端面检测结果: {(isOk ? "OK" : "NG")}");
-		}
-
-		private void RunSideTest()
-		{
-			AddLog("侧面缺陷检测开始...");
-
-			Mat resultImage = null;
-			var defects = new List<string>();
-
-			if (_aiModels.SideDefectModel != null)
-			{
-				var yoloResult = _aiModels.SideDefectModel.Predict(_currentSideMat);
-				
-				if (yoloResult != null && yoloResult.Boxes != null && yoloResult.Boxes.Length > 0)
-				{
-					AddLog($"检测到 {yoloResult.Boxes.Length} 个侧面缺陷");
-					for (int i = 0; i < yoloResult.Boxes.Length; i++)
-					{
-						int classId = yoloResult.ClassIds[i];
-						float score = yoloResult.Scores[i];
-						string defectType = $"缺陷{classId}";
-						defects.Add(defectType);
-						AddLog($"  缺陷{i + 1}: 类别={classId}, 置信度={score:F4}");
-					}
-					resultImage = ResultDrawer.DrawSideDefectResult(_currentSideMat, yoloResult);
-				}
-				else
-				{
-					AddLog("未检测到侧面缺陷");
-					resultImage = _currentSideMat.Clone();
-					Cv2.PutText(resultImage, "No side defects detected", new OpenCvSharp.Point(10, 30),
-						HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 255, 0), 2);
-				}
-			}
-			else
-			{
-				AddLog("警告: 侧面缺陷检测模型未加载！");
-				resultImage = _currentSideMat.Clone();
-				Cv2.PutText(resultImage, "Side Model Not Loaded", new OpenCvSharp.Point(10, 30),
-					HersheyFonts.HersheySimplex, 1.0, new Scalar(0, 0, 255), 2);
-			}
-
-			bool isOk = defects.Count == 0;
-
-			UpdateUI(() =>
-			{
-				_resultLabel.Text = isOk ? "合格 (OK)" : "不合格 (NG)";
-				_resultLabel.ForeColor = isOk ? Color.Green : Color.Red;
-				_defectListBox.Items.Clear();
-				foreach (var defect in defects)
-				{
-					_defectListBox.Items.Add($"检测到: {defect}");
-				}
-				if (_defectListBox.Items.Count == 0)
-				{
-					_defectListBox.Items.Add("无缺陷");
-				}
-
-				if (resultImage != null)
-				{
-					var bmp = BmpConverter.ToBitmap(resultImage);
-					_picResult.Image = bmp;
-					resultImage.Dispose();
-				}
-			});
-
-			AddLog($"侧面检测结果: {(isOk ? "OK" : "NG")}");
-		}
-
-		#endregion
-
-		#region 模型单独测试页
-
-		private void BuildModelTestPage()
-		{
-			var mainPanel = new UIPanel { Dock = DockStyle.Fill, FillColor = Color.White };
-
-			var leftPanel = new UIPanel
-			{
-				Location = new DrawPoint(10, 10),
-				Size = new DrawSize(350, 820),
-				FillColor = Color.White,
-				RectColor = Color.FromArgb(47, 60, 76),
-				RectSize = 1
-			};
-
-			int y = 15;
-
-			var modelLabel = new UILabel
-			{
-				Text = "选择模型:",
-				Location = new DrawPoint(15, y + 3),
-				Size = new DrawSize(80, 25),
-				Font = new Font("微软雅黑", 11F, FontStyle.Bold)
-			};
-			_modelCombo = new UIComboBox
-			{
-				Location = new DrawPoint(100, y),
-				Size = new DrawSize(230, 29),
-				DropDownStyle = UIDropDownStyle.DropDownList
-			};
-			_modelCombo.Items.AddRange(new object[] {
-				"正面-P号码OCR",
-				"正面-盒子破检测",
-				"上端面-缺陷检测",
-				"下端面-缺陷检测",
-				"背面-条形码检测",
-				"背面-日期码OCR",
-				"背面-明显挂钩错位",
-				"背面-轻微挂钩错位",
-				"背面-切字识别",
-				"侧面-缺陷检测"
-			});
-			_modelCombo.SelectedIndex = 0;
-			y += 42;
-
-			_loadModelBtn = new UIButton
-			{
-				Text = "加载模型",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 35),
-				Font = new Font("微软雅黑", 10F),
-				Radius = 10,
-				Cursor = Cursors.Hand
-			};
-			_loadModelBtn.Click += LoadModelBtn_Click;
-			y += 45;
-
-			_loadModelImageBtn = new UIButton
-			{
-				Text = "加载测试图像",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 35),
-				Font = new Font("微软雅黑", 10F),
-				Radius = 10,
-				Cursor = Cursors.Hand
-			};
-			_loadModelImageBtn.Click += LoadModelImageBtn_Click;
-			y += 45;
-
-			_runModelBtn = new UIButton
-			{
-				Text = "执行推理",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 40),
-				Font = new Font("微软雅黑", 11F, FontStyle.Bold),
-				Radius = 10,
-				FillColor = Color.FromArgb(39, 174, 96),
-				Cursor = Cursors.Hand,
-				Enabled = false
-			};
-			_runModelBtn.Click += RunModelBtn_Click;
-			y += 50;
-
-			_modelInfoLabel = new UILabel
-			{
-				Text = "模型信息:\n未加载",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 80),
-				Font = new Font("微软雅黑", 10F),
-				BackColor = Color.FromArgb(245, 245, 245),
-				BorderStyle = BorderStyle.FixedSingle
-			};
-			y += 90;
-
-			_modelTimeLabel = new UILabel
-			{
-				Text = "推理时间: -- ms",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 30),
-				Font = new Font("微软雅黑", 11F, FontStyle.Bold),
-				BackColor = Color.FromArgb(255, 255, 200),
-				TextAlign = ContentAlignment.MiddleCenter
-			};
-			y += 40;
-
-			var resultBoxLabel = new UILabel
-			{
-				Text = "识别结果:",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 25),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			y += 30;
-
-			_modelResultBox = new UITextBox
-			{
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 150),
-				Font = new Font("微软雅黑", 9F),
-				Multiline = true
-			};
-			y += 160;
-
-			var logLabel = new UILabel
-			{
-				Text = "运行日志:",
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 25),
-				Font = new Font("微软雅黑", 10F, FontStyle.Bold)
-			};
-			y += 30;
-
-			_modelLogTextBox = new UITextBox
-			{
-				Location = new DrawPoint(15, y),
-				Size = new DrawSize(320, 150),
-				Font = new Font("微软雅黑", 8F),
-				Multiline = true
-			};
-
-			leftPanel.Controls.AddRange(new Control[] {
-				modelLabel, _modelCombo,
-				_loadModelBtn, _loadModelImageBtn, _runModelBtn,
-				_modelInfoLabel, _modelTimeLabel,
-				resultBoxLabel, _modelResultBox,
-				logLabel, _modelLogTextBox
-			});
-
-			// 右侧图像显示
-			var rightPanel = new UIPanel
-			{
-				Location = new DrawPoint(370, 10),
-				Size = new DrawSize(1000, 820),
-				FillColor = Color.White,
-				RectColor = Color.FromArgb(47, 60, 76),
-				RectSize = 1
-			};
-
-			_picModelInput = new XLPictureBox
-			{
-				Location = new DrawPoint(10, 10),
-				Size = new DrawSize(480, 400),
-				BackColor1 = Color.FromArgb(60, 60, 60),
-				BackColor2 = Color.FromArgb(80, 80, 80),
-				BackgroundGridSize = 15
-			};
-
-			_picModelOutput = new XLPictureBox
-			{
-				Location = new DrawPoint(500, 10),
-				Size = new DrawSize(480, 400),
-				BackColor1 = Color.FromArgb(60, 60, 60),
-				BackColor2 = Color.FromArgb(80, 80, 80),
-				BackgroundGridSize = 15
-			};
-
-			rightPanel.Controls.Add(_picModelInput);
-			rightPanel.Controls.Add(_picModelOutput);
-
-			mainPanel.Controls.Add(leftPanel);
-			mainPanel.Controls.Add(rightPanel);
-			_tabModelTest.Controls.Add(mainPanel);
-		}
-
-		private void LoadModelBtn_Click(object sender, EventArgs e)
-		{
-			string modelName = _modelCombo.SelectedItem?.ToString() ?? "未知";
-
-			UpdateUI(() =>
-			{
-				_modelInfoLabel.Text = $"模型信息:\n名称: {modelName}\n状态: 已选择（待加载）";
-				_runModelBtn.Enabled = true;
-				_statusLabel.Text = $"模型已选择: {modelName}";
-			});
-
-			AddModelLog($"已选择模型: {modelName}");
-		}
-
-		private void LoadModelImageBtn_Click(object sender, EventArgs e)
-		{
-			using (var ofd = new OpenFileDialog())
-			{
-				ofd.Title = "选择测试图像";
-				ofd.Filter = "图像文件|*.jpg;*.png;*.bmp;*.jpeg";
-				if (ofd.ShowDialog() == DialogResult.OK)
-				{
-					try
-					{
-						var mat = Cv2.ImRead(ofd.FileName);
-						var bmp = BmpConverter.ToBitmap(mat);
-
-						UpdateUI(() =>
-						{
-							_picModelInput.Image = bmp;
-							_statusLabel.Text = $"已加载: {Path.GetFileName(ofd.FileName)}";
-						});
-
-						AddModelLog($"已加载图像: {Path.GetFileName(ofd.FileName)}, 尺寸: {mat.Width}x{mat.Height}");
-						mat.Dispose();
-					}
-					catch (Exception ex)
-					{
-						AddModelLog($"加载图像失败: {ex.Message}");
-						MessageBox.Show($"加载失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-					}
-				}
-			}
-		}
-
-		private async void RunModelBtn_Click(object sender, EventArgs e)
-		{
-			if (_picModelInput.Image == null)
-			{
-				MessageBox.Show("请先加载测试图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-				return;
-			}
-
-			UpdateUI(() => _runModelBtn.Enabled = false);
-			var sw = System.Diagnostics.Stopwatch.StartNew();
-
-			try
-			{
-				await Task.Run(() =>
-				{
-					var mat = BmpConverter.ToMat((Bitmap)_picModelInput.Image);
-					string modelName = "";
-
-					UpdateUI(() =>
-					{
-						modelName = _modelCombo.SelectedItem?.ToString() ?? "未知";
-					});
-
-					string resultText = $"模型: {modelName}\n图像尺寸: {mat.Width}x{mat.Height}\n\n";
-
-					AddModelLog($"========== 开始推理: {modelName} ==========");
-					AddModelLog($"图像尺寸: {mat.Width}x{mat.Height}");
-
-					int selectedIndex = 0;
-					UpdateUI(() =>
-					{
-						selectedIndex = _modelCombo.SelectedIndex;
-					});
-
-					if (selectedIndex == 0) // 正面-P号码OCR
-					{
-						AddModelLog("调用正面P号码OCR模型...");
-						if (_aiModels.FrontOcrModel != null)
-						{
-							AddModelLog("模型已加载，开始推理...");
-							var ocrResult = _aiModels.FrontOcrModel.RunOrderOcr(mat);
-							string text = "";
-							float confidence = 0;
-							if (ocrResult != null && ocrResult.Blocks != null && ocrResult.Blocks.Any())
-							{
-								text = string.Join("", ocrResult.Blocks.Select(b => b.Label));
-								confidence = ocrResult.Blocks.First().Score;
-								AddModelLog($"识别结果: [{text}], 置信度: {confidence:F4}");
-							}
-							else
-							{
-								AddModelLog("识别结果为空");
-							}
-							resultText += $"识别结果: {text}\n置信度: {confidence:F4}";
-						}
-						else
-						{
-							AddModelLog("错误: 正面P号码OCR模型未加载！");
-							resultText += "模型未加载";
-						}
-					}
-					else if (selectedIndex == 1) // 正面-盒子破检测
-					{
-						AddModelLog("调用正面盒子破检测模型...");
-						if (_aiModels.FrontBoxBreakModel != null)
-						{
-							AddModelLog("模型已加载，开始推理...");
-							var yoloResult = _aiModels.FrontBoxBreakModel.Predict(mat);
-							AddModelLog($"检测到 {yoloResult?.Boxes?.Length ?? 0} 个目标");
-							resultText += $"检测到 {yoloResult?.Boxes?.Length ?? 0} 个目标\n";
-							if (yoloResult != null && yoloResult.Boxes != null)
-							{
-								for (int i = 0; i < yoloResult.Boxes.Length; i++)
-								{
-									resultText += $"目标{i + 1}: 类别{yoloResult.ClassIds[i]}, 置信度{yoloResult.Scores[i]:F2}\n";
-									AddModelLog($"  目标{i + 1}: 类别={yoloResult.ClassIds[i]}, 置信度={yoloResult.Scores[i]:F4}");
-								}
-							}
-						}
-						else
-						{
-							AddModelLog("错误: 正面盒子破检测模型未加载！");
-							resultText += "模型未加载";
-						}
-					}
-					else if (selectedIndex == 2) // 上端面
-					{
-						AddModelLog("调用上端面缺陷检测模型...");
-						if (_aiModels.EndFaceUpperModel != null)
-						{
-							AddModelLog("模型已加载，开始推理...");
-							var yoloResult = _aiModels.EndFaceUpperModel.Predict(mat);
-							AddModelLog($"检测到 {yoloResult?.Boxes?.Length ?? 0} 个缺陷");
-							resultText += $"检测到 {yoloResult?.Boxes?.Length ?? 0} 个缺陷\n";
-							if (yoloResult != null && yoloResult.Boxes != null)
-							{
-								for (int i = 0; i < yoloResult.Boxes.Length; i++)
-								{
-									int classId = yoloResult.ClassIds[i];
-									string defectName;
-									if (classId == 0) defectName = "搭舌缺陷";
-									else if (classId == 1) defectName = "边缘问题";
-									else if (classId == 2) defectName = "破损";
-									else defectName = $"未知{classId}";
-									resultText += $"{defectName}: 置信度{yoloResult.Scores[i]:F2}\n";
-									AddModelLog($"  缺陷{i + 1}: {defectName}, 置信度={yoloResult.Scores[i]:F4}");
-								}
-							}
-						}
-						else
-						{
-							AddModelLog("错误: 上端面缺陷检测模型未加载！");
-							resultText += "模型未加载";
-						}
-					}
-					else if (selectedIndex == 3) // 下端面
-					{
-						AddModelLog("调用下端面缺陷检测模型...");
-						if (_aiModels.EndFaceLowerModel != null)
-						{
-							AddModelLog("模型已加载，开始推理...");
-							var yoloResult = _aiModels.EndFaceLowerModel.Predict(mat);
-							AddModelLog($"检测到 {yoloResult?.Boxes?.Length ?? 0} 个缺陷");
-							resultText += $"检测到 {yoloResult?.Boxes?.Length ?? 0} 个缺陷\n";
-							if (yoloResult != null && yoloResult.Boxes != null)
-							{
-								for (int i = 0; i < yoloResult.Boxes.Length; i++)
-								{
-									int classId = yoloResult.ClassIds[i];
-									string defectName;
-									if (classId == 0) defectName = "搭舌缺陷";
-									else if (classId == 1) defectName = "边缘问题";
-									else if (classId == 2) defectName = "破损";
-									else defectName = $"未知{classId}";
-									resultText += $"{defectName}: 置信度{yoloResult.Scores[i]:F2}\n";
-									AddModelLog($"  缺陷{i + 1}: {defectName}, 置信度={yoloResult.Scores[i]:F4}");
-								}
-							}
-						}
-						else
-						{
-							AddModelLog("错误: 下端面缺陷检测模型未加载！");
-							resultText += "模型未加载";
-						}
-					}
-					else
-					{
-						AddModelLog("该模型检测暂未实现详细输出");
-						resultText += "该模型检测暂未实现详细输出";
-					}
-
-					AddModelLog($"推理完成，总耗时: {sw.ElapsedMilliseconds} ms");
-
-					UpdateUI(() =>
-					{
-						_modelResultBox.Text = resultText;
-					});
-
-					mat.Dispose();
-				});
-
-				sw.Stop();
-
-				UpdateUI(() =>
-				{
-					_modelTimeLabel.Text = $"推理时间: {sw.ElapsedMilliseconds} ms";
-					_statusLabel.Text = $"推理完成 - {_modelCombo.SelectedItem}";
-				});
-
-				AddModelLog($"推理完成，总耗时: {sw.ElapsedMilliseconds} ms");
-			}
-			catch (Exception ex)
-			{
-				AddModelLog($"推理失败: {ex.Message}");
-				UpdateUI(() =>
-				{
-					_modelResultBox.Text = $"推理失败: {ex.Message}";
-					_statusLabel.Text = $"推理失败: {ex.Message}";
+					else if (idx == 7 && _aiModels.HookSlightModel != null) { var mat = BmpConverter.ToMat((Bitmap)_pm1.Image); var sr = _aiModels.HookSlightModel.Predict(mat, cf); int cnt = sr?.Boxes?.Length ?? 0; var df = new List<TestDefect>(); if (sr?.Boxes != null) for (int i = 0; i < sr.Boxes.Length; i++) { var bx = sr.BoxesN[i]; df.Add(new TestDefect("轻微挂钩错位", new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, sr.Scores != null && i < sr.Scores.Length ? sr.Scores[i] : 0)); } rdr = Dv(mat, df); mat.Dispose(); inf = "轻微挂钩错位:" + cnt + "个"; MLog(inf); }
+					else if (idx == 8 && _aiModels.BackHookModel != null && _aiModels.HookSlightModel != null) { var mat = BmpConverter.ToMat((Bitmap)_pm1.Image); var r1 = _aiModels.BackHookModel.Predict(mat, cf, io); var r2 = _aiModels.HookSlightModel.Predict(mat, cf); var df = new List<TestDefect>(); if (r1?.Boxes != null) for (int i = 0; i < r1.Boxes.Length; i++) { if (r1.ClassIds[i] == 1) { var bx = r1.BoxesN[i]; df.Add(new TestDefect("挂钩明显错位", new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, r1.Scores[i])); } } if (r2?.Boxes != null) for (int i = 0; i < r2.Boxes.Length; i++) { var bx = r2.BoxesN[i]; df.Add(new TestDefect("轻微挂钩错位", new float[] { bx.X, bx.Y, bx.X + bx.Width, bx.Y + bx.Height }, r2.Scores != null && i < r2.Scores.Length ? r2.Scores[i] : 0)); } rdr = Dv(mat, df); mat.Dispose(); int c1 = r1?.Boxes?.Length ?? 0, c2 = r2?.Boxes?.Length ?? 0; inf = "挂钩综合:明显" + c1 + "轻微" + c2; MLog(inf); }
+					else if (idx == 1 && _aiModels.FrontOcrModel != null) { var mat = BmpConverter.ToMat((Bitmap)_pm1.Image); var ocr = _aiModels.FrontOcrModel.RunOrderOcr(mat); string txt = ocr != null && ocr.Blocks != null && ocr.Blocks.Any() ? string.Join("", ocr.Blocks.Select(b => b.Label)) : "(空)"; mat.Dispose(); inf = "OCR:" + txt; MLog(inf); }
+					else { inf = "暂不支持"; MLog(inf); }
+
+					sw.Stop(); Bitmap fr = rdr; string fi = inf; UI(() => { if (fr != null) _pm2.Image = fr; _lblMT.Text = "耗时:" + sw.ElapsedMilliseconds + "ms"; _lblMI.Text = fi; });
 				});
 			}
-			finally
-			{
-				UpdateUI(() =>
-				{
-					_runModelBtn.Enabled = true;
-				});
-			}
+			catch (Exception ex) { MLog("失败:" + ex.Message); }
+			finally { UI(() => _bMRun.Enabled = true); }
 		}
 
-		#endregion
+		// ====== RENDER HELPERS ======
+		void Cl(DetResult r, int s, int e, string tp, Dictionary<int, List<TestDefect>> d) { if (r?.Boxes == null) return; int t = e - s; if (t <= 0) return; foreach (var b in r.Boxes) { float cx = (b.X + b.Width / 2f) / r.OrigImg.Width; int idx = s + (int)(cx * t); if (idx < s || idx >= e) continue; if (!d.ContainsKey(idx)) d[idx] = new List<TestDefect>(); d[idx].Add(new TestDefect(tp, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }, 0)); } }
+		void Cs(SegResult r, int s, int e, string tp, Dictionary<int, List<TestDefect>> d) { if (r?.Boxes == null) return; int t = e - s; if (t <= 0) return; foreach (var b in r.Boxes) { float cx = (b.X + b.Width / 2f) / r.OrigImg.Width; int idx = s + (int)(cx * t); if (idx < s || idx >= e) continue; if (!d.ContainsKey(idx)) d[idx] = new List<TestDefect>(); d[idx].Add(new TestDefect(tp, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }, 0)); } }
+		Dictionary<int, List<TestDefect>> Fd(Dictionary<int, List<TestDefect>> s, int st, int en) { var r = new Dictionary<int, List<TestDefect>>(); foreach (var kv in s) if (kv.Key >= st && kv.Key < en) r[kv.Key] = kv.Value; return r; }
+		Bitmap Dv(Mat m, List<TestDefect> df) { var bmp = m.ToBitmap(); if (df.Count == 0) { using (var g = Graphics.FromImage(bmp)) g.DrawString("OK", new Font("微软雅黑", 14, FontStyle.Bold), Brushes.Green, 10, 10); return bmp; } using (var g = Graphics.FromImage(bmp)) { g.SmoothingMode = SmoothingMode.AntiAlias; int w = bmp.Width, h = bmp.Height; foreach (var d in df) { float[] b = d.Box; int x1 = (int)(b[0] * w), y1 = (int)(b[1] * h), x2 = (int)(b[2] * w), y2 = (int)(b[3] * h); var rc = new Rect(x1, y1, x2 - x1, y2 - y1); Color c = NgC; if (d.Type.Contains("搭舌")) c = Color.FromArgb(230, 126, 34); else if (d.Type.Contains("边缘")) c = Color.FromArgb(155, 89, 182); else if (d.Type.Contains("挂钩")) c = Color.DarkRed; else if (d.Type.Contains("条形码")) c = PriC; using (var fl = new SolidBrush(Color.FromArgb(50, c))) g.FillRectangle(fl, rc); using (var pn = new Pen(c, 3)) g.DrawRectangle(pn, rc); string lb = d.Type + " " + d.Score.ToString("F2"); using (var f = new Font("微软雅黑", 9, FontStyle.Bold)) { var sz = g.MeasureString(lb, f); int ly = y1 - (int)sz.Height - 4; if (ly < 4) ly = y1 + 4; using (var bg = new SolidBrush(c)) g.FillRectangle(bg, x1, ly, sz.Width + 6, sz.Height + 4); g.DrawString(lb, f, Brushes.White, x1 + 2, ly + 1); } } } return bmp; }
+		Bitmap Dr(Mat m, Dictionary<int, List<TestDefect>> df, List<string> st, int si, int ei) { var bmp = m.ToBitmap(); int w = bmp.Width, h = bmp.Height, t = ei - si; using (var g = Graphics.FromImage(bmp)) { g.SmoothingMode = SmoothingMode.AntiAlias; foreach (var kv in df) foreach (var d in kv.Value) { float[] b = d.Box; Color c = NgC; if (d.Type.Contains("挂钩")) c = Color.DarkRed; using (var fl = new SolidBrush(Color.FromArgb(50, c))) g.FillRectangle(fl, (int)b[0], (int)b[1], (int)(b[2] - b[0]), (int)(b[3] - b[1])); using (var pn = new Pen(c, 3)) g.DrawRectangle(pn, (int)b[0], (int)b[1], (int)(b[2] - b[0]), (int)(b[3] - b[1])); } using (var dp = new Pen(Color.FromArgb(120, 120, 120), 1) { DashStyle = DashStyle.Dash }) for (int i = 1; i < t; i++) g.DrawLine(dp, i * w / t, 0, i * w / t, h); using (var f = new Font("微软雅黑", 10, FontStyle.Bold)) for (int i = 0; i < t && si + i < st.Count; i++) { string ss = st[si + i], disp = ss == "OK" ? "OK" : (ss.Length > 4 ? ss.Substring(0, 4) : ss); Color cc = ss == "OK" ? OkC : NgC; float cx = (i + 0.5f) * w / t; var ts = g.MeasureString(disp, f); using (var br = new SolidBrush(cc)) g.DrawString(disp, f, br, cx - ts.Width / 2, 5); } } return bmp; }
+		Bitmap Mg(Bitmap l, Bitmap r) { var mg = new Bitmap(l.Width + r.Width, Math.Max(l.Height, r.Height)); using (var g = Graphics.FromImage(mg)) { g.Clear(Color.Black); g.DrawImage(l, 0, (mg.Height - l.Height) / 2); g.DrawImage(r, l.Width, (mg.Height - r.Height) / 2); using (var pn = new Pen(Color.White, 2)) g.DrawLine(pn, l.Width, 0, l.Width, mg.Height); } l.Dispose(); r.Dispose(); return mg; }
+		void Gp(List<string> st, Dictionary<int, List<TestDefect>> df) { _grd.Rows.Clear(); for (int i = 0; i < st.Count; i++) { if (df.ContainsKey(i)) foreach (var d in df[i]) _grd.Rows.Add(i + 1, "NG", d.Type, d.Score.ToString("F3")); else _grd.Rows.Add(i + 1, "OK", "-", "-"); } }
+		void ShwB() { if (_batch.Count == 0 || _bi >= _batch.Count) return; _po.Image = BmpConverter.ToBitmap(_batch[_bi]); UpPg(); }
+		void UpPg() { _lblPg.Text = _batch.Count > 0 ? (_bi + 1) + "/" + _batch.Count : ""; _bPrv.Enabled = _bNxt.Enabled = _batch.Count > 1; }
+		void ShwMB() { if (_mbatch.Count == 0 || _mbi >= _mbatch.Count) return; _pm2.Image = BmpConverter.ToBitmap(_mbatch[_mbi]); UpMPg(); }
+		void UpMPg() { _lblMPg.Text = _mbatch.Count > 0 ? (_mbi + 1) + "/" + _mbatch.Count : ""; _bMPrv.Enabled = _bMNxt.Enabled = _mbatch.Count > 1; }
+		void Clr() { if (_m1 != null) { _m1.Dispose(); _m1 = null; } if (_m2 != null) { _m2.Dispose(); _m2 = null; } if (_m3 != null) { _m3.Dispose(); _m3 = null; } _batch.Clear(); _bi = 0; _pi1.Image = null; _pi2.Image = null; _po.Image = null; _bRun.Enabled = false; _grd.Rows.Clear(); UpPg(); }
 
-		private void LoadAiModels()
-		{
-			AddLog("开始加载AI模型...");
-			try
-			{
-				var modelConfig = ModelPathConfig.LoadFromSysConfig();
-				AddLog($"模型根路径: {modelConfig.ModelRootPath}");
-				AddLog($"正面P号码模型: {modelConfig.FrontPCodeOcrModel ?? "未配置"}");
-				AddLog($"正面盒子破模型: {modelConfig.FrontBoxBreakModel ?? "未配置"}");
-				AddLog($"上端面模型: {modelConfig.EndFaceUpperModel ?? "未配置"}");
-				AddLog($"下端面模型: {modelConfig.EndFaceLowerModel ?? "未配置"}");
-				AddLog($"背面挂钩明显模型: {modelConfig.BackHookDamageModel ?? "未配置"}");
-				AddLog($"背面挂钩轻微模型: {modelConfig.BackHookSlightModel ?? "未配置"}");
-
-				_aiModels = new AiModelManager(modelConfig);
-				_aiModels.LoadAllModels();
-				AddLog("AI模型加载完成");
-
-				UpdateUI(() =>
-				{
-					_statusLabel.Text = "AI模型加载完成";
-				});
-			}
-			catch (Exception ex)
-			{
-				AddLog($"AI模型加载失败: {ex.Message}");
-				Logger.Error($"AI模型加载失败: {ex.Message}");
-				UpdateUI(() =>
-				{
-					_statusLabel.Text = $"AI模型加载失败: {ex.Message}";
-				});
-			}
-		}
-
-		private void InitSkuData()
-		{
-			_currentSku = new SkuData
-			{
-				SkuNumber = "TEST001",
-				P = 8,
-				Z = 2,
-				MM = 42,
-				FrontPCode = "P1837741411",
-				BackBarcode = "6901234567890",
-				CodingFormat = "MFG"
-			};
-			AddLog($"SKU初始化: P={_currentSku.P}, Z={_currentSku.Z}, MM={_currentSku.MM}");
-		}
-
-		protected override void OnFormClosing(FormClosingEventArgs e)
-		{
-			AddLog("测试工具关闭");
-			_currentLeftMat?.Dispose();
-			_currentRightMat?.Dispose();
-			_currentUpperMat?.Dispose();
-			_currentLowerMat?.Dispose();
-			_currentSideMat?.Dispose();
-			base.OnFormClosing(e);
-		}
+		protected override void OnFormClosing(FormClosingEventArgs e) { VisionMeasure.MainFrm.ManualTestMode = false; Clr(); _mbatch.Clear(); base.OnFormClosing(e); }
 	}
 }

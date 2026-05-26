@@ -39,6 +39,8 @@ namespace Stations
 		private readonly BlockingCollection<(List<ImageContext> upper, List<ImageContext> lower)> _batchQueue;
 
 		private readonly List<Mat> _currentDisplayImages = new List<Mat>();
+		private readonly List<Mat> _upperDisplayImages = new List<Mat>();
+		private readonly List<Mat> _lowerDisplayImages = new List<Mat>();
 		private int _currentDisplayIndex = 0;
 		private readonly object _resultLock = new object();
 
@@ -86,8 +88,10 @@ namespace Stations
 			{
 				queue.Enqueue(ctx);
 				count++;
+				Logger.Debug($"[EndFace] {name}入队 ProductId={productId}, Upper={_upperCount}/{_pCount}, Lower={_lowerCount}/{_pCount}");
 				if (_upperCount >= _pCount && _lowerCount >= _pCount)
 				{
+					Logger.Info($"[EndFace] 批次触发: P={_pCount}, Upper={_upperCount}, Lower={_lowerCount}");
 					var upperList = DequeueBatch(_upperQueue, ref _upperCount);
 					var lowerList = DequeueBatch(_lowerQueue, ref _lowerCount);
 					_batchQueue.Add((upperList, lowerList));
@@ -224,6 +228,7 @@ namespace Stations
 
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, _pCount);
+			Logger.Info($"[EndFace] 批处理完成 ProductId={firstProductId} 总耗时={totalTime:F2}ms Crop={cropTime:F2}ms Infer={inferenceTime:F2}ms Draw={drawTime:F2}ms Save={saveTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
 			}
 			catch (Exception ex)
 			{
@@ -345,8 +350,17 @@ namespace Stations
 			lock (_resultLock)
 			{
 				_currentDisplayImages.Clear();
+				_upperDisplayImages.Clear();
+				_lowerDisplayImages.Clear();
 				for (int i = 0; i < _pCount; i++)
 				{
+					// 存储分开的上/下端面图像（用各自的Mat+缺陷绘制）
+					var upperBmp = DrawDefectOnImage(upperMats[i], upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(), upperStatus[i], i, _pCount);
+					_upperDisplayImages.Add(BitmapConverter.ToMat(upperBmp)); upperBmp.Dispose();
+					var lowerBmp = DrawDefectOnImage(lowerMats[i], lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), lowerStatus[i], i, _pCount);
+					_lowerDisplayImages.Add(BitmapConverter.ToMat(lowerBmp)); lowerBmp.Dispose();
+
+					// 合并图像保留（用于导航索引和对齐）
 					int w = upperMats[i].Width;
 					int h = upperMats[i].Height + lowerMats[i].Height;
 					var combined = new Mat(new OpenCvSharp.Size(w, h), MatType.CV_8UC3);
@@ -354,12 +368,10 @@ namespace Stations
 						upperMats[i].CopyTo(upperRoi);
 					using (var lowerRoi = new Mat(combined, new CvRect(0, upperMats[i].Height, w, lowerMats[i].Height)))
 						lowerMats[i].CopyTo(lowerRoi);
-
-					var bitmap = DrawDefectOnCombined(combined, upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(),
+					var combinedBmp = DrawDefectOnCombined(combined, upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(),
 						lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), upperStatus[i], lowerStatus[i]);
-					_currentDisplayImages.Add(BitmapConverter.ToMat(bitmap));
-					bitmap.Dispose();
-					combined.Dispose();
+					_currentDisplayImages.Add(BitmapConverter.ToMat(combinedBmp));
+					combinedBmp.Dispose(); combined.Dispose();
 				}
 				_currentDisplayIndex = FindFirstNgIndex(upperStatus, lowerStatus);
 			}
@@ -430,6 +442,26 @@ namespace Stations
 			{
 				if (_currentDisplayImages.Count > 0 && _currentDisplayIndex >= 0 && _currentDisplayIndex < _currentDisplayImages.Count)
 					return _currentDisplayImages[_currentDisplayIndex].Clone();
+				return null;
+			}
+		}
+
+		public Mat GetCurrentUpperImage()
+		{
+			lock (_resultLock)
+			{
+				if (_upperDisplayImages.Count > 0 && _currentDisplayIndex >= 0 && _currentDisplayIndex < _upperDisplayImages.Count)
+					return _upperDisplayImages[_currentDisplayIndex].Clone();
+				return null;
+			}
+		}
+
+		public Mat GetCurrentLowerImage()
+		{
+			lock (_resultLock)
+			{
+				if (_lowerDisplayImages.Count > 0 && _currentDisplayIndex >= 0 && _currentDisplayIndex < _lowerDisplayImages.Count)
+					return _lowerDisplayImages[_currentDisplayIndex].Clone();
 				return null;
 			}
 		}

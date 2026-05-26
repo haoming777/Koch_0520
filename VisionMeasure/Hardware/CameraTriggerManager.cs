@@ -3,6 +3,7 @@ using Models;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,8 +23,13 @@ namespace Hardware
 		private CancellationTokenSource _cts;
 		private Thread _monitorThread;
 		private Thread _pulseThread;
+		private Thread _statsThread;
 		private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
 		private bool _simulateMode;
+
+		// 统计计数器：按输入端口统计边沿检测次数
+		private readonly Dictionary<int, long> _inputEdgeCounts = new Dictionary<int, long>();
+		private readonly object _statsLock = new object();
 
 		public event Action<int> OnTriggered;
 
@@ -64,6 +70,14 @@ namespace Hardware
 			};
 			_pulseThread.Start();
 
+			// 统计报告线程：每15秒输出端口触发统计
+			_statsThread = new Thread(StatsReportLoop)
+			{
+				Name = "TrigStats",
+				IsBackground = true
+			};
+			_statsThread.Start();
+
 			Logger.Info($"相机触发管理器启动 {(_simulateMode ? "(模拟模式)" : "")}");
 		}
 
@@ -74,6 +88,7 @@ namespace Hardware
 			_pulseQueue.CompleteAdding();
 			_monitorThread?.Join(3000);
 			_pulseThread?.Join(3000);
+			_statsThread?.Join(3000);
 			Logger.Info($"触发管理器停止 总脉冲数={_totalPulses}");
 		}
 
@@ -88,13 +103,28 @@ namespace Hardware
 			{
 				try
 				{
+					// 手动测试模式：跳过自动触发检测
+					if (VisionMeasure.MainFrm.ManualTestMode)
+					{
+						Thread.Sleep(50);
+						continue;
+					}
 					bool anyTriggered = false;
 
+					// 先读取所有端口当前状态（快照），避免共享端口时前一个相机消费边沿导致后一个丢失
+					var currentStates = new Dictionary<int, bool>();
+					foreach (var config in CameraTriggerConfig.TriggerConfigs.Values)
+					{
+						if (config.InputPort < 0) continue;
+						if (_motion.GetInput(config.InputPort, out bool cur))
+							currentStates[config.InputPort] = cur;
+					}
+
+					// 基于快照检测所有边沿
 					foreach (var config in CameraTriggerConfig.TriggerConfigs.Values)
 					{
 						if (config.InputPort < 0 || config.OutputPort < 0) continue;
-
-						if (!_motion.GetInput(config.InputPort, out bool cur)) continue;
+						if (!currentStates.TryGetValue(config.InputPort, out bool cur)) continue;
 
 						if (!_lastStates.TryGetValue(config.InputPort, out bool last))
 						{
@@ -110,8 +140,17 @@ namespace Hardware
 
 						if (trigger)
 						{
-							long timestamp = _stopwatch.ElapsedTicks;
+							lock (_statsLock) { _inputEdgeCounts[config.InputPort] = _inputEdgeCounts.GetValueOrDefault(config.InputPort) + 1; }
 
+							// 检查对应工位是否启用
+							bool stationEnabled = true;
+							if (config.CameraId <= 2) stationEnabled = VisionMeasure.MainFrm.FrontEnabled;
+							else if (config.CameraId <= 4) stationEnabled = VisionMeasure.MainFrm.EndFaceEnabled;
+							else if (config.CameraId <= 6) stationEnabled = VisionMeasure.MainFrm.BackEnabled;
+							else stationEnabled = VisionMeasure.MainFrm.SideEnabled;
+							if (!stationEnabled) continue;
+
+							long timestamp = _stopwatch.ElapsedTicks;
 							if (_pulseQueue.TryAdd(new PulseTask
 							{
 								CameraId = config.CameraId,
@@ -129,9 +168,11 @@ namespace Hardware
 								OnTriggered?.Invoke(config.CameraId);
 							}
 						}
-
-						_lastStates[config.InputPort] = cur;
 					}
+
+					// 统一更新所有端口状态（在检测完所有相机之后）
+					foreach (var kv in currentStates)
+						_lastStates[kv.Key] = kv.Value;
 
 					if (!anyTriggered)
 						spinWait.SpinOnce();
@@ -224,6 +265,34 @@ namespace Hardware
 		public (long totalPulses, long maxDelayMs) GetStats()
 		{
 			return (Interlocked.Read(ref _totalPulses), 0);
+		}
+
+		private void StatsReportLoop()
+		{
+			while (!_cts.Token.IsCancellationRequested && _isRunning)
+			{
+				try { _cts.Token.WaitHandle.WaitOne(15000); } catch { break; }
+				if (_cts.Token.IsCancellationRequested || !_isRunning) break;
+
+				lock (_statsLock)
+				{
+					var inSummary = new List<string>();
+					foreach (var kv in _inputEdgeCounts.OrderBy(k => k.Key))
+						inSummary.Add($"IN{kv.Key}={kv.Value}");
+
+					var outSummary = new List<string>();
+					lock (_countLock)
+					{
+						foreach (var kv in _triggerCounts.OrderBy(k => k.Key))
+						{
+							var cfg = CameraTriggerConfig.GetConfig(kv.Key);
+							outSummary.Add($"Cam{kv.Key}(OUT{cfg?.OutputPort})=>{kv.Value}");
+						}
+					}
+
+					Logger.Info($"[触发统计] 输入边沿: {string.Join(", ", inSummary)} | 输出脉冲: {string.Join(", ", outSummary)} | 总脉冲={Interlocked.Read(ref _totalPulses)}");
+				}
+			}
 		}
 
 		public void Dispose()

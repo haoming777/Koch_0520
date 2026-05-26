@@ -29,9 +29,10 @@ namespace Hardware
 
 		public bool Connect()
 		{
+			var sw = System.Diagnostics.Stopwatch.StartNew();
 			if (_simulateMode)
 			{
-				Logger.Info($"模拟模式：PLC连接成功 IP={_ip}:{_port}");
+				Logger.Info($"[PLC] 模拟模式连接成功 IP={_ip}:{_port} 耗时={sw.ElapsedMilliseconds}ms");
 				_connected = true;
 				return true;
 			}
@@ -40,7 +41,7 @@ namespace Hardware
 			{
 				// TODO: 实现实际的PLC连接
 				_connected = true;
-				Logger.Info($"PLC连接成功 IP={_ip}:{_port}");
+				Logger.Info($"[PLC] 连接成功 IP={_ip}:{_port} 耗时={sw.ElapsedMilliseconds}ms");
 
 				// 启动心跳检测
 				Task.Run(HeartbeatLoop);
@@ -49,7 +50,7 @@ namespace Hardware
 			}
 			catch (Exception ex)
 			{
-				Logger.Error($"PLC连接异常: {ex.Message}");
+				Logger.Error($"[PLC] 连接异常: {ex.Message} 耗时={sw.ElapsedMilliseconds}ms");
 				_connected = false;
 				return false;
 			}
@@ -68,7 +69,7 @@ namespace Hardware
 		{
 			if (_simulateMode)
 			{
-				Logger.Debug($"模拟模式：PLC发送 ProductId={product.ProductId} {(product.FinalResult ? "OK" : "NG")}");
+				Logger.Debug($"[PLC] 模拟发送 ProductId={product.ProductId} Front={product.FrontResult} Back={product.BackResult} EndFace={product.EndFaceResult} Side={product.SideResult}");
 				return true;
 			}
 
@@ -78,12 +79,12 @@ namespace Hardware
 			{
 				try
 				{
-					Logger.Info($"PLC发送 ProductId={product.ProductId} {(product.FinalResult ? "OK" : "NG")}");
+					Logger.Info($"[PLC] 发送结果 ProductId={product.ProductId} FinalResult={(product.FinalResult ? "OK" : "NG")} Defects={string.Join(",", product.GetAllDefects())}");
 					return true;
 				}
 				catch (Exception ex)
 				{
-					Logger.Error($"PLC发送失败: {ex.Message}");
+					Logger.Error($"[PLC] 发送失败: {ex.Message}");
 					return false;
 				}
 			}

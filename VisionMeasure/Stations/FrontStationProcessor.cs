@@ -64,10 +64,12 @@ namespace VisionMeasure.Stations
 		public void OnCam1(Bitmap leftImg, object extraArg = null)
 		{
 			if (leftImg == null) return;
+			Logger.Debug($"[Front] OnCam1 收到图像 {leftImg.Width}x{leftImg.Height}");
 			lock (_syncLock)
 			{
 				_leftBuffer?.Dispose();
 				_leftBuffer = leftImg.ToMat();
+				Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY); // 旋转180°
 			}
 			CheckAndProcessAsync();
 		}
@@ -75,10 +77,12 @@ namespace VisionMeasure.Stations
 		public void OnCam2(Bitmap rightImg, object extraArg = null)
 		{
 			if (rightImg == null) return;
+			Logger.Debug($"[Front] OnCam2 收到图像 {rightImg.Width}x{rightImg.Height}");
 			lock (_syncLock)
 			{
 				_rightBuffer?.Dispose();
 				_rightBuffer = rightImg.ToMat();
+				Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY); // 旋转180°
 			}
 			CheckAndProcessAsync();
 		}
@@ -96,11 +100,13 @@ namespace VisionMeasure.Stations
 					rightToProcess = _rightBuffer;
 					_leftBuffer = null;
 					_rightBuffer = null;
+					Logger.Debug("[Front] 左右图像配对成功，开始处理");
 				}
 			}
 
 			if (leftToProcess == null || rightToProcess == null) return;
 
+			var swTotal = System.Diagnostics.Stopwatch.StartNew();
 			try
 			{
 				int pCount = _currentSku?.P ?? 8;
@@ -158,10 +164,12 @@ namespace VisionMeasure.Stations
 				// 触发主界面更新
 				OnResultReady?.Invoke(mergedImage, ngArray, _okCount, _ngCount);
 				OnStatusUpdate?.Invoke(statusList, pCount);
+
+				Logger.Info($"[Front] 处理完成 总耗时={swTotal.Elapsed.TotalMilliseconds:F2}ms P={pCount} OK={pCount - currentNgCount} NG={currentNgCount}");
 			}
 			catch (Exception ex)
 			{
-				Logger.Error($"正面工位处理异常: {ex.Message}");
+				Logger.Error($"[Front] 处理异常: {ex.Message}\r\n{ex.StackTrace}");
 			}
 			finally
 			{

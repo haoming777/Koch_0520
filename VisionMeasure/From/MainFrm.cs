@@ -31,16 +31,25 @@ using VisionMeasure.Utils;using CommonLib;     // 引入 SystemConfig 所在的�
 
 namespace VisionMeasure
 {
-	public partial class MainFrm : Form
+	public partial class MainFrm : Form, ICamera
 	{
+		/// <summary>手动测试模式：true时停止所有自动触发</summary>
+			public static bool ManualTestMode = false;
+			/// <summary>各工位启用开关</summary>
+			public static bool FrontEnabled = true, BackEnabled = true, EndFaceEnabled = true, SideEnabled = true;
 		// ========== 硬件管理层 ==========
 		private MotionControlManager _motionMgr;
-		private CameraManager _cameraMgr;
 		private CameraTriggerManager _triggerMgr;
 		private PlcCommunication _plcComm;
 
 		// ========== AI模型管理层 ==========
 		private AiModelManager _aiModels;
+
+		/// <summary>预加载的AI模型管理器（由Program.cs设置以避免重复加载）</summary>
+		public static AiModelManager PreloadedModels { get; set; }
+
+		/// <summary>预加载的SKU数据库</summary>
+		public static SkuDatabase PreloadedSkuDb { get; set; }
 
 		// ========== 工位处理器 ==========
 		private FrontStationProcessor _frontStation;
@@ -140,11 +149,20 @@ namespace VisionMeasure
 				Logger.Info("正在加载检测参数...");
 				_detectionParams = DetectionParameters.Instance;
 
-				// 初始化SKU数据库
+			// 初始化SKU数据库（优先使用预加载）
 				UpdateLoadingProgress(15, "正在加载SKU数据...");
 				Logger.Info("正在加载SKU数据...");
-				_skuDb = new SkuDatabase();
-				_skuDb.LoadData();
+				if (PreloadedSkuDb != null)
+				{
+					_skuDb = PreloadedSkuDb;
+					PreloadedSkuDb = null;
+					Logger.Info("使用预加载的SKU数据，跳过重复加载");
+				}
+				else
+				{
+					_skuDb = new SkuDatabase();
+					_skuDb.LoadData();
+				}
 
 				// 初始化性能监控
 				UpdateLoadingProgress(20, "正在初始化性能监控...");
@@ -174,6 +192,12 @@ namespace VisionMeasure
 				InitAiModels();
 				UpdateLoadingProgress(85, "AI模型加载完成");
 
+				// 从配置读取工位启用开关
+				FrontEnabled = _detectionParams.Station.FrontEnabled;
+				BackEnabled = _detectionParams.Station.BackEnabled;
+				EndFaceEnabled = _detectionParams.Station.EndFaceEnabled;
+				SideEnabled = _detectionParams.Station.SideEnabled;
+				Logger.Info($"工位开关: 正面={FrontEnabled}, 背面={BackEnabled}, 端面={EndFaceEnabled}, 侧面={SideEnabled}");
 				// 初始化工位处理器
 				UpdateLoadingProgress(88, "正在初始化工位处理器...");
 				Logger.Info("正在初始化工位处理器...");
@@ -194,9 +218,6 @@ namespace VisionMeasure
 
 				// 刷新显示
 				RefreshCarouselDisplays();
-
-				_skuDb.LoadData();
-
 				// 验证数据是否正确加载
 				var testSku = _skuDb.GetBySkuNumber("181712303");
 				if (testSku != null)
@@ -262,22 +283,92 @@ namespace VisionMeasure
 		private void InitCameras()
 		{
 			bool useSimulateMode = _detectionParams.Camera.GetSimulateMode();
-			_cameraMgr = new CameraManager(useSimulateMode);
-			_cameraMgr.OnImageReceived += OnCameraImageReceived;
-			_cameraMgr.OnConnectionChanged += OnCameraConnectionChanged;
+			var camCfg = _detectionParams.Camera;
+			Logger.Info($"========== 初始化相机（模拟模式: {useSimulateMode}） ==========");
 
-			if (_cameraMgr.InitializeAll())
+			// 相机配置数组: (字段引用, 序列号, 名称, 相机ID)
+			var cameraConfigs = new (DaHuaSDK field, string sn, string name, int id)[]
 			{
-				_cameraMgr.StartAll();
-				Logger.Info("相机初始化成功");
-			}
-			else
+				(null, camCfg.Camera1SN, "正面左", 1),
+				(null, camCfg.Camera2SN, "正面右", 2),
+				(null, camCfg.Camera3SN, "上端面", 3),
+				(null, camCfg.Camera4SN, "下端面", 4),
+				(null, camCfg.Camera5SN, "背面左", 5),
+				(null, camCfg.Camera6SN, "背面右", 6),
+				(null, camCfg.Camera7SN, "左侧面", 7),
+				(null, camCfg.Camera8SN, "右侧面", 8),
+			};
+
+			int successCount = 0;
+			foreach (var cfg in cameraConfigs)
 			{
-				Logger.Warning("部分相机初始化失败");
+				try
+				{
+					if (useSimulateMode)
+					{
+						Logger.Info($"[Camera{cfg.id}] {cfg.name} 模拟模式初始化成功");
+						UpdateCameraState(cfg.id, true);
+						successCount++;
+						continue;
+					}
+
+					if (string.IsNullOrEmpty(cfg.sn))
+					{
+						Logger.Warning($"[Camera{cfg.id}] {cfg.name} 序列号未配置，跳过");
+						continue;
+					}
+
+					Logger.Info($"[Camera{cfg.id}] {cfg.name} 开始初始化, SN={cfg.sn}");
+
+					var sdk = new DaHuaSDK();
+					Logger.Debug($"[Camera{cfg.id}] DaHuaSDK实例已创建");
+
+					sdk.SetCameraInterface(this);
+					Logger.Debug($"[Camera{cfg.id}] SetCameraInterface完成");
+
+					// 订阅OnImage事件
+					SubscribeCameraImageEvent(sdk, cfg.id);
+					Logger.Debug($"[Camera{cfg.id}] OnImage事件已订阅");
+
+					sdk.SetCameraByKey(cfg.sn);
+					Logger.Debug($"[Camera{cfg.id}] SetCameraByKey完成 SN={cfg.sn}");
+
+					sdk.Open();
+					Logger.Info($"[Camera{cfg.id}] {cfg.name} Open成功");
+
+					sdk.StopStreamGrabber();
+					Logger.Debug($"[Camera{cfg.id}] StopStreamGrabber完成");
+
+					sdk.SetAcquisitionMode(0);
+					sdk.SetTriggerMode(1);
+					sdk.setTriggerSource(1);
+					Logger.Debug($"[Camera{cfg.id}] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1");
+
+					// 设置曝光时间
+					SetCameraExposure(sdk, cfg.id, camCfg);
+
+					sdk.StartStreamGrabber();
+					Logger.Info($"[Camera{cfg.id}] {cfg.name} StartStreamGrabber完成, 初始化成功");
+
+					// 赋值给公共字段
+					SetCameraField(cfg.id, sdk);
+
+					UpdateCameraState(cfg.id, true);
+					successCount++;
+				}
+				catch (Exception ex)
+				{
+					Logger.Error($"[Camera{cfg.id}] {cfg.name} 初始化失败: {ex.Message}\r\n{ex.StackTrace}");
+					UpdateCameraState(cfg.id, false);
+				}
 			}
 
+			Logger.Info($"========== 相机初始化完成: {successCount}/{cameraConfigs.Length} ==========");
+
+			// 初始化触发管理器
 			if (_motionMgr != null && _motionMgr.IsConnected && !useSimulateMode)
 			{
+				CameraTriggerConfig.ApplyIn12EdgeMode();
 				_triggerMgr = new CameraTriggerManager(_motionMgr, useSimulateMode);
 				_triggerMgr.OnTriggered += OnCameraTriggered;
 				_triggerMgr.Start();
@@ -289,17 +380,82 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>根据相机ID订阅对应的OnImage事件</summary>
+		private void SubscribeCameraImageEvent(DaHuaSDK sdk, int cameraId)
+		{
+			switch (cameraId)
+			{
+				case 1: sdk.OnImage += OnCamera1Image; break;
+				case 2: sdk.OnImage += OnCamera2Image; break;
+				case 3: sdk.OnImage += OnCamera3Image; break;
+				case 4: sdk.OnImage += OnCamera4Image; break;
+				case 5: sdk.OnImage += OnCamera5Image; break;
+				case 6: sdk.OnImage += OnCamera6Image; break;
+				case 7: sdk.OnImage += OnCamera7Image; break;
+				case 8: sdk.OnImage += OnCamera8Image; break;
+			}
+		}
+
+		/// <summary>将DaHuaSDK实例赋值给对应的公共字段</summary>
+		private void SetCameraField(int cameraId, DaHuaSDK sdk)
+		{
+			switch (cameraId)
+			{
+				case 1: camera1SDK = sdk; break;
+				case 2: camera2SDK = sdk; break;
+				case 3: camera3SDK = sdk; break;
+				case 4: camera4SDK = sdk; break;
+				case 5: camera5SDK = sdk; break;
+				case 6: camera6SDK = sdk; break;
+				case 7: camera7SDK = sdk; break;
+				case 8: camera8SDK = sdk; break;
+			}
+		}
+
+		/// <summary>设置相机曝光时间</summary>
+		private void SetCameraExposure(DaHuaSDK sdk, int cameraId, DetectionParameters.CameraParams camCfg)
+		{
+			try
+			{
+				double exp = 5000.0;
+				switch (cameraId)
+				{
+					case 1: exp = camCfg.ExposureTime1; break;
+					case 2: exp = camCfg.ExposureTime2; break;
+					case 3: exp = camCfg.ExposureTime3; break;
+					case 4: exp = camCfg.ExposureTime4; break;
+					case 5: exp = camCfg.ExposureTime5; break;
+					case 6: exp = camCfg.ExposureTime6; break;
+					case 7: exp = camCfg.ExposureTime7; break;
+					case 8: exp = camCfg.ExposureTime8; break;
+				}
+				sdk.SetExposureTime(exp);
+				Logger.Debug($"[Camera{cameraId}] 曝光时间: {exp}us");
+			}
+			catch (Exception ex)
+			{
+				Logger.Warning($"[Camera{cameraId}] 设置曝光时间失败: {ex.Message}");
+			}
+		}
+
 		/// <summary>
 		/// 相机触发回调 - 当检测到触发信号并输出脉冲后调用
 		/// </summary>
 		/// <param name="cameraId">被触发的相机ID</param>
 		private void OnCameraTriggered(int cameraId)
 		{
-			// 记录触发日志（生产环境建议注释掉，避免日志过多）
-			Logger.Debug($"相机{cameraId} 触发脉冲已发送", "Trigger");
+			var cfg = CameraTriggerConfig.GetConfig(cameraId);
+			int outPort = cfg?.OutputPort ?? -1;
+			Logger.Debug($"相机{cameraId} 触发脉冲已发送 IN{cfg?.InputPort}->OUT{outPort}", "Trigger");
 
-			// 可选：更新UI上的触发指示灯
-			this.Invoke(new Action(() =>
+			// 侧面工位：IN13上升沿→Camera7触发→启动运动控制
+			if (cameraId == 7 && SideEnabled && _sideStation != null && !_sideStation.IsMoving)
+			{
+				Logger.Info("[Side] IN13检测到工件，启动侧面运动控制");
+				Task.Run(() => _sideStation.StartDetection());
+			}
+
+			this.BeginInvoke(new Action(() =>
 			{
 				switch (cameraId)
 				{
@@ -333,8 +489,15 @@ namespace VisionMeasure
 			// 可选：统计触发次数
 			// _triggerCount[cameraId]++;
 		}
-		private void InitAiModels()
+	private void InitAiModels()
 		{
+			if (PreloadedModels != null)
+			{
+					_aiModels = PreloadedModels;
+					PreloadedModels = null;
+					Logger.Info("使用预加载的AI模型，跳过重复加载");
+					return;
+			}
 			var modelConfig = ModelPathConfig.LoadFromSysConfig();
 			_aiModels = new AiModelManager(modelConfig);
 			_aiModels.LoadAllModels();
@@ -342,8 +505,16 @@ namespace VisionMeasure
 
 		private void InitStations()
 		{
-			string imgPath = _detectionParams.Save.ImageSavePath;
-			_currentSku = _skuDb.Search("").FirstOrDefault() ?? new SkuData { P = 8, Z = 2, MM = 42 };
+		string imgPath = _detectionParams.Save.ImageSavePath;
+			// 恢复上次SKU
+			string lastSku = _detectionParams.LastSkuNumber;
+			if (!string.IsNullOrEmpty(lastSku))
+			{
+				var saved = _skuDb.GetBySkuNumber(lastSku);
+				if (saved != null) { _currentSku = saved; Logger.Info($"恢复上次SKU: {lastSku}, P={_currentSku.P}"); }
+				else _currentSku = _skuDb.Search("").FirstOrDefault() ?? new SkuData { P = 8, Z = 2, MM = 42 };
+			}
+			else _currentSku = _skuDb.Search("").FirstOrDefault() ?? new SkuData { P = 8, Z = 2, MM = 42 };
 
 			_frontStation = new FrontStationProcessor(_aiModels, _detectionParams);
 			_frontStation.OnResultReady += OnStationResult;
@@ -361,6 +532,15 @@ namespace VisionMeasure
 			_sideStation = new SideStationProcessor(_aiModels, imgPath, _currentSku, _motionMgr, _imageSaver, _perfMonitor);
 			_sideStation.OnResultReady += OnStationResult;
 			_sideStation.OnStatusUpdate += OnSideStatusUpdate;
+
+			// 同步IN12边缘模式
+			_sideStation.EdgeMode = CameraTriggerConfig.In12EdgeMode == CameraTriggerConfig.SideSensorEdgeMode.RisingRightFallingLeft
+				? SideStationProcessor.TriggerEdgeMode.RisingRightFallingLeft
+				: SideStationProcessor.TriggerEdgeMode.RisingLeftFallingRight;
+			_sideStation.UseContinuousMode = _detectionParams.Side.UseContinuousMode;
+			_sideStation.MissingAsNg = _detectionParams.Side.MissingAsNg;
+			Logger.Info($"侧面工位配置: EdgeMode={_sideStation.EdgeMode}, ContinuousMode={_sideStation.UseContinuousMode}, MissingAsNg={_sideStation.MissingAsNg}");
+
 			_sideStation.Start();
 		}
 
@@ -368,6 +548,10 @@ namespace VisionMeasure
 
 		#region 相机回调
 
+		/// <summary>
+		/// 旧相机回调入口（保留兼容），新代码使用独立的OnCameraNImage事件
+		/// 显示控件映射: xlPictureBox1=正面, xlPictureBox2=背面, xlPictureBox3=上端面, xlPictureBox4=下端面, xlPictureBox5=左侧面, xlPictureBox6=右侧面
+		/// </summary>
 		private void OnCameraImageReceived(int cameraId, Bitmap image)
 		{
 			if (_isClosing || image == null) return;
@@ -375,20 +559,146 @@ namespace VisionMeasure
 
 			switch (cameraId)
 			{
-				case 1: _frontStation?.OnCam1(image, pid); UpdatePictureBox(xlPictureBox1, image); break;
-				case 2: _frontStation?.OnCam2(image, pid); UpdatePictureBox(xlPictureBox2, image); break;
-				case 3: _backStation?.OnCam3(image, pid); UpdatePictureBox(xlPictureBox3, image); break;
-				case 4: _backStation?.OnCam4(image, pid); UpdatePictureBox(xlPictureBox4, image); break;
-				case 5: _endFaceStation?.OnCam5(image, pid); break;
-				case 6: _endFaceStation?.OnCam6(image, pid); break;
-				case 7: _sideStation?.OnCam7(image, pid); break;
-				case 8: _sideStation?.OnCam8(image, pid); break;
+				case 1: if (FrontEnabled) _frontStation?.OnCam1(image, pid); break;
+				case 2: if (FrontEnabled) _frontStation?.OnCam2(image, pid); break;
+				case 3: if (EndFaceEnabled) _endFaceStation?.OnCam5(image, pid); break;
+				case 4: if (EndFaceEnabled) _endFaceStation?.OnCam6(image, pid); break;
+				case 5: if (BackEnabled) _backStation?.OnCam3(image, pid); break;
+				case 6: if (BackEnabled) _backStation?.OnCam4(image, pid); break;
+				case 7: if (SideEnabled) _sideStation?.OnCam7(image, pid); break;
+				case 8: if (SideEnabled) _sideStation?.OnCam8(image, pid); break;
 			}
 		}
 
-		private void OnCameraConnectionChanged(int cameraId, bool isConnected)
+		#region ICamera 接口实现
+
+		public void OnCameraOpen(string cameraName, string cameraKey)
 		{
-			this.Invoke(new Action(() =>
+			Logger.Info($"[ICamera] 相机打开: Name={cameraName}, Key={cameraKey}");
+			int camId = GetCameraIdByKey(cameraKey);
+			if (camId > 0) UpdateCameraState(camId, true);
+		}
+
+		public void OnCameraClose(string cameraName, string cameraKey)
+		{
+			Logger.Warning($"[ICamera] 相机关闭: Name={cameraName}, Key={cameraKey}");
+			int camId = GetCameraIdByKey(cameraKey);
+			if (camId > 0) UpdateCameraState(camId, false);
+		}
+
+		public void OnCameraConnectLoss(string cameraName, string cameraKey)
+		{
+			Logger.Warning($"[ICamera] 相机掉线: Name={cameraName}, Key={cameraKey}");
+			int camId = GetCameraIdByKey(cameraKey);
+			if (camId > 0) UpdateCameraState(camId, false);
+		}
+
+		#endregion
+
+		#region 各相机OnImage事件处理
+
+		private void OnCamera1Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (FrontEnabled) _frontStation?.OnCam1(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera1] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera2Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (FrontEnabled) _frontStation?.OnCam2(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera2] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera3Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (EndFaceEnabled) _endFaceStation?.OnCam5(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera3] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera4Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (EndFaceEnabled) _endFaceStation?.OnCam6(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera4] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera5Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (BackEnabled) _backStation?.OnCam3(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera5] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera6Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (BackEnabled) _backStation?.OnCam4(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera6] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera7Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (SideEnabled) _sideStation?.OnCam7(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera7] OnImage异常: {ex.Message}"); }
+		}
+
+		private void OnCamera8Image(Bitmap bitmap, string cameraName, string cameraKey)
+		{
+			try
+			{
+				if (_isClosing || bitmap == null) return;
+				long pid = Interlocked.Increment(ref _productIdCounter);
+				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				if (SideEnabled) _sideStation?.OnCam8(bitmap, pid);
+			}
+			catch (Exception ex) { Logger.Error($"[Camera8] OnImage异常: {ex.Message}"); }
+		}
+
+		#endregion
+
+		/// <summary>统一的相机连接状态更新（修复B1: case 6/7/8之前错误检查camera5State）</summary>
+		private void UpdateCameraState(int cameraId, bool isConnected)
+		{
+			this.BeginInvoke(new Action(() =>
 			{
 				var state = isConnected ? UILightState.On : UILightState.Off;
 				switch (cameraId)
@@ -398,11 +708,34 @@ namespace VisionMeasure
 					case 3: if (camera3State != null) camera3State.State = state; break;
 					case 4: if (camera4State != null) camera4State.State = state; break;
 					case 5: if (camera5State != null) camera5State.State = state; break;
-					case 6: if (camera5State != null) camera6State.State = state; break;
-					case 7: if (camera5State != null) camera7State.State = state; break;
-					case 8: if (camera5State != null) camera8State.State = state; break;
+					case 6: if (camera6State != null) camera6State.State = state; break;
+					case 7: if (camera7State != null) camera7State.State = state; break;
+					case 8: if (camera8State != null) camera8State.State = state; break;
 				}
+				Logger.Debug($"[Camera{cameraId}] 状态更新: {(isConnected ? "已连接" : "已断开")}");
 			}));
+		}
+
+		/// <summary>根据相机序列号(Key)查找相机ID</summary>
+		private int GetCameraIdByKey(string cameraKey)
+		{
+			if (string.IsNullOrEmpty(cameraKey)) return 0;
+			var camCfg = _detectionParams?.Camera;
+			if (camCfg == null) return 0;
+			if (camCfg.Camera1SN == cameraKey) return 1;
+			if (camCfg.Camera2SN == cameraKey) return 2;
+			if (camCfg.Camera3SN == cameraKey) return 3;
+			if (camCfg.Camera4SN == cameraKey) return 4;
+			if (camCfg.Camera5SN == cameraKey) return 5;
+			if (camCfg.Camera6SN == cameraKey) return 6;
+			if (camCfg.Camera7SN == cameraKey) return 7;
+			if (camCfg.Camera8SN == cameraKey) return 8;
+			return 0;
+		}
+
+		private void OnCameraConnectionChanged(int cameraId, bool isConnected)
+		{
+			UpdateCameraState(cameraId, isConnected);
 		}
 
 		#endregion
@@ -411,21 +744,30 @@ namespace VisionMeasure
 
 		private void OnStationResult(Bitmap mergedImage, bool[] ngArray, int okCount, int ngCount)
 		{
+			if (mergedImage == null) return;
 			if (this.InvokeRequired)
 			{
 				this.BeginInvoke(new Action(() => OnStationResult(mergedImage, ngArray, okCount, ngCount)));
 				return;
 			}
+			// 正面工位合并结果显示在 xlPictureBox1
+			UpdatePictureBox(xlPictureBox1, mergedImage);
 		}
 		private void OnStationResult(ProductResult result)
 		{
-			if (result.IsComplete)
+			this.BeginInvoke(new Action(() =>
 			{
-				this.Invoke(new Action(() =>
-				{
+				// 显示渲染图像到对应控件
+				if (result.BackRenderImage != null)
+					UpdatePictureBox(xlPictureBox2, result.BackRenderImage);
+				if (result.EndFaceRenderImage != null)
+					UpdatePictureBox(xlPictureBox3, result.EndFaceRenderImage);
+				if (result.SideRenderImage != null)
+					UpdatePictureBox(xlPictureBox5, result.SideRenderImage);
+
+				if (result.IsComplete)
 					UpdateStatistics(result);
-				}));
-			}
+			}));
 		}
 
 		private void UpdateStatistics(ProductResult result)
@@ -481,7 +823,7 @@ namespace VisionMeasure
 
 		private void OnEndFaceStatusUpdate(List<string> upperStatus, List<string> lowerStatus, List<string> mergedStatus, int p)
 		{
-			this.Invoke(new Action(() =>
+			this.BeginInvoke(new Action(() =>
 			{
 				if (_endFaceIndexLabel != null && _endFaceStation != null)
 				{
@@ -493,7 +835,7 @@ namespace VisionMeasure
 
 		private void OnSideStatusUpdate(List<string> leftStatus, List<string> rightStatus, List<string> mergedStatus, int p)
 		{
-			this.Invoke(new Action(() =>
+			this.BeginInvoke(new Action(() =>
 			{
 				if (_sideIndexLabel != null && _sideStation != null)
 				{
@@ -587,7 +929,7 @@ namespace VisionMeasure
 				}
 
 				// 在UI线程上更新
-				this.Invoke(new Action(() =>
+				this.BeginInvoke(new Action(() =>
 				{
 					var results = _skuDb.Search(keyword);
 					_skuSearchCombo.Items.Clear();
@@ -618,6 +960,9 @@ namespace VisionMeasure
 						UpdateSkuDisplay();
 						_frontStation?.UpdateSku(_currentSku);
 						_backStation?.UpdateSku(_currentSku);
+					// 保存到配置
+						_detectionParams.LastSkuNumber = skuNum;
+						_detectionParams.SaveToFile();
 						_sideStation?.UpdateSku(_currentSku);
 						_endFaceStation?.UpdatePCount(_currentSku.P);
 						Logger.Info($"SKU已切换: {skuNum}, P={_currentSku.P}, Z={_currentSku.Z}, MM={_currentSku.MM}");
@@ -646,6 +991,8 @@ namespace VisionMeasure
 							_frontStation?.UpdateSku(_currentSku);
 							_backStation?.UpdateSku(_currentSku);
 							_sideStation?.UpdateSku(_currentSku);
+						_detectionParams.LastSkuNumber = skuNum;
+							_detectionParams.SaveToFile();
 							_endFaceStation?.UpdatePCount(_currentSku.P);
 							Logger.Info($"SKU已切换(回车): {skuNum}, P={_currentSku.P}");
 						}
@@ -692,6 +1039,7 @@ namespace VisionMeasure
 				Logger.Debug($"  条形码={_currentSku.BackBarcode}");
 				Logger.Debug($"  打码格式={_currentSku.CodingFormat}");
 
+			if (_skuSearchCombo != null) _skuSearchCombo.Text = _currentSku.SkuNumber ?? "";
 				if (P_Lb != null) P_Lb.Text = _currentSku.P.ToString();
 				if (Z_Lb != null) Z_Lb.Text = _currentSku.Z.ToString();
 				if (MM_Lb != null) MM_Lb.Text = _currentSku.MM.ToString();
@@ -761,19 +1109,26 @@ namespace VisionMeasure
 		{
 			try
 			{
-				// 刷新端面轮播图
+				// 端面轮播图 — 上端面→xlPictureBox3, 下端面→xlPictureBox4
 				if (_endFaceStation != null)
 				{
-					var displayMat = _endFaceStation.GetCurrentDisplayImage();
-					if (displayMat != null && !displayMat.Empty())
+					var upperMat = _endFaceStation.GetCurrentUpperImage();
+					if (upperMat != null && !upperMat.Empty())
 					{
-						var displayBitmap = BmpConverter.ToBitmap(displayMat);
-						UpdatePictureBox(xlPictureBox3, displayBitmap);
-						displayMat.Dispose();
+						var bmp = BmpConverter.ToBitmap(upperMat);
+						UpdatePictureBox(xlPictureBox3, bmp);
+						upperMat.Dispose();
+					}
+					var lowerMat = _endFaceStation.GetCurrentLowerImage();
+					if (lowerMat != null && !lowerMat.Empty())
+					{
+						var bmp = BmpConverter.ToBitmap(lowerMat);
+						UpdatePictureBox(xlPictureBox4, bmp);
+						lowerMat.Dispose();
 					}
 				}
 
-				// 刷新侧面轮播图
+				// 侧面轮播图 — 左侧面→xlPictureBox5
 				if (_sideStation != null)
 				{
 					var displayBitmap = _sideStation.GetCurrentDisplayImage();
@@ -791,18 +1146,26 @@ namespace VisionMeasure
 
 		private void UpdatePictureBox(XLPictureBox pb, Bitmap image)
 		{
-			if (pb == null) return;
+			if (pb == null || image == null) return;
 
 			if (pb.InvokeRequired)
 			{
-				pb.Invoke(new Action(() => UpdatePictureBox(pb, image)));
+				pb.BeginInvoke(new Action(() => UpdatePictureBox(pb, image)));
 				return;
 			}
 
 			try
 			{
+				Bitmap display = image;
+				int maxW = 1920;
+				if (image.Width > maxW)
+				{
+					float scale = (float)maxW / image.Width;
+					int newH = (int)(image.Height * scale);
+					display = new Bitmap(image, new DrawSize(maxW, newH));
+				}
 				var old = pb.Image;
-				pb.Image = image;
+				pb.Image = display;
 				old?.Dispose();
 			}
 			catch (Exception ex)
@@ -945,7 +1308,8 @@ namespace VisionMeasure
 				_sideStation?.Dispose();
 
 				_triggerMgr?.Dispose();  // 释放触发管理器（包含后台线程）
-				_cameraMgr?.Dispose();
+				// 释放所有相机SDK实例
+				DisposeAllCameras();
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
 				_perfMonitor?.Dispose();
@@ -961,6 +1325,19 @@ namespace VisionMeasure
 				Console.WriteLine($"关闭异常: {ex.Message}");
 			}
 		}
+		/// <summary>释放所有相机SDK实例</summary>
+		private void DisposeAllCameras()
+		{
+			var cameras = new[] { camera1SDK, camera2SDK, camera3SDK, camera4SDK, camera5SDK, camera6SDK, camera7SDK, camera8SDK };
+			foreach (var cam in cameras)
+			{
+				if (cam == null) continue;
+				try { cam.StopStreamGrabber(); } catch (Exception ex) { Logger.Error($"相机StopStreamGrabber异常: {ex.Message}"); }
+				try { cam.Close(); } catch (Exception ex) { Logger.Error($"相机Close异常: {ex.Message}"); }
+			}
+			Logger.Info("所有相机已释放");
+		}
+
 
 		#endregion
 
@@ -984,13 +1361,13 @@ namespace VisionMeasure
 		{
 			return _motionMgr;
 		}
-
-		/// <summary>
-		/// 获取相机管理器
+	/// <summary>
+		/// 获取相机管理器（已弃用，现在相机由MainFrm直接管理）
 		/// </summary>
+		[Obsolete("相机现在由MainFrm直接管理，请使用GetDaHuaSDK(int cameraId)")]
 		public CameraManager GetCameraManager()
 		{
-			return _cameraMgr;
+			return null;
 		}
 
 		/// <summary>

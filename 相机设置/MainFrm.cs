@@ -25,11 +25,23 @@ namespace SetCamera
 			InitializeComponent();
 		}
 
-		public MainFrm(IntPtr handle, HCModbusClass modbusClass1)
+	public MainFrm(IntPtr handle, HCModbusClass modbusClass1)
 		{
 			InitializeComponent();
 			g_handle = handle;
 			modbusClass = modbusClass1;
+		}
+
+		/// <summary>从MainFrm获取相机SDK实例的构造函数</summary>
+		public MainFrm(IntPtr handle, HCModbusClass modbusClass1,
+			DaHuaSDK sdk1, DaHuaSDK sdk2, DaHuaSDK sdk3, DaHuaSDK sdk4,
+			DaHuaSDK sdk5, DaHuaSDK sdk6, DaHuaSDK sdk7, DaHuaSDK sdk8)
+		{
+			InitializeComponent();
+			g_handle = handle;
+			modbusClass = modbusClass1;
+			cam1 = sdk1; cam2 = sdk2; cam3 = sdk3; cam4 = sdk4;
+			cam5 = sdk5; cam6 = sdk6; cam7 = sdk7; cam8 = sdk8;
 		}
 		static IntPtr g_handle;
 		takephotoVm myZmcaux = new takephotoVm();
@@ -82,6 +94,12 @@ namespace SetCamera
 				//cam4.OnImage += Cam1_OnImage;
 				//cam5.OnImage += Cam1_OnImage;
 
+			// 添加8个相机选项
+				uiComboBox_cam.Items.Clear();
+				uiComboBox_cam.Items.Add("相机1-正面左"); uiComboBox_cam.Items.Add("相机2-正面右");
+				uiComboBox_cam.Items.Add("相机3-上端面"); uiComboBox_cam.Items.Add("相机4-下端面");
+				uiComboBox_cam.Items.Add("相机5-背面左"); uiComboBox_cam.Items.Add("相机6-背面右");
+				uiComboBox_cam.Items.Add("相机7-左侧面"); uiComboBox_cam.Items.Add("相机8-右侧面");
 				uiComboBox_cam.SelectedIndex = 0;
 				uiComboBox_axis.SelectedIndex = 0;
 
@@ -112,16 +130,13 @@ namespace SetCamera
 				{
 					MessageBox.Show("请先停止实时取像模式！", "系统提示", MessageBoxButtons.OK, MessageBoxIcon.Stop);
 					e.Cancel = true;
+					return;
 				}
-				cam1.OnImage -= Cam1_OnImage;
-				cam2.OnImage -= Cam1_OnImage;
-				cam3.OnImage -= Cam1_OnImage;
-				cam4.OnImage -= Cam1_OnImage;
-				cam5.OnImage -= Cam1_OnImage;
+				UnsubscribeAllOnImage();
 			}
 			catch (Exception ex)
 			{
-				toolClass.SaveLog($"程序错误！！！ \r\n {ex.Message} \r\n {ex.StackTrace}");
+				toolClass.SaveLog($"关闭窗口异常: {ex.Message}");
 			}
 		}
 		/// <summary>
@@ -151,23 +166,37 @@ namespace SetCamera
 		{
 			if (uiButton4.Text.Equals("实时取像"))
 			{
-				uiButton4.Text = "停止实时";
+				// 警告：实时取像会切换相机模式，影响正常生产触发
+				DialogResult dr = MessageBox.Show(
+					"实时取像将切换相机为连续采集模式，\r\n期间该相机无法响应生产触发信号！\r\n\r\n确定继续吗？",
+					"警告", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+				if (dr != DialogResult.OK) return;
 
+				uiButton4.Text = "停止实时";
 				uiButton3.Enabled = false;
-				//xlPictureBox1.ISRealTimeDisplay = true;
 				TriggerCameraMethod(false);
-				//daHuaSDK.SetTriggerMode(0);
 				uiComboBox_cam.Enabled = false;
 				uiComboBox_axis.Enabled = false;
 			}
 			else
 			{
 				uiButton4.Text = "实时取像";
-
 				uiButton3.Enabled = true;
-				//daHuaSDK.SetTriggerMode(1);
-				//xlPictureBox1.ISRealTimeDisplay = false;
 				TriggerFlag = false;
+
+				// 恢复相机到触发模式
+				try
+				{
+					daHuaSDK.StopStreamGrabber();
+					Thread.Sleep(50);
+					daHuaSDK.SetAcquisitionMode(0);  // 单帧模式
+					daHuaSDK.SetTriggerMode(1);      // 触发模式
+					daHuaSDK.setTriggerSource(1);    // 外触发
+					daHuaSDK.StartStreamGrabber();
+					toolClass.SaveLog("实时取像停止，已恢复触发模式");
+				}
+				catch (Exception ex) { toolClass.SaveLog($"恢复触发模式失败: {ex.Message}"); }
+
 				uiComboBox_cam.Enabled = true;
 				uiComboBox_axis.Enabled = true;
 			}
@@ -245,21 +274,26 @@ namespace SetCamera
 		#endregion
 
 		#region 相机回调事件
+		private string _selectedCamKey = "";
+
 		private void Cam1_OnImage(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
 			{
-				if (this.IsHandleCreated)
+				// 只显示当前选中相机的图像
+				if (string.IsNullOrEmpty(_selectedCamKey) || cameraKey != _selectedCamKey) return;
+				if (this.IsHandleCreated && !this.IsDisposed && bitmap != null)
 				{
-					this.xlPictureBox1.Invoke((EventHandler)delegate
+					this.BeginInvoke(new Action(() =>
 					{
-						this.xlPictureBox1.Image = bitmap;
-					});
+						try { if (!this.IsDisposed && xlPictureBox1 != null) { var old = xlPictureBox1.Image; xlPictureBox1.Image = bitmap; old?.Dispose(); } }
+						catch { }
+					}));
 				}
 			}
 			catch (Exception ex)
 			{
-				toolClass.SaveLog($"手动调试时发生异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				toolClass.SaveLog($"相机回调异常: {ex.Message}");
 			}
 		}
 
@@ -301,79 +335,46 @@ namespace SetCamera
 		{
 			try
 			{
-				switch (uiComboBox_cam.SelectedIndex + 1)
+				// 先取消所有订阅
+				UnsubscribeAllOnImage();
+				int idx = uiComboBox_cam.SelectedIndex + 1;
+				// 选择新相机
+				switch (idx)
 				{
-					case 1:
-						tempTriggerPath = cam1TriggerPath;
-						cam2.OnImage -= Cam1_OnImage;
-						cam3.OnImage -= Cam1_OnImage;
-						cam4.OnImage -= Cam1_OnImage;
-						cam5.OnImage -= Cam1_OnImage;
-						cam1.OnImage += Cam1_OnImage;
-						daHuaSDK = cam1;
-						toolClass.SaveLog($"切换为相机一：tempTriggerPath: {tempTriggerPath} ------------------------------------------------------------------------");
-
-
-
-						break;
-					case 2:
-						tempTriggerPath = cam2TriggerPath;
-						cam1.OnImage -= Cam1_OnImage;
-						cam3.OnImage -= Cam1_OnImage;
-						cam4.OnImage -= Cam1_OnImage;
-						cam5.OnImage -= Cam1_OnImage;
-						cam2.OnImage += Cam1_OnImage;
-						daHuaSDK = cam2;
-						toolClass.SaveLog($"切换为相机二：tempTriggerPath: {tempTriggerPath}	------------------------------------------------------------------------");
-						break;
-					case 3:
-						tempTriggerPath = cam3TriggerPath;
-						cam1.OnImage -= Cam1_OnImage;
-						cam2.OnImage -= Cam1_OnImage;
-						cam4.OnImage -= Cam1_OnImage;
-						cam5.OnImage -= Cam1_OnImage;
-						cam3.OnImage += Cam1_OnImage;
-						daHuaSDK = cam3;
-
-						uiComboBox_axis.SelectedIndex = 2;
-
-						toolClass.SaveLog($"切换为相机三：tempTriggerPath: {tempTriggerPath} ------------------------------------------------------------------------");
-						break;
-					case 4:
-						tempTriggerPath = cam4TriggerPath;
-						cam1.OnImage -= Cam1_OnImage;
-						cam3.OnImage -= Cam1_OnImage;
-						cam2.OnImage -= Cam1_OnImage;
-						cam5.OnImage -= Cam1_OnImage;
-						cam4.OnImage += Cam1_OnImage;
-						daHuaSDK = cam4;
-						uiComboBox_axis.SelectedIndex = 0;
-						toolClass.SaveLog($"切换为相机四：tempTriggerPath: {tempTriggerPath}------------------------------------------------------------------------");
-						break;
-					case 5:
-						tempTriggerPath = cam5TriggerPath;
-						cam1.OnImage -= Cam1_OnImage;
-						cam3.OnImage -= Cam1_OnImage;
-						cam4.OnImage -= Cam1_OnImage;
-						cam2.OnImage -= Cam1_OnImage;
-						cam5.OnImage += Cam1_OnImage;
-						daHuaSDK = cam5;
-						uiComboBox_axis.SelectedIndex = 1;
-						toolClass.SaveLog($"切换为相机五：tempTriggerPath: {tempTriggerPath}------------------------------------------------------------------------");
-						break;
-					default:
-						break;
-
+					case 1: daHuaSDK = cam1; break;
+					case 2: daHuaSDK = cam2; break;
+					case 3: daHuaSDK = cam3; break;
+					case 4: daHuaSDK = cam4; break;
+					case 5: daHuaSDK = cam5; break;
+					case 6: daHuaSDK = cam6; break;
+					case 7: daHuaSDK = cam7; break;
+					case 8: daHuaSDK = cam8; break;
 				}
-				cameraSNLb.Text = daHuaSDK.curCameraKey;
-				exposureLb.Text = daHuaSDK.GetExposureTime().ToString();
-				gainLb.Text = daHuaSDK.GetGainRaw().ToString();
+				if (daHuaSDK != null)
+				{
+					daHuaSDK.OnImage += Cam1_OnImage;
+					_selectedCamKey = daHuaSDK.curCameraKey;
+					cameraSNLb.Text = daHuaSDK.curCameraKey;
+					exposureLb.Text = daHuaSDK.GetExposureTime().ToString();
+					gainLb.Text = daHuaSDK.GetGainRaw().ToString();
+				}
 			}
 			catch (Exception ex)
 			{
-				toolClass.SaveLog($"手动调试时发生异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				toolClass.SaveLog($"切换相机异常: {ex.Message}");
 			}
+		}
 
+		private void UnsubscribeAllOnImage()
+		{
+			if (cam1 != null) cam1.OnImage -= Cam1_OnImage;
+			if (cam2 != null) cam2.OnImage -= Cam1_OnImage;
+			if (cam3 != null) cam3.OnImage -= Cam1_OnImage;
+			if (cam4 != null) cam4.OnImage -= Cam1_OnImage;
+			if (cam5 != null) cam5.OnImage -= Cam1_OnImage;
+			if (cam6 != null) cam6.OnImage -= Cam1_OnImage;
+			if (cam7 != null) cam7.OnImage -= Cam1_OnImage;
+			if (cam8 != null) cam8.OnImage -= Cam1_OnImage;
 		}
 
 
@@ -608,43 +609,43 @@ namespace SetCamera
 		/// 触发拍照
 		/// </summary>
 		/// <param name="type">true: 单次； false：连续</param>
-		public void TriggerCameraMethod(bool type)
+	public void TriggerCameraMethod(bool type)
 		{
 			try
 			{
-				TriggerFlag = true;
-
-				if (!modbusClass.modbusState)
+				if (daHuaSDK == null)
 				{
-					MessageBox.Show($"modbusClass.modbusState: {modbusClass.modbusState}");
+					MessageBox.Show("未选择相机或相机未初始化");
 					return;
 				}
 
-				Task.Run(() =>
+				if (type)
 				{
-					while (TriggerFlag)
-					{
-						//myZmcaux.SetOut(g_handle, tempTriggerPath, 1);
-						//Thread.Sleep(10);
-						//myZmcaux.SetOut(g_handle, tempTriggerPath, 0);
-
-						//toolClass.SaveLog(tempTriggerPath+"");
-						modbusClass.modbusTcp.Write(tempTriggerPath, true);
-						Thread.Sleep(100);
-						if (type)
-						{
-							TriggerFlag = false;
-							modbusClass.modbusTcp.Write(tempTriggerPath, false);
-							return;
-						}
-					}
-					modbusClass.modbusTcp.Write(tempTriggerPath, false);
-				});
+					// 单次拍照：使用软件触发
+					daHuaSDK.setTriggerSource(0);  // 切换到软触发
+					Thread.Sleep(50);
+					daHuaSDK.ExecuteSoftwareTrigger();
+					Thread.Sleep(50);
+					daHuaSDK.setTriggerSource(1);  // 恢复外触发
+					toolClass.SaveLog($"单次拍照完成 Camera={daHuaSDK.curCameraKey}");
+				}
+				else
+				{
+					// 实时取像：切换到连续采集模式
+					TriggerFlag = true;
+					daHuaSDK.StopStreamGrabber();
+					Thread.Sleep(50);
+					daHuaSDK.SetTriggerMode(0);     // 实时模式（非触发）
+					daHuaSDK.SetAcquisitionMode(1); // 连续采集
+					daHuaSDK.StartStreamGrabber();
+					toolClass.SaveLog($"实时取像开始 Camera={daHuaSDK.curCameraKey}");
+				}
 			}
 			catch (Exception ex)
 			{
 				toolClass.SaveLog($"手动调试时...\r\n {ex.Message} \r\n {ex.StackTrace}");
 			}
+
 		}
 
 		#region Low

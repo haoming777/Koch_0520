@@ -3,7 +3,6 @@ using Models;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -30,476 +29,307 @@ namespace Stations
 		private SkuData _sku;
 		private readonly HighSpeedImageSaver _imageSaver;
 		private readonly PerformanceMonitor _perfMonitor;
-
-		private readonly ConcurrentDictionary<long, ImageContext> _leftDict = new ConcurrentDictionary<long, ImageContext>();
-		private readonly ConcurrentDictionary<long, ImageContext> _rightDict = new ConcurrentDictionary<long, ImageContext>();
-		private readonly BlockingCollection<(ImageContext left, ImageContext right)> _pairQueue;
-
-		private long _totalCount = 0;
-		private long _okCount = 0;
-		private long _ngCount = 0;
-
-		private Thread _processThread;
-		private CancellationTokenSource _cts;
+		private Mat _leftBuffer, _rightBuffer;
+		private readonly object _syncLock = new object();
+		private long _totalCount, _okCount, _ngCount;
+		private bool _lastIsOk = true;
 		private bool _disposed;
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, int> OnStatusUpdate;
-
-		public float ConfThreshold { get; set; } = 0.5f;
-		public float IouThreshold { get; set; } = 0.2f;
-		public float HookThicknessThreshold { get; set; } = 30.0f;
-		public int HookBlueAreaClassId { get; set; } = 0;
-		public int HookHangHoleClassId { get; set; } = 1;
+		public float ConfThreshold = 0.5f, IouThreshold = 0.2f;
 
 		public BackStationProcessor(AiModelManager models, string savePath, SkuData sku,
 			HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
+		{ _models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor; }
+
+		public void UpdateSku(SkuData sku) { _sku = sku; }
+		public long TotalCount => _totalCount;
+		public long OkCount => _okCount;
+		public long NgCount => _ngCount;
+
+		public void OnCam3(Bitmap bmp, long pid)
 		{
-			_models = models;
-			_savePath = savePath;
-			_sku = sku;
-			_imageSaver = imageSaver;
-			_perfMonitor = perfMonitor;
-			_pairQueue = new BlockingCollection<(ImageContext, ImageContext)>(100);
-			_cts = new CancellationTokenSource();
+			if (bmp == null) return;
+			Logger.Debug("[Back] OnCam3(左) " + bmp.Width + "x" + bmp.Height);
+			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = bmp.ToMat(); }
+			CheckAndProcess();
 		}
 
-		public void UpdateSku(SkuData sku) => _sku = sku;
-		public void OnCam3(Bitmap bitmap, long productId) => AddImage(_leftDict, bitmap, productId, true);
-		public void OnCam4(Bitmap bitmap, long productId) => AddImage(_rightDict, bitmap, productId, false);
-
-		private void AddImage(ConcurrentDictionary<long, ImageContext> dict, Bitmap bitmap, long productId, bool isLeft)
+		public void OnCam4(Bitmap bmp, long pid)
 		{
-			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
-			var otherDict = isLeft ? _rightDict : _leftDict;
-			if (otherDict.TryRemove(productId, out var other))
-				_pairQueue.Add(isLeft ? (ctx, other) : (other, ctx));
-			else
-				dict[productId] = ctx;
+			if (bmp == null) return;
+			Logger.Debug("[Back] OnCam4(右) " + bmp.Width + "x" + bmp.Height);
+			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = bmp.ToMat(); }
+			CheckAndProcess();
 		}
 
-		public void Start()
+		private async void CheckAndProcess()
 		{
-			_processThread = new Thread(ProcessLoop) { Name = "BackStationProcessor", IsBackground = true, Priority = ThreadPriority.AboveNormal };
-			_processThread.Start();
-			Logger.Info("背面工位处理器已启动");
-		}
-
-		public void Stop() { _cts.Cancel(); _processThread?.Join(3000); }
-
-		private void ProcessLoop()
-		{
-			while (!_cts.Token.IsCancellationRequested)
-			{
-				try
-				{
-					if (_pairQueue.TryTake(out var pair, 100, _cts.Token))
-						ProcessImages(pair.left, pair.right);
-				}
-				catch (OperationCanceledException) { break; }
-				catch (Exception ex) { Logger.Error($"背面工位处理异常: {ex.Message}"); }
-			}
-		}
-
-		private async void ProcessImages(ImageContext left, ImageContext right)
-		{
-			long productId = left.ProductId;
+			Mat l = null, r = null;
+			lock (_syncLock) { if (_leftBuffer != null && _rightBuffer != null) { l = _leftBuffer; r = _rightBuffer; _leftBuffer = null; _rightBuffer = null; } }
+			if (l == null || r == null) return;
+			Logger.Debug("[Back] 配对成功");
 			var sw = System.Diagnostics.Stopwatch.StartNew();
-			var finalResult = new ProductResult { ProductId = productId, CreateTime = DateTime.Now };
-			var statusList = new List<string>(_sku.P);
-			for (int i = 0; i < _sku.P; i++) statusList.Add("OK");
+			try { await Task.Run(() => Process(l, r)); Logger.Info("[Back] 完成 总耗时=" + sw.Elapsed.TotalMilliseconds.ToString("F1") + "ms"); }
+			catch (Exception ex) { Logger.Error("[Back] 异常: " + ex.Message); }
+			finally { l?.Dispose(); r?.Dispose(); }
+		}
 
-			double cropTime = 0, inferenceTime = 0;
+		public void Start() { Logger.Info("背面工位已启动"); }
+		public void Stop() { }
+
+		private void Process(Mat leftMat, Mat rightMat)
+		{
+			long pid = DateTime.Now.Ticks;
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+			var result = new ProductResult { ProductId = pid, CreateTime = DateTime.Now };
+			int p = _sku.P, hp = p / 2;
+			var status = new List<string>(p); for (int i = 0; i < p; i++) status.Add("OK");
 
 			try
 			{
-				Logger.Debug($"背面处理开始 ProductId={productId}, P={_sku.P}");
+				Logger.Info("[Back] ====== 开始 P=" + p + " " + leftMat.Width + "x" + leftMat.Height + " ======");
 
-				Mat leftMat = null, rightMat = null;
-				using (var cropScope = new StopwatchScope(t => cropTime = t))
+				// 步骤0: 裁图
+				Mat leftProc = leftMat, rightProc = rightMat;
+				if (_sku.BackLeft_LeftPx > 0 || _sku.BackLeft_RightPx > 0)
 				{
-					leftMat = BitmapConverter.ToMat(left.OriginalBitmap);
-					rightMat = BitmapConverter.ToMat(right.OriginalBitmap);
-					CropImages(leftMat, rightMat, out var leftCropped, out var rightCropped);
-					leftMat?.Dispose(); rightMat?.Dispose();
-					leftMat = leftCropped; rightMat = rightCropped;
+					leftProc = ImageHelper.CropImageHorizontallyCv2(leftMat, _sku.BackLeft_LeftPx, leftMat.Width - _sku.BackLeft_RightPx);
+					Logger.Debug("[Back] 左图裁图: " + "保留" + _sku.BackLeft_LeftPx + "~" + _sku.BackLeft_RightPx + " -> " + leftProc.Width + "x" + leftProc.Height);
 				}
+				else Logger.Debug("[Back] 左图无需裁图");
 
-				int halfP = _sku.P / 2;
-
-				Dictionary<int, List<BoxDefect>> barcodeDict = null;
-				Dictionary<int, List<BoxDefect>> dateCodeDict = null;
-				Dictionary<int, List<BoxDefect>> hookDict = null;
-
-				using (var inferScope = new StopwatchScope(t => inferenceTime = t))
+				if (_sku.BackRight_LeftPx > 0 || _sku.BackRight_RightPx > 0)
 				{
-					var barcodeTask = Task.Run(() => RecognizeBarcodes(leftMat, rightMat, halfP));
-					var dateCodeTask = Task.Run(() => RecognizeDateCodes(leftMat, rightMat, halfP));
-					var hookTask = Task.Run(() => DetectHookDamage(leftMat, rightMat, halfP));
-
-					await Task.WhenAll(barcodeTask, dateCodeTask, hookTask);
-
-					barcodeDict = barcodeTask.Result;
-					dateCodeDict = dateCodeTask.Result;
-					hookDict = hookTask.Result;
+					rightProc = ImageHelper.CropImageHorizontallyCv2(rightMat, _sku.BackRight_LeftPx, rightMat.Width - _sku.BackRight_RightPx);
+					Logger.Debug("[Back] 右图裁图: " + _sku.BackRight_LeftPx + "," + _sku.BackRight_RightPx + " -> " + rightProc.Width + "x" + rightProc.Height);
 				}
+				else Logger.Debug("[Back] 右图无需裁图");
 
-				var allDefects = new List<BoxDefect>();
-				if (barcodeDict != null) allDefects.AddRange(barcodeDict.Values.SelectMany(v => v));
-				if (dateCodeDict != null) allDefects.AddRange(dateCodeDict.Values.SelectMany(v => v));
-				if (hookDict != null) allDefects.AddRange(hookDict.Values.SelectMany(v => v));
+				// 步骤1: 推理
+				Logger.Debug("[Back] 步骤1: 推理(条形码裁下1/3+挂钩全图)...");
+				var sw1 = System.Diagnostics.Stopwatch.StartNew();
+				Dictionary<int, List<BoxDefect>> barcodeDict = null, hookDict = null;
+				var bt = Task.Run(() => RecognizeBarcodes(leftProc, rightProc, hp));
+				var ht = Task.Run(() => DetectHookDamage(leftProc, rightProc, hp));
+				Task.WaitAll(bt, ht);
+				barcodeDict = bt.Result; hookDict = ht.Result;
+				var inferMs = sw1.Elapsed.TotalMilliseconds;
+				Logger.Info("[Back] 步骤1完成: 推理=" + inferMs.ToString("F1") + "ms");
 
-				foreach (var defect in allDefects)
-				{
-					if (defect.BoxIndex >= 0 && defect.BoxIndex < statusList.Count)
-						statusList[defect.BoxIndex] = defect.DefectType;
-				}
-
-				bool isOk = statusList.All(s => s == "OK");
-				finalResult.BackResult = isOk;
-				finalResult.BackDefects = statusList.Where(s => s != "OK").Distinct().ToList();
-
+				// 步骤2: 汇总
+				var all = new List<BoxDefect>();
+				int bc = 0, ho = 0, hs = 0;
+				if (barcodeDict != null) { var its = barcodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); bc = its.Count; }
+				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType == "轻微挂钩错位"); }
+				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
+				foreach (var d in all) if (d.BoxIndex >= 0 && d.BoxIndex < status.Count) status[d.BoxIndex] = d.DefectType;
+				for (int i = 0; i < status.Count; i++) Logger.Info("[Back]   盒" + (i + 1) + ": " + status[i]);
+				bool isOk = status.All(s => s == "OK");
+				result.BackResult = isOk;
+				result.BackDefects = status.Where(s => s != "OK").Distinct().ToList();
 				Interlocked.Increment(ref _totalCount);
-				if (isOk) Interlocked.Increment(ref _okCount);
-				else Interlocked.Increment(ref _ngCount);
+				if (isOk) Interlocked.Increment(ref _okCount); else Interlocked.Increment(ref _ngCount);
+				_lastIsOk = isOk;
 
-				double drawTime = 0;
-				Bitmap mergedRender = null;
-				using (var drawScope = new StopwatchScope(t => drawTime = t))
-				{
-					var leftRender = DrawDetectionResult(leftMat, allDefects.Where(d => d.BoxIndex < halfP).ToList(), statusList, 0, halfP);
-					var rightRender = DrawDetectionResult(rightMat, allDefects.Where(d => d.BoxIndex >= halfP).ToList(), statusList, halfP, _sku.P);
-					mergedRender = MergeImages(leftRender, rightRender);
-				}
+				// 步骤3: 绘制+合并
+				Logger.Debug("[Back] 步骤3: 绘制+合并...");
+				var sw3 = System.Diagnostics.Stopwatch.StartNew();
+				var lr = DrawResult(leftProc, all.Where(d => d.BoxIndex < hp).ToList(), status, 0, hp);
+				var rr = DrawResult(rightProc, all.Where(d => d.BoxIndex >= hp).ToList(), status, hp, p);
+				var merged = MergeImages(lr, rr);
+				result.BackRenderImage = merged;
+				var drawMs = sw3.Elapsed.TotalMilliseconds;
+				Logger.Info("[Back] 步骤3完成: 绘制+合并=" + drawMs.ToString("F1") + "ms " + merged.Width + "x" + merged.Height);
 
-				double saveTime = 0;
-				using (var saveScope = new StopwatchScope(t => saveTime = t))
-				{
-					SaveImages(left.OriginalBitmap, right.OriginalBitmap, mergedRender, productId, isOk, statusList);
-				}
+				// 步骤4: 保存
+				Logger.Debug("[Back] 步骤4: 保存...");
+				var sw4 = System.Diagnostics.Stopwatch.StartNew();
+				SaveImages(leftProc.ToBitmap(), rightProc.ToBitmap(), merged, pid, isOk, status);
+				var saveMs = sw4.Elapsed.TotalMilliseconds;
+				Logger.Info("[Back] 步骤4完成: 保存=" + saveMs.ToString("F1") + "ms");
 
-				double totalTime = sw.Elapsed.TotalMilliseconds;
+				var total = sw.Elapsed.TotalMilliseconds;
 				_perfMonitor?.Record(new PerformanceMonitor.PerformanceRecord
 				{
-					Timestamp = DateTime.Now,
-					Station = "Back",
-					ProductId = productId,
-					CropTimeMs = cropTime,
-					InferenceTimeMs = inferenceTime,
-					PostprocessTimeMs = 0,
-					DrawTimeMs = drawTime,
-					SaveTimeMs = saveTime,
-					PlcTimeMs = 0,
-					TotalTimeMs = totalTime,
-					Result = isOk
+					Timestamp = DateTime.Now, Station = "Back", ProductId = pid,
+					InferenceTimeMs = inferMs, DrawTimeMs = drawMs, SaveTimeMs = saveMs, TotalTimeMs = total, Result = isOk
 				});
-
-				Logger.Info($"背面处理完成 ProductId={productId} 耗时={totalTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
-				OnResultReady?.Invoke(finalResult);
-				OnStatusUpdate?.Invoke(statusList, _sku.P);
+				Logger.Info("[Back] ====== 完成: 总=" + total.ToString("F1") + "ms 结果=" + (isOk ? "OK" : "NG") + " ======");
+				OnResultReady?.Invoke(result);
+				OnStatusUpdate?.Invoke(status, p);
 			}
 			catch (Exception ex)
 			{
-				Logger.Error($"背面处理异常 ProductId={productId}: {ex.Message}");
-				finalResult.BackResult = false;
-				OnResultReady?.Invoke(finalResult);
-			}
-			finally
-			{
-				left.Dispose(); right.Dispose();
+				Logger.Error("[Back] 异常 Pid=" + pid + ": " + ex.Message);
+				result.BackResult = false;
+				OnResultReady?.Invoke(result);
 			}
 		}
 
-		private void CropImages(Mat left, Mat right, out Mat leftCropped, out Mat rightCropped)
+		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int hp)
 		{
-			int h = left.Height;
-			int w = left.Width;
-			int cropStartY = h / 2;
-			leftCropped = new Mat(left, new CvRect(0, cropStartY, w, h - cropStartY)).Clone();
-			rightCropped = new Mat(right, new CvRect(0, cropStartY, w, h - cropStartY)).Clone();
-		}
-
-		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int halfP)
-		{
-			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.BackBarcodeModel == null) return results;
-
+			var r = new Dictionary<int, List<BoxDefect>>();
+			if (_models.BackBarcodeModel == null) return r;
 			try
 			{
-				var leftResult = _models.BackBarcodeModel.Predict(left, ConfThreshold, IouThreshold);
-				var rightResult = _models.BackBarcodeModel.Predict(right, ConfThreshold, IouThreshold);
-
-				ProcessYoloResults(leftResult, results, 0, halfP, "条形码错误");
-				ProcessYoloResults(rightResult, results, halfP, _sku.P, "条形码错误");
-			}
-			catch (Exception ex)
-			{
-				Logger.Error($"条形码识别异常: {ex.Message}");
-			}
-
-			return results;
-		}
-
-		private Dictionary<int, List<BoxDefect>> RecognizeDateCodes(Mat left, Mat right, int halfP)
-		{
-			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.BackDateCodeModel == null) return results;
-
-			try
-			{
-				// 预留Vimo模型调用位置
-				// var leftResult = _models.BackDateCodeModel.Run(left, out var ocrResults);
-				// ProcessOcrResults(leftResult, results, 0, halfP, "日期码错误");
-
-				// 临时实现：使用Yolo模型进行日期码检测
-				if (_models.BackDateCodeModel != null)
+				int h = left.Height, w = left.Width, cy = h * 2 / 3;
+				Logger.Debug("[Back] 条形码裁图: " + w + "x" + h + ", 取底部1/3: y=" + cy + " h=" + (h - cy));
+				using (var lc = new Mat(left, new CvRect(0, cy, w, h - cy)).Clone())
+				using (var rc = new Mat(right, new CvRect(0, cy, w, h - cy)).Clone())
 				{
-					// 实际应用中这里应该调用Vimo的OCR方法
-					Logger.Debug("日期码识别: Vimo模型预留位置");
+					var lr = _models.BackBarcodeModel.Predict(lc, ConfThreshold, IouThreshold);
+					var rr = _models.BackBarcodeModel.Predict(rc, ConfThreshold, IouThreshold);
+					Logger.Debug("[Back] 条形码结果: 左=" + (lr?.Boxes?.Length ?? 0) + "框 右=" + (rr?.Boxes?.Length ?? 0) + "框");
+					MapBoxes(lr, r, 0, hp, "条形码错误");
+					MapBoxes(rr, r, hp, _sku.P, "条形码错误");
 				}
 			}
-			catch (Exception ex)
-			{
-				Logger.Error($"日期码识别异常: {ex.Message}");
-			}
-
-			return results;
+			catch (Exception ex) { Logger.Error("条形码异常: " + ex.Message); }
+			return r;
 		}
 
-		private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int halfP)
+		private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int hp)
 		{
-			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.BackHookModel == null) return results;
-
+			var r = new Dictionary<int, List<BoxDefect>>();
+			if (_models.BackHookModel == null) return r;
 			try
 			{
-				var leftResult = _models.BackHookModel.Predict(left, ConfThreshold, IouThreshold);
-				var rightResult = _models.BackHookModel.Predict(right, ConfThreshold, IouThreshold);
-
-				ProcessYoloResults(leftResult, results, 0, halfP, "挂钩明显错位");
-				ProcessYoloResults(rightResult, results, halfP, _sku.P, "挂钩明显错位");
-
-				// 轻微挂钩错位检测 (分割模型)
+				var lr = _models.BackHookModel.Predict(left, ConfThreshold, IouThreshold);
+				var rr = _models.BackHookModel.Predict(right, ConfThreshold, IouThreshold);
+				MapBoxes(lr, r, 0, hp, "挂钩明显错位");
+				MapBoxes(rr, r, hp, _sku.P, "挂钩明显错位");
 				if (_models.HookSlightModel != null)
 				{
-					var slightLeft = _models.HookSlightModel.Predict(left, ConfThreshold);
-					var slightRight = _models.HookSlightModel.Predict(right, ConfThreshold);
-
-					ProcessSegResults(slightLeft, results, 0, halfP, "轻微挂钩错位");
-					ProcessSegResults(slightRight, results, halfP, _sku.P, "轻微挂钩错位");
+					var sl = _models.HookSlightModel.Predict(left, ConfThreshold);
+					var sr = _models.HookSlightModel.Predict(right, ConfThreshold);
+					MapBoxesSeg(sl, r, 0, hp, "轻微挂钩错位");
+					MapBoxesSeg(sr, r, hp, _sku.P, "轻微挂钩错位");
 				}
 			}
-			catch (Exception ex)
-			{
-				Logger.Error($"挂钩错位检测异常: {ex.Message}");
-			}
-
-			return results;
+			catch (Exception ex) { Logger.Error("挂钩异常: " + ex.Message); }
+			return r;
 		}
 
-		private void ProcessYoloResults(YoloInference.YoloResult result, Dictionary<int, List<BoxDefect>> results, int startIdx, int endIdx, string defectType)
+		private void MapBoxes(YoloInference.YoloResult res, Dictionary<int, List<BoxDefect>> dict, int start, int end, string type)
 		{
-			if (result == null || result.Boxes == null) return;
-
-			int totalBoxes = endIdx - startIdx;
-			if (totalBoxes <= 0) return;
-
-			foreach (var box in result.Boxes)
+			if (res == null || res.Boxes == null) return;
+			int n = end - start; if (n <= 0) return;
+			foreach (var b in res.Boxes)
 			{
-				// 根据检测框中心位置确定是第几个工件
-				float centerX = (box.X + box.Width / 2f) / result.OrigImg.Width;
-				int boxIndex = startIdx + (int)(centerX * totalBoxes);
-
-				if (boxIndex >= startIdx && boxIndex < endIdx)
-				{
-					if (!results.ContainsKey(boxIndex))
-						results[boxIndex] = new List<BoxDefect>();
-
-					results[boxIndex].Add(new BoxDefect(boxIndex, defectType,
-						new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }));
-				}
+				float cx = (b.X + b.Width / 2f) / res.OrigImg.Width;
+				int idx = start + (int)(cx * n);
+				if (idx < start || idx >= end) continue;
+				if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
+				dict[idx].Add(new BoxDefect(idx, type, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }));
 			}
 		}
 
-		private void ProcessSegResults(YoloSegmentationEnd2End.YoloResult result, Dictionary<int, List<BoxDefect>> results, int startIdx, int endIdx, string defectType)
+		private void MapBoxesSeg(YoloSegmentationEnd2End.YoloResult res, Dictionary<int, List<BoxDefect>> dict, int start, int end, string type)
 		{
-			if (result == null || result.Boxes == null) return;
-
-			int totalBoxes = endIdx - startIdx;
-			if (totalBoxes <= 0) return;
-
-			foreach (var box in result.Boxes)
+			if (res == null || res.Boxes == null) return;
+			int n = end - start; if (n <= 0) return;
+			foreach (var b in res.Boxes)
 			{
-				float centerX = (box.X + box.Width / 2f) / result.OrigImg.Width;
-				int boxIndex = startIdx + (int)(centerX * totalBoxes);
-
-				if (boxIndex >= startIdx && boxIndex < endIdx)
-				{
-					if (!results.ContainsKey(boxIndex))
-						results[boxIndex] = new List<BoxDefect>();
-
-					results[boxIndex].Add(new BoxDefect(boxIndex, defectType,
-						new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }));
-				}
+				float cx = (b.X + b.Width / 2f) / res.OrigImg.Width;
+				int idx = start + (int)(cx * n);
+				if (idx < start || idx >= end) continue;
+				if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
+				dict[idx].Add(new BoxDefect(idx, type, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }));
 			}
 		}
 
-		private Bitmap DrawDetectionResult(Mat image, List<BoxDefect> defects, List<string> statusList, int startIdx, int endIdx)
+		private Bitmap DrawResult(Mat img, List<BoxDefect> defects, List<string> status, int start, int end)
 		{
-			var bitmap = image.ToBitmap();
-			using (var g = Graphics.FromImage(bitmap))
+			var bmp = img.ToBitmap();
+			using (var g = Graphics.FromImage(bmp))
 			{
 				g.SmoothingMode = SmoothingMode.AntiAlias;
-				int w = bitmap.Width, h = bitmap.Height;
-				int totalBoxes = endIdx - startIdx;
-
-				var colorMap = new Dictionary<string, Color>
+				int w = bmp.Width, h = bmp.Height, n = end - start;
+				var cmap = new Dictionary<string, Color> { { "条形码错误", Color.Red }, { "挂钩明显错位", Color.DarkRed }, { "轻微挂钩错位", Color.OrangeRed }, { "OK", Color.Green } };
+				foreach (var d in defects)
 				{
-					{ "条形码错误", Color.Red },
-					{ "日期码错误", Color.Orange },
-					{ "挂钩明显错位", Color.DarkRed },
-					{ "轻微挂钩错位", Color.OrangeRed },
-					{ "OK", Color.Green }
-				};
-
-				foreach (var defect in defects)
-				{
-					var box = defect.BoundingBox;
-					if (box.Length < 4) continue;
-					int x1 = (int)(box[0] * w), y1 = (int)(box[1] * h);
-					int x2 = (int)(box[2] * w), y2 = (int)(box[3] * h);
-					var rect = new Rect(x1, y1, x2 - x1, y2 - y1);
-					var color = colorMap.ContainsKey(defect.DefectType) ? colorMap[defect.DefectType] : Color.Red;
-
-					using (var fill = new SolidBrush(Color.FromArgb(80, color)))
-						g.FillRectangle(fill, rect);
-					using (var pen = new Pen(color, 3))
-						g.DrawRectangle(pen, rect);
-
-					using (var font = new Font("微软雅黑", 10, FontStyle.Bold))
+					var bb = d.BoundingBox; if (bb.Length < 4) continue;
+					int x1 = (int)(bb[0] * w), y1 = (int)(bb[1] * h), x2 = (int)(bb[2] * w), y2 = (int)(bb[3] * h);
+					var rc = new Rect(x1, y1, x2 - x1, y2 - y1);
+					Color c = cmap.ContainsKey(d.DefectType) ? cmap[d.DefectType] : Color.Red;
+					using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
+					using (var pn = new Pen(c, 8)) g.DrawRectangle(pn, rc);
+					using (var f = new Font("微软雅黑", 72, FontStyle.Bold))
 					{
-						string label = defect.DefectType;
-						var labelSize = g.MeasureString(label, font);
-						int lx = x1, ly = y1 - (int)labelSize.Height - 4;
-						if (ly < 4) ly = y1 + 4;
-						using (var bgBrush = new SolidBrush(color))
-							g.FillRectangle(bgBrush, lx - 2, ly - 2, labelSize.Width + 8, labelSize.Height + 6);
-						g.DrawString(label, font, Brushes.White, lx + 2, ly + 1);
+						var sz = g.MeasureString(d.DefectType, f);
+						int ly = y1 - (int)sz.Height - 8; if (ly < 8) ly = y1 + 8;
+						using (var bg = new SolidBrush(c)) g.FillRectangle(bg, x1 - 4, ly - 4, sz.Width + 16, sz.Height + 12);
+						g.DrawString(d.DefectType, f, Brushes.White, x1 + 4, ly + 2);
 					}
 				}
-
-				if (totalBoxes > 1)
-				{
-					using (var dashPen = new Pen(Color.FromArgb(100, 100, 100), 1) { DashStyle = DashStyle.Dash })
-						for (int i = 1; i < totalBoxes; i++)
-							g.DrawLine(dashPen, i * w / totalBoxes, 0, i * w / totalBoxes, h);
-				}
-
-				using (var font = new Font("微软雅黑", 12, FontStyle.Bold))
-				{
-					for (int i = 0; i < totalBoxes && startIdx + i < statusList.Count; i++)
+				if (n > 1) using (var dp = new Pen(Color.FromArgb(100, 100, 100), 3) { DashStyle = DashStyle.Dash })
+						for (int i = 1; i < n; i++) g.DrawLine(dp, i * w / n, 0, i * w / n, h);
+				using (var f = new Font("微软雅黑", 96, FontStyle.Bold))
+					for (int i = 0; i < n && start + i < status.Count; i++)
 					{
-						string status = statusList[startIdx + i];
-						string display = status == "OK" ? "OK" : status.Length > 4 ? status.Substring(0, 4) : status;
-						var color = colorMap.ContainsKey(status) ? colorMap[status] : Color.Gray;
-						float cx = (i + 0.5f) / totalBoxes * w;
-						var ts = g.MeasureString(display, font);
-						using (var brush = new SolidBrush(color))
-							g.DrawString(display, font, brush, cx - ts.Width / 2, 5);
+						string s = status[start + i], disp = s == "OK" ? "OK" : (s.Length > 4 ? s.Substring(0, 4) : s);
+						Color c = cmap.ContainsKey(s) ? cmap[s] : Color.Red;
+						float cx = (i + 0.5f) * w / n;
+						var sz = g.MeasureString(disp, f);
+						using (var br = new SolidBrush(c)) g.DrawString(disp, f, br, cx - sz.Width / 2, 5);
 					}
-				}
 			}
-			return bitmap;
+			return bmp;
 		}
 
 		private Bitmap MergeImages(Bitmap left, Bitmap right)
 		{
-			int totalWidth = left.Width + right.Width;
-			int maxHeight = Math.Max(left.Height, right.Height);
-			var merged = new Bitmap(totalWidth, maxHeight, PixelFormat.Format24bppRgb);
-			using (var g = Graphics.FromImage(merged))
+			var m = new Bitmap(left.Width + right.Width, Math.Max(left.Height, right.Height), PixelFormat.Format24bppRgb);
+			using (var g = Graphics.FromImage(m))
 			{
 				g.Clear(Color.Black);
-				g.DrawImage(left, 0, (maxHeight - left.Height) / 2);
-				g.DrawImage(right, left.Width, (maxHeight - right.Height) / 2);
-				using (var pen = new Pen(Color.White, 2))
-					g.DrawLine(pen, left.Width, 0, left.Width, maxHeight);
+				g.DrawImage(left, 0, (m.Height - left.Height) / 2);
+				g.DrawImage(right, left.Width, (m.Height - right.Height) / 2);
+				using (var pn = new Pen(Color.White, 4)) g.DrawLine(pn, left.Width, 0, left.Width, m.Height);
+				string txt = _lastIsOk ? "OK" : "NG";
+				Color tc = _lastIsOk ? Color.Lime : Color.Red;
+				using (var f = new Font("微软雅黑", 120, FontStyle.Bold))
+				{
+					var sz = g.MeasureString(txt, f);
+					int rx = m.Width - (int)sz.Width - 60, ry = 30;
+					using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+						g.FillRectangle(bg, rx - 20, ry - 10, sz.Width + 40, sz.Height + 20);
+					using (var br = new SolidBrush(tc)) g.DrawString(txt, f, br, rx, ry);
+				}
 			}
-			left.Dispose(); right.Dispose();
-			return merged;
+			left.Dispose(); right.Dispose(); return m;
 		}
 
-		private void SaveImages(Bitmap leftRaw, Bitmap rightRaw, Bitmap mergedRender, long productId, bool isOk, List<string> statusList)
+		private void SaveImages(Bitmap leftRaw, Bitmap rightRaw, Bitmap merged, long pid, bool isOk, List<string> st)
 		{
-			bool saveOkImage = _Config.IsSaveOkImage;
-			bool saveNgImage = _Config.IsSaveNgImage;
-			bool saveOkRawImage = _Config.IsSaveOkRawImage;
-			bool saveNgRawImage = _Config.IsSaveNgRawImage;
-
-			if (!saveOkImage && !saveNgImage && !saveOkRawImage && !saveNgRawImage)
-				return;
-
-			string shift = GetCurrentShift();
-			string dateDir = DateTime.Now.ToString("yyMMdd");
-			string ngTypes = GetNgTypesString(statusList);
-
-			if ((isOk && saveOkImage) || (!isOk && saveNgImage))
+			bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage, sor = _Config.IsSaveOkRawImage, snr = _Config.IsSaveNgRawImage;
+			if (!so && !sn && !sor && !snr) return;
+			string shift = GetShift(), dd = DateTime.Now.ToString("yyMMdd");
+			string nt = string.Join("_", st.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
+			if ((isOk && so) || (!isOk && sn))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "Back", "Render");
-				Directory.CreateDirectory(dir);
-				string fileName = $"{productId}_{ngTypes}.jpg";
-				string filePath = Path.Combine(dir, fileName);
-				var jpegData = mergedRender.ToJpegBytesFast(85);
-				_imageSaver.AddSaveTask(filePath, jpegData, true, 85);
+				string dir = Path.Combine(_savePath, dd, shift, "Back", "Render"); Directory.CreateDirectory(dir);
+				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_" + nt + ".jpg"), merged.ToJpegBytesFast(85), true, 85);
 			}
-
-			if ((isOk && saveOkRawImage) || (!isOk && saveNgRawImage))
+			if ((isOk && sor) || (!isOk && snr))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "Back", "Raw");
-				Directory.CreateDirectory(dir);
-
-				string leftFileName = $"{productId}_left_{ngTypes}.bmp";
-				string leftPath = Path.Combine(dir, leftFileName);
-				var leftData = leftRaw.ToBmpBytesFast();
-				_imageSaver.AddSaveTask(leftPath, leftData, false);
-
-				string rightFileName = $"{productId}_right_{ngTypes}.bmp";
-				string rightPath = Path.Combine(dir, rightFileName);
-				var rightData = rightRaw.ToBmpBytesFast();
-				_imageSaver.AddSaveTask(rightPath, rightData, false);
+				string dir = Path.Combine(_savePath, dd, shift, "Back", "Raw"); Directory.CreateDirectory(dir);
+				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_left_" + nt + ".bmp"), leftRaw.ToBmpBytesFast(), false);
+				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_right_" + nt + ".bmp"), rightRaw.ToBmpBytesFast(), false);
 			}
 		}
 
-		private string GetCurrentShift()
+		private string GetShift()
 		{
-			var now = DateTime.Now.TimeOfDay;
-			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "Night";
-			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "Morning";
+			var n = DateTime.Now.TimeOfDay;
+			if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "Night";
+			if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "Morning";
 			return "Afternoon";
 		}
 
-		private string GetNgTypesString(List<string> statusList)
-		{
-			var ngTypes = statusList.Where(s => s != "OK").Distinct().ToList();
-			if (ngTypes.Count == 0) return "OK";
-			return string.Join("_", ngTypes);
-		}
-
-		public void ClearCounters()
-		{
-			Interlocked.Exchange(ref _totalCount, 0);
-			Interlocked.Exchange(ref _okCount, 0);
-			Interlocked.Exchange(ref _ngCount, 0);
-		}
-
-		public void Dispose()
-		{
-			if (_disposed) return;
-			_disposed = true;
-			_cts.Cancel();
-			_processThread?.Join(3000);
-			_cts.Dispose();
-			_pairQueue.Dispose();
-		}
+		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
+		public void Dispose() { if (_disposed) return; _disposed = true; lock (_syncLock) { _leftBuffer?.Dispose(); _rightBuffer?.Dispose(); } }
 	}
 }

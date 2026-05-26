@@ -1,194 +1,309 @@
-[17:33:20.536] [Info] 检测参数加载成功: D:\上位机\bin\Config\DetectionParams.json
-[17:33:20.539] [Info] SKU数据库初始化，CSV路径: D:\上位机\bin\主数据.csv
-[17:33:20.541] [Info] 读取CSV文件: D:\上位机\bin\主数据.csv, 共 2095 行
-[17:33:20.541] [Debug] 表头列0: 'SKU'
-[17:33:20.541] [Debug] 表头列1: '背卡条码'
-[17:33:20.541] [Debug] 表头列2: '背卡P号(正面)'
-[17:33:20.541] [Debug] 表头列3: 'PZ信息'
-[17:33:20.541] [Debug] 表头列4: '宽'
-[17:33:20.541] [Debug] 表头列5: '高'
-[17:33:20.541] [Debug] 表头列6: '打码格式'
-[17:33:20.541] [Debug] 表头列7: 'PZMM'
-[17:33:20.541] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
-[17:33:20.541] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
-[17:33:20.541] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
-[17:33:20.541] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
-[17:33:20.541] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
-[17:33:20.541] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
-[17:33:20.543] [Info] 从CSV加载了 2094 个SKU
-[17:33:20.547] [Info] ========== 开始加载AI模型 ==========
-[17:33:20.547] [Info] GPU配置: Vimo模型使用显卡1, Yolo模型使用显卡0
-[17:33:20.551] [Info] Init_OrderOcr加载
-[17:33:20.824] [Info] Init_OrderOcr加载时时发生异常...
- type check failed, want: SequenceOcr, got: Ocr 
-    在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, InitOption& option)
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, Boolean useGpu, Int32 deviceId, Int32 maxBatchSize)
-   在 AIsdk.Vimo.Init_OrderOcr(String modelPath, Boolean usegup, Int32 deviceid, String modelid) 位置 E:\公司-张皓茗\项目\高露洁\扬州\扬州高露洁Koch机初版\VisionMeasure\AI\Vimo.cs:行号 116
-[17:33:20.824] [Error] !!! Error !!! 正面P号码OCR模型加载失败: SmartMore.ViMo.VimoException: type check failed, want: SequenceOcr, got: Ocr
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, InitOption& option)
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, Boolean useGpu, Int32 deviceId, Int32 maxBatchSize)
-   在 AIsdk.Vimo.Init_OrderOcr(String modelPath, Boolean usegup, Int32 deviceid, String modelid) 位置 E:\公司-张皓茗\项目\高露洁\扬州\扬州高露洁Koch机初版\VisionMeasure\AI\Vimo.cs:行号 116
-[17:33:21.879] [Info] 正面盒子破检测模型加载成功: D:\上位机\bin\AI\Models\正面\盒子破检测\best.onnx
-[17:33:21.880] [Info] 正在加载上端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\上端面\best.onnx
-[17:33:22.165] [Info] 上端面缺陷检测模型加载成功(显卡0)
-[17:33:22.165] [Info] 正在加载下端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\下端面\best.onnx
-[17:33:22.447] [Info] 下端面缺陷检测模型加载成功(显卡0)
-[17:33:22.448] [Info] 正在加载背面挂钩明显错位检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\背面\明显挂钩错位\best.onnx
-[17:33:22.698] [Info] 背面挂钩明显错位检测模型加载成功(显卡0)
-[17:33:22.698] [Info] 正在加载背面挂钩轻微错位分割模型(显卡0): D:\上位机\bin\AI\Models\背面\轻微挂钩错位\best.onnx
-[17:33:23.015] [Info] 背面挂钩轻微错位分割模型加载成功(显卡0)
-[17:33:23.016] [Info] 正在加载侧面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\侧面\缺陷检测\best.onnx
-[17:33:23.214] [Info] 侧面缺陷检测模型加载成功(显卡0)
-[17:33:23.214] [Info] ========== AI模型加载完成 (成功) ==========
-[17:33:23.217] [Info] 正在连接运动控制卡: 192.168.0.11
-[17:33:23.224] [Info] 运动控制卡连接成功, IP=192.168.0.11
-[17:33:23.225] [Info] PLC连接成功 IP=192.168.1.101:502
-[17:33:23.231] [Info] ========== 初始化相机（模拟模式: False） ==========
-[17:33:23.232] [Info] 正在连接 Camera2(正面右) 序列号: FC79423AAK00060
-[17:33:23.232] [Info] 正在连接 Camera1(正面左) 序列号: FC79423AAK00087
-[17:33:23.232] [Info] 正在连接 Camera3(背面左) 序列号: FB12474AAK00017
-[17:33:23.232] [Info] 正在连接 Camera4(背面右) 序列号: FB12474AAK00006
-[17:33:23.233] [Info] 正在连接 Camera5(上端面) 序列号: EM57578AAK00046
-[17:33:23.233] [Info] 正在连接 Camera6(下端面) 序列号: EM57578AAK00010
-[17:33:24.220] [Info] 正在连接 Camera7(左侧面) 序列号: EK64117CAK00003
-[17:33:24.220] [Error] !!! Error !!! Camera1 初始化失败: 发生一个或多个错误。
-[17:33:24.220] [Error] !!! Error !!! Camera3 初始化失败: 发生一个或多个错误。
-[17:33:24.220] [Error] !!! Error !!! Camera4 初始化失败: 发生一个或多个错误。
-[17:33:24.220] [Error] !!! Error !!! Camera5 初始化失败: 发生一个或多个错误。
-[17:33:24.220] [Info] 正在连接 Camera8(右侧面) 序列号: EK64117CAK00004
-[17:33:24.220] [Error] !!! Error !!! Camera6 初始化失败: 发生一个或多个错误。
-[17:34:20.554] [Error] !!! Error !!! Camera2 连接超时(10000ms)
-[17:35:07.298] [Error] !!! Error !!! Camera7 连接超时(10000ms)
-[17:35:44.050] [Info] Camera2(正面右) 已连接
-[17:35:44.055] [Info] Camera7(左侧面) 已连接
-[17:35:44.230] [Info] Camera8(右侧面) 已连接
-[17:35:44.277] [Info] Camera8(右侧面) 连接成功
-[17:35:44.277] [Info] ========== 相机初始化部分失败(1/8) ==========
-[17:35:44.278] [Warning] >>> WARNING >>> Camera1(正面左) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera2(正面右) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera3(背面左) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera4(背面右) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera5(上端面) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera6(下端面) 相机对象不存在，跳过启动
-[17:35:44.278] [Warning] >>> WARNING >>> Camera7(左侧面) 相机对象不存在，跳过启动
-[17:35:44.278] [Error] !!! Error !!! Camera8启动失败: 未将对象引用设置到对象的实例。
-[17:35:44.278] [Info] 所有相机已启动
-[17:35:44.806] [Info] ========== 系统启动 ==========
-[17:35:44.806] [Info] 正在初始化数据库...
-[17:35:44.867] [Info] SQLite数据库初始化完成
-[17:35:44.867] [Info] 正在加载检测参数...
-[17:35:44.867] [Info] 正在加载SKU数据...
-[17:35:44.867] [Info] SKU数据库初始化，CSV路径: D:\上位机\bin\主数据.csv
-[17:35:44.867] [Info] 读取CSV文件: D:\上位机\bin\主数据.csv, 共 2095 行
-[17:35:44.867] [Debug] 表头列0: 'SKU'
-[17:35:44.867] [Debug] 表头列1: '背卡条码'
-[17:35:44.867] [Debug] 表头列2: '背卡P号(正面)'
-[17:35:44.867] [Debug] 表头列3: 'PZ信息'
-[17:35:44.867] [Debug] 表头列4: '宽'
-[17:35:44.867] [Debug] 表头列5: '高'
-[17:35:44.867] [Debug] 表头列6: '打码格式'
-[17:35:44.867] [Debug] 表头列7: 'PZMM'
-[17:35:44.867] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
-[17:35:44.867] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
-[17:35:44.867] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
-[17:35:44.867] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
-[17:35:44.867] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
-[17:35:44.867] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
-[17:35:44.869] [Info] 从CSV加载了 2094 个SKU
-[17:35:44.869] [Info] 正在初始化性能监控...
-[17:35:44.869] [Info] 正在初始化图像保存器...
-[17:35:44.871] [Info] 正在初始化硬件...
-[17:35:44.871] [Info] 正在连接运动控制卡: 192.168.0.11
-[17:35:44.872] [Info] 运动控制卡连接成功, IP=192.168.0.11
-[17:35:44.884] [Info] 轴初始化完成
-[17:35:44.884] [Info] 运动控制卡初始化成功
-[17:35:44.884] [Info] PLC连接成功 IP=192.168.1.101:502
-[17:35:44.884] [Info] PLC连接成功
-[17:35:44.884] [Info] 正在初始化相机SDK...
-[17:35:44.884] [Info] ========== 初始化相机（模拟模式: False） ==========
-[17:35:44.884] [Info] 正在连接 Camera1(正面左) 序列号: FC79423AAK00087
-[17:35:44.884] [Info] 正在连接 Camera2(正面右) 序列号: FC79423AAK00060
-[17:35:44.884] [Info] 正在连接 Camera3(背面左) 序列号: FB12474AAK00017
-[17:35:44.884] [Info] 正在连接 Camera4(背面右) 序列号: FB12474AAK00006
-[17:35:45.867] [Info] 正在连接 Camera5(上端面) 序列号: EM57578AAK00046
-[17:35:46.868] [Info] 正在连接 Camera6(下端面) 序列号: EM57578AAK00010
-[17:35:47.868] [Info] 正在连接 Camera7(左侧面) 序列号: EK64117CAK00003
-[17:35:48.870] [Info] 正在连接 Camera8(右侧面) 序列号: EK64117CAK00004
-[17:36:41.571] [Error] !!! Error !!! Camera1 连接超时(10000ms)
-[17:37:28.129] [Error] !!! Error !!! Camera2 连接超时(10000ms)
-[17:38:15.057] [Error] !!! Error !!! Camera4 连接超时(10000ms)
-[17:39:01.632] [Error] !!! Error !!! Camera3 连接超时(10000ms)
-[17:39:48.345] [Error] !!! Error !!! Camera5 连接超时(10000ms)
-[17:40:35.135] [Error] !!! Error !!! Camera6 连接超时(10000ms)
-[17:41:21.633] [Error] !!! Error !!! Camera7 连接超时(10000ms)
-[17:42:08.192] [Error] !!! Error !!! Camera8 连接超时(10000ms)
-[17:42:08.192] [Info] ========== 相机初始化部分失败(0/8) ==========
-[17:42:08.192] [Warning] >>> WARNING >>> 部分相机初始化失败
-[17:42:08.201] [Info] 相机触发管理器启动 
-[17:42:08.201] [Info] 触发管理器已启动
-[17:42:08.201] [Info] 正在加载AI模型...
-[17:42:08.201] [Info] 脉冲输出线程启动
-[17:42:08.202] [Info] 信号监听线程启动
-[17:42:08.202] [Info] ========== 开始加载AI模型 ==========
-[17:42:08.202] [Info] GPU配置: Vimo模型使用显卡1, Yolo模型使用显卡0
-[17:42:08.202] [Info] Init_OrderOcr加载
-[17:42:08.203] [Info] Init_OrderOcr加载时时发生异常...
- type check failed, want: SequenceOcr, got: Ocr 
-    在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, InitOption& option)
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, Boolean useGpu, Int32 deviceId, Int32 maxBatchSize)
-   在 AIsdk.Vimo.Init_OrderOcr(String modelPath, Boolean usegup, Int32 deviceid, String modelid) 位置 E:\公司-张皓茗\项目\高露洁\扬州\扬州高露洁Koch机初版\VisionMeasure\AI\Vimo.cs:行号 116
-[17:42:08.203] [Error] !!! Error !!! 正面P号码OCR模型加载失败: SmartMore.ViMo.VimoException: type check failed, want: SequenceOcr, got: Ocr
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, InitOption& option)
-   在 SmartMore.ViMo.Solution.CreateModule[T](String& moduleId, Boolean useGpu, Int32 deviceId, Int32 maxBatchSize)
-   在 AIsdk.Vimo.Init_OrderOcr(String modelPath, Boolean usegup, Int32 deviceid, String modelid) 位置 E:\公司-张皓茗\项目\高露洁\扬州\扬州高露洁Koch机初版\VisionMeasure\AI\Vimo.cs:行号 116
-[17:42:08.767] [Info] 正面盒子破检测模型加载成功: D:\上位机\bin\AI\Models\正面\盒子破检测\best.onnx
-[17:42:08.767] [Info] 正在加载上端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\上端面\best.onnx
-[17:42:09.016] [Info] 上端面缺陷检测模型加载成功(显卡0)
-[17:42:09.016] [Info] 正在加载下端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\下端面\best.onnx
-[17:42:09.229] [Info] 下端面缺陷检测模型加载成功(显卡0)
-[17:42:09.229] [Info] 正在加载背面挂钩明显错位检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\背面\明显挂钩错位\best.onnx
-[17:42:09.383] [Info] 背面挂钩明显错位检测模型加载成功(显卡0)
-[17:42:09.383] [Info] 正在加载背面挂钩轻微错位分割模型(显卡0): D:\上位机\bin\AI\Models\背面\轻微挂钩错位\best.onnx
-[17:42:09.565] [Info] 背面挂钩轻微错位分割模型加载成功(显卡0)
-[17:42:09.565] [Info] 正在加载侧面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\侧面\缺陷检测\best.onnx
-[17:42:09.693] [Info] 侧面缺陷检测模型加载成功(显卡0)
-[17:42:09.693] [Info] ========== AI模型加载完成 (成功) ==========
-[17:42:09.693] [Info] 正在初始化工位处理器...
-[17:42:09.694] [Info] FrontStationProcessor Started.
-[17:42:09.696] [Info] 端面工位处理器已启动
-[17:42:09.698] [Info] 背面工位处理器已启动
-[17:42:09.699] [Info] 正在初始化界面...
-[17:42:09.699] [Info] 初始化SKU搜索控件
-[17:42:09.708] [Debug] 更新SKU显示: 181712291
-[17:42:09.708] [Debug]   P=3, Z=2, MM=70
-[17:42:09.708] [Debug]   P号码(背卡P号)=P18328850
-[17:42:09.708] [Debug]   条形码=
-[17:42:09.708] [Debug]   打码格式=不打码
-[17:42:09.708] [Info] 正在绑定统计控件...
-[17:42:09.708] [Info] 当前班次: Afternoon
-[17:42:09.710] [Info] 读取CSV文件: D:\上位机\bin\主数据.csv, 共 2095 行
-[17:42:09.710] [Debug] 表头列0: 'SKU'
-[17:42:09.710] [Debug] 表头列1: '背卡条码'
-[17:42:09.710] [Debug] 表头列2: '背卡P号(正面)'
-[17:42:09.710] [Debug] 表头列3: 'PZ信息'
-[17:42:09.710] [Debug] 表头列4: '宽'
-[17:42:09.710] [Debug] 表头列5: '高'
-[17:42:09.710] [Debug] 表头列6: '打码格式'
-[17:42:09.710] [Debug] 表头列7: 'PZMM'
-[17:42:09.710] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
-[17:42:09.710] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
-[17:42:09.710] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
-[17:42:09.710] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
-[17:42:09.710] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
-[17:42:09.710] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
-[17:42:09.711] [Info] 从CSV加载了 2094 个SKU
-[17:42:09.711] [Info] 测试SKU: 181712303, P=8, Z=1, MM=32
-[17:42:09.825] [Info] 系统初始化完成
-[17:42:09.838] [Info] Camera1(正面左) 已连接
-[17:42:09.838] [Info] Camera2(正面右) 已连接
-[17:42:09.838] [Info] Camera4(背面右) 已连接
-[17:42:09.838] [Info] Camera3(背面左) 已连接
-[17:42:09.838] [Info] Camera5(上端面) 已连接
-[17:42:09.838] [Info] Camera8(右侧面) 已连接
-[17:42:09.838] [Info] Camera6(下端面) 已连接
-[17:42:09.838] [Info] Camera7(左侧面) 已连接
+[01:22:31.917] [Info] 检测参数加载成功: D:\上位机\bin\Config\DetectionParams.json
+[01:22:31.920] [Info] SKU数据库初始化，CSV路径: D:\上位机\bin\Config\主数据.csv
+[01:22:31.921] [Info] 读取CSV文件: D:\上位机\bin\Config\主数据.csv, 共 2095 行
+[01:22:31.922] [Debug] 表头列0: 'SKU'
+[01:22:31.922] [Debug] 表头列1: '背卡条码'
+[01:22:31.922] [Debug] 表头列2: '背卡P号(正面)'
+[01:22:31.922] [Debug] 表头列3: 'PZ信息'
+[01:22:31.922] [Debug] 表头列4: '宽'
+[01:22:31.922] [Debug] 表头列5: '高'
+[01:22:31.922] [Debug] 表头列6: '打码格式'
+[01:22:31.922] [Debug] 表头列7: 'PZMM'
+[01:22:31.922] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
+[01:22:31.922] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
+[01:22:31.922] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
+[01:22:31.922] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
+[01:22:31.922] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
+[01:22:31.922] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
+[01:22:31.923] [Info] 从CSV加载了 2094 个SKU
+[01:22:31.925] [Info] 裁图CSV加载: 8行, 列索引 spec=0
+[01:22:31.929] [Info] 裁图参数已合并: 59个SKU
+[01:22:31.933] [Info] ========== 开始加载AI模型 ==========
+[01:22:31.933] [Info] GPU配置: Vimo模型使用显卡1, Yolo模型使用显卡0
+[01:22:31.937] [Info] Init加载
+[01:22:33.444] [Info] Init加载完成
+[01:22:33.444] [Info] 正面P号码OCR模型加载成功: D:\上位机\bin\AI\Models\正面\P号码识别\model.vimosln (moduleId=2)
+[01:22:34.005] [Info] 正面盒子破检测模型加载成功: D:\上位机\bin\AI\Models\正面\盒子破检测\best.onnx
+[01:22:34.006] [Info] 正在加载上端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\上端面\best.onnx
+[01:22:34.271] [Info] 上端面缺陷检测模型加载成功(显卡0)
+[01:22:34.271] [Info] 正在加载下端面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\端面\下端面\best.onnx
+[01:22:34.525] [Info] 下端面缺陷检测模型加载成功(显卡0)
+[01:22:34.526] [Info] 正在加载背面挂钩明显错位检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\背面\明显挂钩错位\best.onnx
+[01:22:34.737] [Info] 背面挂钩明显错位检测模型加载成功(显卡0)
+[01:22:34.737] [Info] 正在加载背面挂钩轻微错位分割模型(显卡0): D:\上位机\bin\AI\Models\背面\轻微挂钩错位\best.onnx
+[01:22:34.963] [Info] 背面挂钩轻微错位分割模型加载成功(显卡0)
+[01:22:34.964] [Info] 正在加载侧面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\侧面\缺陷检测\best.onnx
+[01:22:35.088] [Info] 侧面缺陷检测模型加载成功(显卡0)
+[01:22:35.088] [Info] ========== AI模型加载完成 (成功) ==========
+[01:22:35.610] [Info] ========== 系统启动 ==========
+[01:22:35.610] [Info] 正在初始化数据库...
+[01:22:35.670] [Info] SQLite数据库初始化完成
+[01:22:35.670] [Info] 正在加载检测参数...
+[01:22:35.670] [Info] 正在加载SKU数据...
+[01:22:35.670] [Info] 使用预加载的SKU数据，跳过重复加载
+[01:22:35.670] [Info] 正在初始化性能监控...
+[01:22:35.670] [Info] 正在初始化图像保存器...
+[01:22:35.672] [Info] 正在初始化硬件...
+[01:22:35.673] [Info] 正在连接运动控制卡: 192.168.0.11
+[01:22:35.680] [Info] 运动控制卡连接成功, IP=192.168.0.11
+[01:22:35.692] [Info] 轴初始化完成
+[01:22:35.692] [Info] 运动控制卡初始化成功
+[01:22:35.693] [Info] [PLC] 连接成功 IP=192.168.1.101:502 耗时=0ms
+[01:22:35.693] [Info] PLC连接成功
+[01:22:35.693] [Info] 正在初始化相机SDK...
+[01:22:35.694] [Info] ========== 初始化相机（模拟模式: False） ==========
+[01:22:35.694] [Info] [Camera1] 正面左 开始初始化, SN=FC79423AAK00087
+[01:22:35.695] [Debug] [Camera1] DaHuaSDK实例已创建
+[01:22:35.695] [Debug] [Camera1] SetCameraInterface完成
+[01:22:35.695] [Debug] [Camera1] OnImage事件已订阅
+[01:22:36.001] [Debug] [Camera1] SetCameraByKey完成 SN=FC79423AAK00087
+[01:22:36.220] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=FC79423AAK00087
+[01:22:36.255] [Info] [Camera1] 正面左 Open成功
+[01:22:36.400] [Debug] [Camera1] StopStreamGrabber完成
+[01:22:36.415] [Debug] [Camera1] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:36.427] [Debug] [Camera1] 曝光时间: 5000us
+[01:22:36.446] [Info] [Camera1] 正面左 StartStreamGrabber完成, 初始化成功
+[01:22:36.446] [Info] [Camera2] 正面右 开始初始化, SN=FC79423AAK00060
+[01:22:36.446] [Debug] [Camera2] DaHuaSDK实例已创建
+[01:22:36.446] [Debug] [Camera2] SetCameraInterface完成
+[01:22:36.446] [Debug] [Camera2] OnImage事件已订阅
+[01:22:36.674] [Debug] [Camera2] SetCameraByKey完成 SN=FC79423AAK00060
+[01:22:36.882] [Info] [ICamera] 相机打开: Name=, Key=FC79423AAK00060
+[01:22:36.916] [Info] [Camera2] 正面右 Open成功
+[01:22:37.062] [Debug] [Camera2] StopStreamGrabber完成
+[01:22:37.076] [Debug] [Camera2] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:37.084] [Debug] [Camera2] 曝光时间: 5000us
+[01:22:37.103] [Info] [Camera2] 正面右 StartStreamGrabber完成, 初始化成功
+[01:22:37.103] [Info] [Camera3] 上端面 开始初始化, SN=FB12474AAK00017
+[01:22:37.103] [Debug] [Camera3] DaHuaSDK实例已创建
+[01:22:37.103] [Debug] [Camera3] SetCameraInterface完成
+[01:22:37.103] [Debug] [Camera3] OnImage事件已订阅
+[01:22:37.322] [Debug] [Camera3] SetCameraByKey完成 SN=FB12474AAK00017
+[01:22:37.606] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00017
+[01:22:37.635] [Info] [Camera3] 上端面 Open成功
+[01:22:37.786] [Debug] [Camera3] StopStreamGrabber完成
+[01:22:37.800] [Debug] [Camera3] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:37.811] [Debug] [Camera3] 曝光时间: 5000us
+[01:22:37.832] [Info] [Camera3] 上端面 StartStreamGrabber完成, 初始化成功
+[01:22:37.832] [Info] [Camera4] 下端面 开始初始化, SN=FB12474AAK00006
+[01:22:37.832] [Debug] [Camera4] DaHuaSDK实例已创建
+[01:22:37.832] [Debug] [Camera4] SetCameraInterface完成
+[01:22:37.832] [Debug] [Camera4] OnImage事件已订阅
+[01:22:38.061] [Debug] [Camera4] SetCameraByKey完成 SN=FB12474AAK00006
+[01:22:38.345] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00006
+[01:22:38.373] [Info] [Camera4] 下端面 Open成功
+[01:22:38.525] [Debug] [Camera4] StopStreamGrabber完成
+[01:22:38.540] [Debug] [Camera4] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:38.551] [Debug] [Camera4] 曝光时间: 5000us
+[01:22:38.572] [Info] [Camera4] 下端面 StartStreamGrabber完成, 初始化成功
+[01:22:38.572] [Info] [Camera5] 背面左 开始初始化, SN=EM57578AAK00046
+[01:22:38.572] [Debug] [Camera5] DaHuaSDK实例已创建
+[01:22:38.572] [Debug] [Camera5] SetCameraInterface完成
+[01:22:38.572] [Debug] [Camera5] OnImage事件已订阅
+[01:22:38.799] [Debug] [Camera5] SetCameraByKey完成 SN=EM57578AAK00046
+[01:22:39.074] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00046
+[01:22:39.108] [Info] [Camera5] 背面左 Open成功
+[01:22:39.264] [Debug] [Camera5] StopStreamGrabber完成
+[01:22:39.278] [Debug] [Camera5] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:39.287] [Debug] [Camera5] 曝光时间: 5000us
+[01:22:39.306] [Info] [Camera5] 背面左 StartStreamGrabber完成, 初始化成功
+[01:22:39.306] [Info] [Camera6] 背面右 开始初始化, SN=EM57578AAK00010
+[01:22:39.306] [Debug] [Camera6] DaHuaSDK实例已创建
+[01:22:39.306] [Debug] [Camera6] SetCameraInterface完成
+[01:22:39.306] [Debug] [Camera6] OnImage事件已订阅
+[01:22:39.522] [Debug] [Camera6] SetCameraByKey完成 SN=EM57578AAK00010
+[01:22:39.730] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00010
+[01:22:39.764] [Info] [Camera6] 背面右 Open成功
+[01:22:39.910] [Debug] [Camera6] StopStreamGrabber完成
+[01:22:39.923] [Debug] [Camera6] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:39.933] [Debug] [Camera6] 曝光时间: 5000us
+[01:22:39.951] [Info] [Camera6] 背面右 StartStreamGrabber完成, 初始化成功
+[01:22:39.951] [Info] [Camera7] 左侧面 开始初始化, SN=EK64117CAK00003
+[01:22:39.951] [Debug] [Camera7] DaHuaSDK实例已创建
+[01:22:39.951] [Debug] [Camera7] SetCameraInterface完成
+[01:22:39.951] [Debug] [Camera7] OnImage事件已订阅
+[01:22:40.173] [Debug] [Camera7] SetCameraByKey完成 SN=EK64117CAK00003
+[01:22:40.317] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00003
+[01:22:40.351] [Info] [Camera7] 左侧面 Open成功
+[01:22:40.404] [Debug] [Camera7] StopStreamGrabber完成
+[01:22:40.415] [Debug] [Camera7] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:40.424] [Debug] [Camera7] 曝光时间: 5000us
+[01:22:40.441] [Info] [Camera7] 左侧面 StartStreamGrabber完成, 初始化成功
+[01:22:40.441] [Info] [Camera8] 右侧面 开始初始化, SN=EK64117CAK00004
+[01:22:40.441] [Debug] [Camera8] DaHuaSDK实例已创建
+[01:22:40.441] [Debug] [Camera8] SetCameraInterface完成
+[01:22:40.441] [Debug] [Camera8] OnImage事件已订阅
+[01:22:40.664] [Debug] [Camera8] SetCameraByKey完成 SN=EK64117CAK00004
+[01:22:40.860] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00004
+[01:22:40.895] [Info] [Camera8] 右侧面 Open成功
+[01:22:40.942] [Debug] [Camera8] StopStreamGrabber完成
+[01:22:40.955] [Debug] [Camera8] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[01:22:40.962] [Debug] [Camera8] 曝光时间: 5000us
+[01:22:40.980] [Info] [Camera8] 右侧面 StartStreamGrabber完成, 初始化成功
+[01:22:40.980] [Info] ========== 相机初始化完成: 8/8 ==========
+[01:22:40.981] [Info] IN12边缘模式已应用: RisingLeftFallingRight, Cam7=RisingEdge, Cam8=FallingEdge
+[01:22:40.991] [Info] 脉冲输出线程启动
+[01:22:40.991] [Info] 相机触发管理器启动 
+[01:22:40.991] [Info] 触发管理器已启动
+[01:22:40.991] [Info] 正在加载AI模型...
+[01:22:40.991] [Info] 使用预加载的AI模型，跳过重复加载
+[01:22:40.991] [Info] 信号监听线程启动
+[01:22:40.992] [Info] 工位开关: 正面=False, 背面=True, 端面=False, 侧面=False
+[01:22:40.992] [Info] 正在初始化工位处理器...
+[01:22:40.993] [Info] 恢复上次SKU: 61004945, P=12
+[01:22:40.993] [Info] FrontStationProcessor Started.
+[01:22:40.996] [Info] 端面工位处理器已启动
+[01:22:40.996] [Info] 背面工位已启动
+[01:22:40.997] [Info] 侧面工位配置: EdgeMode=RisingLeftFallingRight, ContinuousMode=False, MissingAsNg=True
+[01:22:40.998] [Info] 正在初始化界面...
+[01:22:40.998] [Info] 初始化SKU搜索控件
+[01:22:41.003] [Debug] 更新SKU显示: 61004945
+[01:22:41.003] [Debug]   P=12, Z=1, MM=238
+[01:22:41.003] [Debug]   P号码(背卡P号)=P18371837
+[01:22:41.003] [Debug]   条形码=7509546659374
+[01:22:41.003] [Debug]   打码格式=MFG
+[01:22:41.004] [Info] 正在绑定统计控件...
+[01:22:41.004] [Info] 当前班次: Night
+[01:22:41.006] [Info] 测试SKU: 181712303, P=8, Z=1, MM=32
+[01:22:41.102] [Info] 系统初始化完成
+[01:22:41.144] [Debug] [Camera1] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera1] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera2] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera2] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera3] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera3] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera4] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera4] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera5] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera5] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera6] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera6] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera7] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera7] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera8] 状态更新: 已连接
+[01:22:41.144] [Debug] [Camera8] 状态更新: 已连接
+[01:22:43.592] [Debug] 相机5 触发脉冲已发送 IN4->OUT12 | Trigger
+[01:22:43.592] [Debug] 相机6 触发脉冲已发送 IN4->OUT13 | Trigger
+[01:22:43.777] [Debug] [Camera5] 背面左 收到图像 5472x3648, ProductId=1
+[01:22:43.777] [Debug] [Back] OnCam3(左) 5472x3648
+[01:22:43.777] [Debug] [Camera6] 背面右 收到图像 5472x3648, ProductId=2
+[01:22:43.778] [Debug] [Back] OnCam4(右) 5472x3648
+[01:22:43.822] [Debug] [Back] 配对成功
+[01:22:43.832] [Info] [Back] ====== 开始 P=12 5472x3648 ======
+[01:22:43.833] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
+[01:22:43.833] [Debug] [Back] 右图裁图: 580,4795 -> 4215x3648
+[01:22:43.833] [Debug] [Back] 步骤1: 推理(条形码裁下1/3+挂钩全图)...
+[01:22:44.060] [Info] [Back] 步骤1完成: 推理=226.6ms
+[01:22:44.060] [Info] [Back] 步骤2汇总: 条形码=0 明显=12 轻微=0 总计=12
+[01:22:44.060] [Info] [Back]   盒1: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒2: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒3: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒4: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒5: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒6: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒7: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒8: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒9: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒10: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒11: 挂钩明显错位
+[01:22:44.060] [Info] [Back]   盒12: 挂钩明显错位
+[01:22:44.060] [Debug] [Back] 步骤3: 绘制+合并...
+[01:22:44.216] [Info] [Back] 步骤3完成: 绘制+合并=155.3ms 8430x3648
+[01:22:44.216] [Debug] [Back] 步骤4: 保存...
+[01:22:44.449] [Info] [Back] 步骤4完成: 保存=233.1ms
+[01:22:44.449] [Info] [Back] ====== 完成: 总=617.0ms 结果=NG ======
+[01:22:44.449] [Info] [Back] 完成 总耗时=627.2ms
+[01:22:48.586] [Debug] 相机5 触发脉冲已发送 IN4->OUT12 | Trigger
+[01:22:48.586] [Debug] 相机6 触发脉冲已发送 IN4->OUT13 | Trigger
+[01:22:48.751] [Debug] [Camera5] 背面左 收到图像 5472x3648, ProductId=3
+[01:22:48.751] [Debug] [Back] OnCam3(左) 5472x3648
+[01:22:48.771] [Debug] [Camera6] 背面右 收到图像 5472x3648, ProductId=4
+[01:22:48.771] [Debug] [Back] OnCam4(右) 5472x3648
+[01:22:48.797] [Debug] [Back] 配对成功
+[01:22:48.797] [Info] [Back] ====== 开始 P=12 5472x3648 ======
+[01:22:48.800] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
+[01:22:48.800] [Debug] [Back] 右图裁图: 580,4795 -> 4215x3648
+[01:22:48.800] [Debug] [Back] 步骤1: 推理(条形码裁下1/3+挂钩全图)...
+[01:22:48.873] [Info] [Back] 步骤1完成: 推理=73.8ms
+[01:22:48.873] [Info] [Back] 步骤2汇总: 条形码=0 明显=12 轻微=0 总计=12
+[01:22:48.873] [Info] [Back]   盒1: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒2: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒3: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒4: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒5: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒6: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒7: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒8: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒9: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒10: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒11: 挂钩明显错位
+[01:22:48.873] [Info] [Back]   盒12: 挂钩明显错位
+[01:22:48.873] [Debug] [Back] 步骤3: 绘制+合并...
+[01:22:49.019] [Info] [Back] 步骤3完成: 绘制+合并=145.3ms 8430x3648
+[01:22:49.019] [Debug] [Back] 步骤4: 保存...
+[01:22:49.250] [Info] [Back] 步骤4完成: 保存=231.2ms
+[01:22:49.250] [Info] [Back] ====== 完成: 总=453.2ms 结果=NG ======
+[01:22:49.250] [Info] [Back] 完成 总耗时=453.3ms
+[01:22:53.595] [Debug] 相机5 触发脉冲已发送 IN4->OUT12 | Trigger
+[01:22:53.595] [Debug] 相机6 触发脉冲已发送 IN4->OUT13 | Trigger
+[01:22:53.765] [Debug] [Camera5] 背面左 收到图像 5472x3648, ProductId=5
+[01:22:53.765] [Debug] [Back] OnCam3(左) 5472x3648
+[01:22:53.777] [Debug] [Camera6] 背面右 收到图像 5472x3648, ProductId=6
+[01:22:53.777] [Debug] [Back] OnCam4(右) 5472x3648
+[01:22:53.809] [Debug] [Back] 配对成功
+[01:22:53.815] [Info] [Back] ====== 开始 P=12 5472x3648 ======
+[01:22:53.815] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
+[01:22:53.815] [Debug] [Back] 右图裁图: 580,4795 -> 4215x3648
+[01:22:53.815] [Debug] [Back] 步骤1: 推理(条形码裁下1/3+挂钩全图)...
+[01:22:54.051] [Info] [Back] 步骤1完成: 推理=235.8ms
+[01:22:54.051] [Info] [Back] 步骤2汇总: 条形码=0 明显=12 轻微=0 总计=12
+[01:22:54.051] [Info] [Back]   盒1: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒2: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒3: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒4: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒5: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒6: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒7: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒8: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒9: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒10: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒11: 挂钩明显错位
+[01:22:54.051] [Info] [Back]   盒12: 挂钩明显错位
+[01:22:54.051] [Debug] [Back] 步骤3: 绘制+合并...
+[01:22:54.192] [Info] [Back] 步骤3完成: 绘制+合并=141.6ms 8430x3648
+[01:22:54.192] [Debug] [Back] 步骤4: 保存...
+[01:22:54.423] [Info] [Back] 步骤4完成: 保存=231.0ms
+[01:22:54.423] [Info] [Back] ====== 完成: 总=608.5ms 结果=NG ======
+[01:22:54.423] [Info] [Back] 完成 总耗时=614.6ms
+[01:22:55.998] [Info] [触发统计] 输入边沿: IN4=12, IN10=72, IN13=6 | 输出脉冲: Cam1(OUT9)=>0, Cam2(OUT8)=>0, Cam3(OUT10)=>0, Cam4(OUT11)=>0, Cam5(OUT12)=>3, Cam6(OUT13)=>3, Cam7(OUT14)=>0, Cam8(OUT15)=>0 | 总脉冲=6
+[01:22:58.590] [Debug] 相机5 触发脉冲已发送 IN4->OUT12 | Trigger
+[01:22:58.590] [Debug] 相机6 触发脉冲已发送 IN4->OUT13 | Trigger
+[01:22:58.743] [Debug] [Camera5] 背面左 收到图像 5472x3648, ProductId=7
+[01:22:58.743] [Debug] [Back] OnCam3(左) 5472x3648
+[01:22:58.777] [Debug] [Camera6] 背面右 收到图像 5472x3648, ProductId=8
+[01:22:58.777] [Debug] [Back] OnCam4(右) 5472x3648
+[01:22:58.805] [Debug] [Back] 配对成功
+[01:22:58.814] [Info] [Back] ====== 开始 P=12 5472x3648 ======
+[01:22:58.814] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
+[01:22:58.814] [Debug] [Back] 右图裁图: 580,4795 -> 4215x3648
+[01:22:58.814] [Debug] [Back] 步骤1: 推理(条形码裁下1/3+挂钩全图)...
+[01:22:58.959] [Info] [Back] 步骤1完成: 推理=144.6ms
+[01:22:58.959] [Info] [Back] 步骤2汇总: 条形码=0 明显=12 轻微=1 总计=13
+[01:22:58.959] [Info] [Back]   盒1: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒2: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒3: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒4: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒5: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒6: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒7: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒8: 轻微挂钩错位
+[01:22:58.959] [Info] [Back]   盒9: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒10: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒11: 挂钩明显错位
+[01:22:58.959] [Info] [Back]   盒12: 挂钩明显错位
+[01:22:58.959] [Debug] [Back] 步骤3: 绘制+合并...
+[01:22:59.136] [Info] [Back] 步骤3完成: 绘制+合并=177.5ms 8430x3648
+[01:22:59.136] [Debug] [Back] 步骤4: 保存...
+[01:22:59.360] [Info] [Back] 步骤4完成: 保存=223.9ms
+[01:22:59.360] [Info] [Back] ====== 完成: 总=546.1ms 结果=NG ======
+[01:22:59.360] [Info] [Back] 完成 总耗时=554.8ms
