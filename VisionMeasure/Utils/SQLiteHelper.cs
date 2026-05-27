@@ -495,10 +495,10 @@ namespace CommonLib
 		{
 			var now = time.TimeOfDay;
 			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59"))
-				return "Night";
+				return "晚班";
 			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59"))
-				return "Morning";
-			return "Afternoon";
+				return "早班";
+			return "中班";
 		}
 
 		/// <summary>
