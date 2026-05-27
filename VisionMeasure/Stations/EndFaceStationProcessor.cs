@@ -27,6 +27,7 @@ namespace Stations
 		private readonly AiModelManager _models;
 		private readonly string _savePath;
 		private int _pCount;
+		private SkuData _sku;
 		private readonly HighSpeedImageSaver _imageSaver;
 		private readonly PerformanceMonitor _perfMonitor;
 
@@ -35,6 +36,8 @@ namespace Stations
 		private int _upperCount = 0;
 		private int _lowerCount = 0;
 		private readonly object _countLock = new object();
+			private DateTime _lastEnqueueTime = DateTime.MinValue;
+			private const int QueueTimeoutMs = 5000;
 
 		private readonly BlockingCollection<(List<ImageContext> upper, List<ImageContext> lower)> _batchQueue;
 
@@ -57,6 +60,7 @@ namespace Stations
 
 		public float ConfThreshold { get; set; } = 0.5f;
 		public float IouThreshold { get; set; } = 0.2f;
+		public bool ReverseBoxOrder = false;
 		public int ExposureMs { get; set; } = 20;
 
 		public long TotalCount => _totalCount;
@@ -78,6 +82,7 @@ namespace Stations
 		}
 
 		public void UpdatePCount(int pCount) => _pCount = pCount;
+		public void UpdateSku(SkuData sku) { _sku = sku; }
 		public void OnCam5(Bitmap bitmap, long productId) => EnqueueImage(_upperQueue, ref _upperCount, bitmap, productId, "Upper");
 		public void OnCam6(Bitmap bitmap, long productId) => EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower");
 
@@ -87,6 +92,7 @@ namespace Stations
 			lock (_countLock)
 			{
 				queue.Enqueue(ctx);
+					_lastEnqueueTime = DateTime.Now;
 				count++;
 				Logger.Debug($"[EndFace] {name}入队 ProductId={productId}, Upper={_upperCount}/{_pCount}, Lower={_lowerCount}/{_pCount}");
 				if (_upperCount >= _pCount && _lowerCount >= _pCount)
@@ -123,15 +129,28 @@ namespace Stations
 		{
 			while (!_cts.Token.IsCancellationRequested)
 			{
-				try
+				// 防呆超时检查: 超过QueueTimeoutMs未收到足够图片则清空残留队列
+				lock (_countLock)
 				{
-					if (_batchQueue.TryTake(out var batch, 100, _cts.Token))
+					if ((_upperCount > 0 || _lowerCount > 0) && _lastEnqueueTime != DateTime.MinValue
+						&& (DateTime.Now - _lastEnqueueTime).TotalMilliseconds > QueueTimeoutMs)
 					{
-						ProcessBatch(batch.upper, batch.lower);
+						Logger.Warning($"[EndFace] 队列超时({QueueTimeoutMs}ms), 清空残留 Upper={_upperCount} Lower={_lowerCount}");
+						while (_upperQueue.TryDequeue(out var _)) _upperCount--;
+						while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
 					}
 				}
-				catch (OperationCanceledException) { break; }
-				catch (Exception ex) { Logger.Error($"端面工位处理异常: {ex.Message}"); }
+				{
+					try
+					{
+						if (_batchQueue.TryTake(out var batch, 100, _cts.Token))
+						{
+							ProcessBatch(batch.upper, batch.lower);
+						}
+					}
+					catch (OperationCanceledException) { break; }
+					catch (Exception ex) { Logger.Error($"端面工位处理异常: {ex.Message}"); }
+				}
 			}
 		}
 
@@ -153,8 +172,10 @@ namespace Stations
 				List<Mat> upperMats = null, lowerMats = null;
 				using (var cropScope = new StopwatchScope(t => cropTime = t))
 				{
-					upperMats = CropImagesBatch(upperImages);
-					lowerMats = CropImagesBatch(lowerImages);
+					int upperLeftPx = _sku?.UpperEndFace_LeftPx ?? 0;
+					int lowerLeftPx = _sku?.LowerEndFace_LeftPx ?? 0;
+					upperMats = CropImagesBatch(upperImages, upperLeftPx);
+					lowerMats = CropImagesBatch(lowerImages, lowerLeftPx);
 				}
 
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
@@ -228,7 +249,7 @@ namespace Stations
 
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, _pCount);
-			Logger.Info($"[EndFace] 批处理完成 ProductId={firstProductId} 总耗时={totalTime:F2}ms Crop={cropTime:F2}ms Infer={inferenceTime:F2}ms Draw={drawTime:F2}ms Save={saveTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
+				Logger.Info($"[EndFace] 批处理完成 ProductId={firstProductId} 总耗时={totalTime:F2}ms Crop={cropTime:F2}ms Infer={inferenceTime:F2}ms Draw={drawTime:F2}ms Save={saveTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
 			}
 			catch (Exception ex)
 			{
@@ -241,12 +262,20 @@ namespace Stations
 			}
 		}
 
-		private List<Mat> CropImagesBatch(List<ImageContext> images)
+		private List<Mat> CropImagesBatch(List<ImageContext> images, int leftPx)
 		{
 			var mats = new List<Mat>();
 			foreach (var img in images)
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
+				// 步骤0a: CSV水平裁图
+				if (leftPx > 0)
+				{
+					var croppedH = ImageHelper.CropImageHorizontallyCv2(mat, leftPx, mat.Width);
+					mat.Dispose();
+					mat = croppedH;
+				}
+				// 步骤0b: 垂直裁图(保留上2/3)
 				int h = mat.Height, w = mat.Width;
 				int cropH = h * 2 / 3;
 				var cropped = new Mat(mat, new CvRect(0, 0, w, cropH)).Clone();
@@ -354,13 +383,11 @@ namespace Stations
 				_lowerDisplayImages.Clear();
 				for (int i = 0; i < _pCount; i++)
 				{
-					// 存储分开的上/下端面图像（用各自的Mat+缺陷绘制）
 					var upperBmp = DrawDefectOnImage(upperMats[i], upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(), upperStatus[i], i, _pCount);
 					_upperDisplayImages.Add(BitmapConverter.ToMat(upperBmp)); upperBmp.Dispose();
 					var lowerBmp = DrawDefectOnImage(lowerMats[i], lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), lowerStatus[i], i, _pCount);
 					_lowerDisplayImages.Add(BitmapConverter.ToMat(lowerBmp)); lowerBmp.Dispose();
 
-					// 合并图像保留（用于导航索引和对齐）
 					int w = upperMats[i].Width;
 					int h = upperMats[i].Height + lowerMats[i].Height;
 					var combined = new Mat(new OpenCvSharp.Size(w, h), MatType.CV_8UC3);
@@ -502,27 +529,35 @@ namespace Stations
 
 			string shift = GetCurrentShift();
 			string dateDir = DateTime.Now.ToString("yyMMdd");
+			string resultDir = isOk ? "OK" : "NG";
 			string ngTypes = GetNgTypesString(mergedStatus);
 
 			if ((isOk && saveOkImage) || (!isOk && saveNgImage))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "EndFace", "Render");
+				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
 				Directory.CreateDirectory(dir);
 				for (int i = 0; i < _pCount; i++)
 				{
 					if (upperImages[i].RenderBitmap != null)
 					{
-						string fileName = $"{productId}_{i + 1}_{ngTypes}.jpg";
+							string fileName = $"{productId}_{i + 1}_上端面_{ngTypes}.jpg";
 						string filePath = Path.Combine(dir, fileName);
 						var jpegData = upperImages[i].RenderBitmap.ToJpegBytesFast(85);
 						_imageSaver.AddSaveTask(filePath, jpegData, true, 85);
 					}
+						if (lowerImages[i].RenderBitmap != null)
+						{
+							string lfn = productId + "_" + (i + 1) + "_下端面_" + ngTypes + ".jpg";
+							string lfp = Path.Combine(dir, lfn);
+							var ljd = lowerImages[i].RenderBitmap.ToJpegBytesFast(85);
+							_imageSaver.AddSaveTask(lfp, ljd, true, 85);
+						}
 				}
 			}
 
 			if ((isOk && saveOkRawImage) || (!isOk && saveNgRawImage))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "EndFace", "Raw");
+				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
 				Directory.CreateDirectory(dir);
 				for (int i = 0; i < _pCount; i++)
 				{
@@ -542,9 +577,9 @@ namespace Stations
 		private string GetCurrentShift()
 		{
 			var now = DateTime.Now.TimeOfDay;
-			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "Night";
-			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "Morning";
-			return "Afternoon";
+			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "晚班";
+			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "早班";
+			return "中班";
 		}
 
 		private string GetNgTypesString(List<string> statusList)

@@ -64,6 +64,7 @@ namespace Stations
 
 		public float ConfThreshold { get; set; } = 0.5f;
 		public float IouThreshold { get; set; } = 0.45f;
+	public bool ReverseBoxOrder = false;
 		public float CropRatio { get; set; } = 2.0f;
 		public int MoveSpeed { get; set; } = 20;
 		public int MoveAccel { get; set; } = 10000;
@@ -418,11 +419,12 @@ namespace Stations
 
 			string shift = GetCurrentShift();
 			string dateDir = DateTime.Now.ToString("yyMMdd");
+		string resultDir = isOk ? "OK" : "NG";
 			string ngTypes = GetNgTypesString(mergedStatus);
 
 			if ((isOk && saveOkImage) || (!isOk && saveNgImage))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "Side", "Render");
+				string dir = Path.Combine(_savePath, dateDir, shift, "侧面工位", resultDir);
 				Directory.CreateDirectory(dir);
 				for (int i = 0; i < _currentDisplayImages.Count; i++)
 				{
@@ -437,9 +439,9 @@ namespace Stations
 		private string GetCurrentShift()
 		{
 			var now = DateTime.Now.TimeOfDay;
-			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "Night";
-			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "Morning";
-			return "Afternoon";
+			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "晚班";
+			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "早班";
+			return "中班";
 		}
 
 		private string GetNgTypesString(List<string> statusList)

@@ -167,6 +167,10 @@ namespace Config
 			[JsonProperty("输入IN11端口")] public int InPortBack { get; set; } = 11;
 			[JsonProperty("输入IN12端口")] public int InPortSideTrigger { get; set; } = 12;
 			[JsonProperty("输入IN13端口")] public int InPortSideReady { get; set; } = 13;
+			[JsonProperty("正面反转盒序")] public bool FrontReverseBox { get; set; } = false;
+			[JsonProperty("背面反转盒序")] public bool BackReverseBox { get; set; } = false;
+			[JsonProperty("端面反转盒序")] public bool EndFaceReverseBox { get; set; } = false;
+			[JsonProperty("侧面反转盒序")] public bool SideReverseBox { get; set; } = false;
 		}
 
 		#endregion

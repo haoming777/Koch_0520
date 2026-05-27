@@ -518,14 +518,19 @@ namespace VisionMeasure
 
 			_frontStation = new FrontStationProcessor(_aiModels, _detectionParams);
 			_frontStation.OnResultReady += OnStationResult;
+		_frontStation.ReverseBoxOrder = _detectionParams.Station.FrontReverseBox;
+			_frontStation.UpdateSku(_currentSku);
 			_frontStation.Start();
 
 			_endFaceStation = new EndFaceStationProcessor(_aiModels, imgPath, _currentSku.P, _imageSaver, _perfMonitor);
 			_endFaceStation.OnResultReady += OnStationResult;
+		_endFaceStation.ReverseBoxOrder = _detectionParams.Station.EndFaceReverseBox;
 			_endFaceStation.OnStatusUpdate += OnEndFaceStatusUpdate;
+			_endFaceStation.UpdateSku(_currentSku);
 			_endFaceStation.Start();
 
 			_backStation = new BackStationProcessor(_aiModels, imgPath, _currentSku, _imageSaver, _perfMonitor);
+		_backStation.ReverseBoxOrder = _detectionParams.Station.BackReverseBox;
 			_backStation.OnResultReady += OnStationResult;
 			_backStation.Start();
 
@@ -537,6 +542,7 @@ namespace VisionMeasure
 			_sideStation.EdgeMode = CameraTriggerConfig.In12EdgeMode == CameraTriggerConfig.SideSensorEdgeMode.RisingRightFallingLeft
 				? SideStationProcessor.TriggerEdgeMode.RisingRightFallingLeft
 				: SideStationProcessor.TriggerEdgeMode.RisingLeftFallingRight;
+			_sideStation.ReverseBoxOrder = _detectionParams.Station.SideReverseBox;
 			_sideStation.UseContinuousMode = _detectionParams.Side.UseContinuousMode;
 			_sideStation.MissingAsNg = _detectionParams.Side.MissingAsNg;
 			Logger.Info($"侧面工位配置: EdgeMode={_sideStation.EdgeMode}, ContinuousMode={_sideStation.UseContinuousMode}, MissingAsNg={_sideStation.MissingAsNg}");
@@ -964,6 +970,7 @@ namespace VisionMeasure
 						_detectionParams.LastSkuNumber = skuNum;
 						_detectionParams.SaveToFile();
 						_sideStation?.UpdateSku(_currentSku);
+						_endFaceStation?.UpdateSku(_currentSku);
 						_endFaceStation?.UpdatePCount(_currentSku.P);
 						Logger.Info($"SKU已切换: {skuNum}, P={_currentSku.P}, Z={_currentSku.Z}, MM={_currentSku.MM}");
 					}
@@ -993,7 +1000,8 @@ namespace VisionMeasure
 							_sideStation?.UpdateSku(_currentSku);
 						_detectionParams.LastSkuNumber = skuNum;
 							_detectionParams.SaveToFile();
-							_endFaceStation?.UpdatePCount(_currentSku.P);
+							_endFaceStation?.UpdateSku(_currentSku);
+						_endFaceStation?.UpdatePCount(_currentSku.P);
 							Logger.Info($"SKU已切换(回车): {skuNum}, P={_currentSku.P}");
 						}
 						_skuSearchCombo.DroppedDown = false;
@@ -1259,10 +1267,10 @@ namespace VisionMeasure
 		{
 			var now = DateTime.Now.TimeOfDay;
 			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59"))
-				return "Night";
+				return "晚班";
 			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59"))
-				return "Morning";
-			return "Afternoon";
+				return "早班";
+			return "中班";
 		}
 
 		private void SaveCurrentShiftStatistics()
