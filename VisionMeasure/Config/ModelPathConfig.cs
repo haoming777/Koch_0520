@@ -20,8 +20,9 @@ namespace Config
 
 		// ========== 背面模型 ==========
 		public string BackBarcodeModel { get; set; }
-		public string BackDateCodeModel { get; set; }
-		public string BackDateCodeModuleId { get; set; } = "0";    // Vimo模型的moduleId
+		public string BackDateCodeSegModel { get; set; }
+		public string BackDateCodeClsModel { get; set; }
+		public string BackDateCodeOcrModel { get; set; }
 		public string BackHookDamageModel { get; set; }
 		public string BackHookSlightModel { get; set; }
 		public string BackCutCharModel { get; set; }
@@ -66,8 +67,9 @@ namespace Config
 
 			// 背面模型
 			config.BackBarcodeModel = _Config.BackBarcodeModel ?? @"背面\条形码识别\best.onnx";
-			config.BackDateCodeModel = _Config.BackDateCodeModel ?? @"背面\日期码识别\model.vimosln";
-			config.BackDateCodeModuleId = _Config.BackDateCodeModuleId ?? "0";
+			config.BackDateCodeSegModel = null ?? @"背面\日期码识别\分割模型\model.vimosln";
+			config.BackDateCodeClsModel = null ?? @"背面\日期码识别\分类模型\model.vimosln";
+			config.BackDateCodeOcrModel = null ?? @"背面\日期码识别\OCR识别\model.vimosln";
 			config.BackHookDamageModel = _Config.BackHookDamageModel ?? @"背面\明显挂钩错位\best.onnx";
 			config.BackHookSlightModel = _Config.BackHookSlightModel ?? @"背面\轻微挂钩错位\best.onnx";
 			config.BackCutCharModel = _Config.BackCutCharModel ?? @"背面\切字识别\model.vimosln";
@@ -96,8 +98,6 @@ namespace Config
 			_Config.EndFaceUpperModel = EndFaceUpperModel;
 			_Config.EndFaceLowerModel = EndFaceLowerModel;
 			_Config.BackBarcodeModel = BackBarcodeModel;
-			_Config.BackDateCodeModel = BackDateCodeModel;
-			_Config.BackDateCodeModuleId = BackDateCodeModuleId;
 			_Config.BackHookDamageModel = BackHookDamageModel;
 			_Config.BackHookSlightModel = BackHookSlightModel;
 			_Config.BackCutCharModel = BackCutCharModel;

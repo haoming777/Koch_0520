@@ -225,6 +225,15 @@ namespace Stations
 					UpdateDisplayImages(upperMats, lowerMats, upperDefects, lowerDefects, upperStatus, lowerStatus);
 				}
 
+				// 取首张上下端面渲染图为显示图
+				lock (_resultLock)
+				{
+					if (_upperDisplayImages.Count > 0 && _upperDisplayImages[0] != null)
+						result.EndFaceRenderImage = _upperDisplayImages[0].ToBitmap();
+					if (_lowerDisplayImages.Count > 0 && _lowerDisplayImages[0] != null)
+						result.EndFaceLowerRenderImage = _lowerDisplayImages[0].ToBitmap();
+				}
+
 				double saveTime = 0;
 				using (var saveScope = new StopwatchScope(t => saveTime = t))
 				{

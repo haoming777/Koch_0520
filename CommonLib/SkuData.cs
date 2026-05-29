@@ -10,7 +10,6 @@ namespace CommonLib
 		public int MM { get; set; }
 		public string PZInfo { get; set; }
 
-		// 裁图像素参数 (传给 ImageHelper.CropImageHorizontallyCv2)
 		public int FrontLeft_LeftPx { get; set; }
 		public int FrontLeft_RightPx { get; set; }
 		public int FrontRight_LeftPx { get; set; }
@@ -27,5 +26,45 @@ namespace CommonLib
 		public string CodingFormat { get; set; }
 
 		public override string ToString() => $"{P}P{Z}Z{MM}mm";
+	}
+
+	public class AxisParamConfig
+	{
+		public int Axis = 0, Atype = 1;
+		public float Units = 1f, Speed = 50f, Accel = 5000f, Decel = 5000f;
+		public float Lspeed = 10f, Sramp = 0f, CreepSpeed = 10f;
+		public int MaxSpeed = 10000;
+		public int FwdIn = 14, RevIn = 15, DatumIn = 16;
+		public float StartPos = 0f, EndPos = 100f;
+		public float FwdSpeed = 50f, RetSpeed = 100f;
+		public int MaxPhotoCount = 12;
+		public int CycleDelayMs = 500;
+		public bool EnableBarcodeCheck = true;
+			public bool EnableDateCodeCheck = true;
+
+		private static string _jsonPath => System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "AxisParams.json");
+
+		public void Save()
+		{
+			try
+			{
+				var dir = System.IO.Path.GetDirectoryName(_jsonPath);
+				if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+				var json = Newtonsoft.Json.JsonConvert.SerializeObject(this, Newtonsoft.Json.Formatting.Indented);
+				System.IO.File.WriteAllText(_jsonPath, json);
+			}
+			catch { }
+		}
+
+		public static AxisParamConfig Load()
+		{
+			try
+			{
+				if (!System.IO.File.Exists(_jsonPath)) return new AxisParamConfig();
+				var json = System.IO.File.ReadAllText(_jsonPath);
+				return Newtonsoft.Json.JsonConvert.DeserializeObject<AxisParamConfig>(json) ?? new AxisParamConfig();
+			}
+			catch { return new AxisParamConfig(); }
+		}
 	}
 }

@@ -1,0 +1,26 @@
+{
+ "module_params": {
+  "2": {
+   "roi": {
+    "type": "ratio",
+    "move_ratio": {
+     "x": -0.0046948357,
+     "y": -0.025
+    },
+    "size_ratio": {
+     "x": 1,
+     "y": 1
+    },
+    "angle": 0,
+    "rotate_type": "none"
+   },
+   "score_threshold": 0.6,
+   "abnormal_top_k": 0,
+   "abnormal_threshold": 0,
+   "nms_class_agnostic": false,
+   "with_heatmap": false,
+   "with_region_info": false,
+   "with_abnormal_region": false
+  }
+ }
+}

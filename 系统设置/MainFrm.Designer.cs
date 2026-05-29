@@ -76,18 +76,18 @@
 			this.label24 = new System.Windows.Forms.Label();
 			this.label25 = new System.Windows.Forms.Label();
 			this.groupBox5 = new System.Windows.Forms.GroupBox();
-			this.pipeDiameterTxt = new System.Windows.Forms.TextBox();
-			this.label21 = new System.Windows.Forms.Label();
-			this.downTxt = new System.Windows.Forms.TextBox();
-			this.label26 = new System.Windows.Forms.Label();
+			this.textBox10 = new System.Windows.Forms.TextBox();
+			this.label27 = new System.Windows.Forms.Label();
 			this.upTxt = new System.Windows.Forms.TextBox();
 			this.label15 = new System.Windows.Forms.Label();
 			this.textBox9 = new System.Windows.Forms.TextBox();
 			this.label13 = new System.Windows.Forms.Label();
 			this.textBox8 = new System.Windows.Forms.TextBox();
 			this.label11 = new System.Windows.Forms.Label();
-			this.textBox10 = new System.Windows.Forms.TextBox();
-			this.label27 = new System.Windows.Forms.Label();
+			this.downTxt = new System.Windows.Forms.TextBox();
+			this.label26 = new System.Windows.Forms.Label();
+			this.pipeDiameterTxt = new System.Windows.Forms.TextBox();
+			this.label21 = new System.Windows.Forms.Label();
 			this.groupBox1.SuspendLayout();
 			this.groupBox2.SuspendLayout();
 			this.groupBox3.SuspendLayout();
@@ -119,7 +119,7 @@
 			this.checkBox3.AutoSize = true;
 			this.checkBox3.Location = new System.Drawing.Point(123, 117);
 			this.checkBox3.Name = "checkBox3";
-			this.checkBox3.Size = new System.Drawing.Size(86, 23);
+			this.checkBox3.Size = new System.Drawing.Size(127, 33);
 			this.checkBox3.TabIndex = 9;
 			this.checkBox3.Text = "NG原图";
 			this.checkBox3.UseVisualStyleBackColor = true;
@@ -129,7 +129,7 @@
 			this.checkBox4.AutoSize = true;
 			this.checkBox4.Location = new System.Drawing.Point(10, 117);
 			this.checkBox4.Name = "checkBox4";
-			this.checkBox4.Size = new System.Drawing.Size(86, 23);
+			this.checkBox4.Size = new System.Drawing.Size(127, 33);
 			this.checkBox4.TabIndex = 8;
 			this.checkBox4.Text = "OK原图";
 			this.checkBox4.UseVisualStyleBackColor = true;
@@ -139,7 +139,7 @@
 			this.label3.AutoSize = true;
 			this.label3.Location = new System.Drawing.Point(482, 78);
 			this.label3.Name = "label3";
-			this.label3.Size = new System.Drawing.Size(66, 19);
+			this.label3.Size = new System.Drawing.Size(100, 29);
 			this.label3.TabIndex = 7;
 			this.label3.Text = "天图像";
 			// 
@@ -147,7 +147,7 @@
 			// 
 			this.textBox2.Location = new System.Drawing.Point(396, 73);
 			this.textBox2.Name = "textBox2";
-			this.textBox2.Size = new System.Drawing.Size(80, 29);
+			this.textBox2.Size = new System.Drawing.Size(80, 40);
 			this.textBox2.TabIndex = 6;
 			// 
 			// label2
@@ -155,7 +155,7 @@
 			this.label2.AutoSize = true;
 			this.label2.Location = new System.Drawing.Point(324, 78);
 			this.label2.Name = "label2";
-			this.label2.Size = new System.Drawing.Size(66, 19);
+			this.label2.Size = new System.Drawing.Size(100, 29);
 			this.label2.TabIndex = 5;
 			this.label2.Text = "保留近";
 			// 
@@ -164,7 +164,7 @@
 			this.checkBox2.AutoSize = true;
 			this.checkBox2.Location = new System.Drawing.Point(123, 77);
 			this.checkBox2.Name = "checkBox2";
-			this.checkBox2.Size = new System.Drawing.Size(105, 23);
+			this.checkBox2.Size = new System.Drawing.Size(156, 33);
 			this.checkBox2.TabIndex = 4;
 			this.checkBox2.Text = "NG结果图";
 			this.checkBox2.UseVisualStyleBackColor = true;
@@ -174,7 +174,7 @@
 			this.checkBox1.AutoSize = true;
 			this.checkBox1.Location = new System.Drawing.Point(10, 77);
 			this.checkBox1.Name = "checkBox1";
-			this.checkBox1.Size = new System.Drawing.Size(105, 23);
+			this.checkBox1.Size = new System.Drawing.Size(156, 33);
 			this.checkBox1.TabIndex = 3;
 			this.checkBox1.Text = "OK结果图";
 			this.checkBox1.UseVisualStyleBackColor = true;
@@ -193,7 +193,7 @@
 			// 
 			this.textBox1.Location = new System.Drawing.Point(98, 31);
 			this.textBox1.Name = "textBox1";
-			this.textBox1.Size = new System.Drawing.Size(391, 29);
+			this.textBox1.Size = new System.Drawing.Size(391, 40);
 			this.textBox1.TabIndex = 1;
 			// 
 			// label1
@@ -201,7 +201,7 @@
 			this.label1.AutoSize = true;
 			this.label1.Location = new System.Drawing.Point(6, 36);
 			this.label1.Name = "label1";
-			this.label1.Size = new System.Drawing.Size(85, 19);
+			this.label1.Size = new System.Drawing.Size(129, 29);
 			this.label1.TabIndex = 0;
 			this.label1.Text = "保存位置";
 			// 
@@ -222,6 +222,7 @@
 			this.groupBox2.TabIndex = 1;
 			this.groupBox2.TabStop = false;
 			this.groupBox2.Text = "色标测量";
+			this.groupBox2.Visible = false;
 			// 
 			// label9
 			// 
@@ -248,7 +249,7 @@
 			// 
 			this.textBox3.Location = new System.Drawing.Point(102, 41);
 			this.textBox3.Name = "textBox3";
-			this.textBox3.Size = new System.Drawing.Size(100, 29);
+			this.textBox3.Size = new System.Drawing.Size(100, 40);
 			this.textBox3.TabIndex = 12;
 			this.textBox3.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -265,7 +266,7 @@
 			// 
 			this.textBox5.Location = new System.Drawing.Point(451, 40);
 			this.textBox5.Name = "textBox5";
-			this.textBox5.Size = new System.Drawing.Size(100, 29);
+			this.textBox5.Size = new System.Drawing.Size(100, 40);
 			this.textBox5.TabIndex = 10;
 			this.textBox5.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -282,7 +283,7 @@
 			// 
 			this.textBox6.Location = new System.Drawing.Point(261, 40);
 			this.textBox6.Name = "textBox6";
-			this.textBox6.Size = new System.Drawing.Size(100, 29);
+			this.textBox6.Size = new System.Drawing.Size(100, 40);
 			this.textBox6.TabIndex = 8;
 			this.textBox6.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -291,7 +292,7 @@
 			this.label6.AutoSize = true;
 			this.label6.Location = new System.Drawing.Point(432, 45);
 			this.label6.Name = "label6";
-			this.label6.Size = new System.Drawing.Size(0, 19);
+			this.label6.Size = new System.Drawing.Size(0, 29);
 			this.label6.TabIndex = 7;
 			// 
 			// label7
@@ -332,12 +333,13 @@
 			this.groupBox3.TabIndex = 15;
 			this.groupBox3.TabStop = false;
 			this.groupBox3.Text = "检测参数";
+			this.groupBox3.Visible = false;
 			// 
 			// pCodeTxt
 			// 
 			this.pCodeTxt.Location = new System.Drawing.Point(431, 43);
 			this.pCodeTxt.Name = "pCodeTxt";
-			this.pCodeTxt.Size = new System.Drawing.Size(130, 29);
+			this.pCodeTxt.Size = new System.Drawing.Size(130, 40);
 			this.pCodeTxt.TabIndex = 28;
 			this.pCodeTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -355,7 +357,7 @@
 			// 
 			this.textBox11.Location = new System.Drawing.Point(147, 99);
 			this.textBox11.Name = "textBox11";
-			this.textBox11.Size = new System.Drawing.Size(130, 29);
+			this.textBox11.Size = new System.Drawing.Size(130, 40);
 			this.textBox11.TabIndex = 26;
 			this.textBox11.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -373,14 +375,14 @@
 			this.label17.AutoSize = true;
 			this.label17.Location = new System.Drawing.Point(133, 105);
 			this.label17.Name = "label17";
-			this.label17.Size = new System.Drawing.Size(0, 19);
+			this.label17.Size = new System.Drawing.Size(0, 29);
 			this.label17.TabIndex = 24;
 			// 
 			// textBox7
 			// 
 			this.textBox7.Location = new System.Drawing.Point(431, 99);
 			this.textBox7.Name = "textBox7";
-			this.textBox7.Size = new System.Drawing.Size(130, 29);
+			this.textBox7.Size = new System.Drawing.Size(130, 40);
 			this.textBox7.TabIndex = 23;
 			this.textBox7.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -398,14 +400,14 @@
 			this.label14.AutoSize = true;
 			this.label14.Location = new System.Drawing.Point(425, 102);
 			this.label14.Name = "label14";
-			this.label14.Size = new System.Drawing.Size(0, 19);
+			this.label14.Size = new System.Drawing.Size(0, 29);
 			this.label14.TabIndex = 21;
 			// 
 			// textBox4
 			// 
 			this.textBox4.Location = new System.Drawing.Point(147, 43);
 			this.textBox4.Name = "textBox4";
-			this.textBox4.Size = new System.Drawing.Size(130, 29);
+			this.textBox4.Size = new System.Drawing.Size(130, 40);
 			this.textBox4.TabIndex = 12;
 			this.textBox4.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -438,6 +440,7 @@
 			this.groupBox4.TabIndex = 16;
 			this.groupBox4.TabStop = false;
 			this.groupBox4.Text = "相机五检测项";
+			this.groupBox4.Visible = false;
 			// 
 			// PCodeSwitch
 			// 
@@ -573,46 +576,30 @@
 			this.groupBox5.TabIndex = 15;
 			this.groupBox5.TabStop = false;
 			this.groupBox5.Text = "管口圆度测量值";
+			this.groupBox5.Visible = false;
 			// 
-			// pipeDiameterTxt
+			// textBox10
 			// 
-			this.pipeDiameterTxt.Location = new System.Drawing.Point(436, 33);
-			this.pipeDiameterTxt.Name = "pipeDiameterTxt";
-			this.pipeDiameterTxt.Size = new System.Drawing.Size(100, 29);
-			this.pipeDiameterTxt.TabIndex = 32;
-			this.pipeDiameterTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+			this.textBox10.Location = new System.Drawing.Point(153, 31);
+			this.textBox10.Name = "textBox10";
+			this.textBox10.Size = new System.Drawing.Size(100, 40);
+			this.textBox10.TabIndex = 42;
+			this.textBox10.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
-			// label21
+			// label27
 			// 
-			this.label21.Location = new System.Drawing.Point(298, 31);
-			this.label21.Name = "label21";
-			this.label21.Size = new System.Drawing.Size(132, 28);
-			this.label21.TabIndex = 31;
-			this.label21.Text = "管径";
-			this.label21.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
-			// 
-			// downTxt
-			// 
-			this.downTxt.Location = new System.Drawing.Point(436, 73);
-			this.downTxt.Name = "downTxt";
-			this.downTxt.Size = new System.Drawing.Size(100, 29);
-			this.downTxt.TabIndex = 34;
-			this.downTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
-			// 
-			// label26
-			// 
-			this.label26.Location = new System.Drawing.Point(298, 71);
-			this.label26.Name = "label26";
-			this.label26.Size = new System.Drawing.Size(132, 28);
-			this.label26.TabIndex = 33;
-			this.label26.Text = "管口圆度下限";
-			this.label26.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+			this.label27.Location = new System.Drawing.Point(15, 29);
+			this.label27.Name = "label27";
+			this.label27.Size = new System.Drawing.Size(132, 28);
+			this.label27.TabIndex = 41;
+			this.label27.Text = "K";
+			this.label27.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// upTxt
 			// 
 			this.upTxt.Location = new System.Drawing.Point(153, 70);
 			this.upTxt.Name = "upTxt";
-			this.upTxt.Size = new System.Drawing.Size(100, 29);
+			this.upTxt.Size = new System.Drawing.Size(100, 40);
 			this.upTxt.TabIndex = 40;
 			this.upTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -629,7 +616,7 @@
 			// 
 			this.textBox9.Location = new System.Drawing.Point(436, 113);
 			this.textBox9.Name = "textBox9";
-			this.textBox9.Size = new System.Drawing.Size(100, 29);
+			this.textBox9.Size = new System.Drawing.Size(100, 40);
 			this.textBox9.TabIndex = 38;
 			this.textBox9.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -646,7 +633,7 @@
 			// 
 			this.textBox8.Location = new System.Drawing.Point(153, 114);
 			this.textBox8.Name = "textBox8";
-			this.textBox8.Size = new System.Drawing.Size(100, 29);
+			this.textBox8.Size = new System.Drawing.Size(100, 40);
 			this.textBox8.TabIndex = 36;
 			this.textBox8.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
@@ -659,26 +646,43 @@
 			this.label11.Text = "管圆Thresh";
 			this.label11.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
-			// textBox10
+			// downTxt
 			// 
-			this.textBox10.Location = new System.Drawing.Point(153, 31);
-			this.textBox10.Name = "textBox10";
-			this.textBox10.Size = new System.Drawing.Size(100, 29);
-			this.textBox10.TabIndex = 42;
-			this.textBox10.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+			this.downTxt.Location = new System.Drawing.Point(436, 73);
+			this.downTxt.Name = "downTxt";
+			this.downTxt.Size = new System.Drawing.Size(100, 40);
+			this.downTxt.TabIndex = 34;
+			this.downTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
 			// 
-			// label27
+			// label26
 			// 
-			this.label27.Location = new System.Drawing.Point(15, 29);
-			this.label27.Name = "label27";
-			this.label27.Size = new System.Drawing.Size(132, 28);
-			this.label27.TabIndex = 41;
-			this.label27.Text = "K";
-			this.label27.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+			this.label26.Location = new System.Drawing.Point(298, 71);
+			this.label26.Name = "label26";
+			this.label26.Size = new System.Drawing.Size(132, 28);
+			this.label26.TabIndex = 33;
+			this.label26.Text = "管口圆度下限";
+			this.label26.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+			// 
+			// pipeDiameterTxt
+			// 
+			this.pipeDiameterTxt.Location = new System.Drawing.Point(436, 33);
+			this.pipeDiameterTxt.Name = "pipeDiameterTxt";
+			this.pipeDiameterTxt.Size = new System.Drawing.Size(100, 40);
+			this.pipeDiameterTxt.TabIndex = 32;
+			this.pipeDiameterTxt.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+			// 
+			// label21
+			// 
+			this.label21.Location = new System.Drawing.Point(298, 31);
+			this.label21.Name = "label21";
+			this.label21.Size = new System.Drawing.Size(132, 28);
+			this.label21.TabIndex = 31;
+			this.label21.Text = "管径";
+			this.label21.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// MainFrm
 			// 
-			this.AutoScaleDimensions = new System.Drawing.SizeF(10F, 19F);
+			this.AutoScaleDimensions = new System.Drawing.SizeF(15F, 29F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 			this.BackColor = System.Drawing.Color.White;
 			this.ClientSize = new System.Drawing.Size(637, 841);

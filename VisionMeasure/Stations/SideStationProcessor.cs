@@ -6,6 +6,7 @@ using OpenCvSharp.Extensions;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -23,462 +24,400 @@ using static CommonLib.Class_Config;
 
 namespace Stations
 {
+	/// <summary>拍照模式</summary>
+	public enum CaptureMode { FlyCapture = 0, StopCapture = 1 }
+	/// <summary>推理模式</summary>
+	public enum InferenceMode { PerImage = 0, Batch = 1 }
+	/// <summary>IN12边缘→相机映射</summary>
+	public enum In12EdgeMap { RisingLeftFallingRight = 0, RisingRightFallingLeft = 1 }
+
 	public class SideStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
 		private readonly string _savePath;
 		private SkuData _sku;
-		private readonly MotionControlManager _motionMgr;
+		private readonly MotionControlManager _motion;
 		private readonly HighSpeedImageSaver _imageSaver;
 		private readonly PerformanceMonitor _perfMonitor;
 
-		private readonly ConcurrentQueue<ImageContext> _leftQueue = new ConcurrentQueue<ImageContext>();
-		private readonly ConcurrentQueue<ImageContext> _rightQueue = new ConcurrentQueue<ImageContext>();
-		private readonly BlockingCollection<(string side, ImageContext ctx)> _processQueue;
+		// 队列
+		private readonly ConcurrentQueue<SideImageCtx> _leftQueue = new ConcurrentQueue<SideImageCtx>();
+		private readonly ConcurrentQueue<SideImageCtx> _rightQueue = new ConcurrentQueue<SideImageCtx>();
+		private int _leftCount, _rightCount;
+		private readonly object _countLock = new object();
 
-		private readonly List<SideDetectionResult> _leftResults = new List<SideDetectionResult>();
-		private readonly List<SideDetectionResult> _rightResults = new List<SideDetectionResult>();
-		private readonly List<Bitmap> _currentDisplayImages = new List<Bitmap>();
-		private int _currentDisplayIndex = 0;
+		// 结果缓存
+		private readonly List<SideResult> _leftResults = new List<SideResult>();
+		private readonly List<SideResult> _rightResults = new List<SideResult>();
+		private readonly List<Mat> _displayImages = new List<Mat>();
+		private int _displayIndex;
 		private readonly object _resultLock = new object();
 
-		private long _currentBatchProductId = 0;
-		private int _currentBatchIndex = 0;
-		private bool _batchCollecting = false;
-		private readonly object _batchLock = new object();
-
-		private float _startPosition = 0;
-		private float _endPosition = 100;
-		private bool _isMoving = false;
-
-		private long _totalCount = 0;
-		private long _okCount = 0;
-		private long _ngCount = 0;
-
-		private Thread _processThread;
-		private CancellationTokenSource _cts;
+		private long _totalCount, _okCount, _ngCount;
 		private bool _disposed;
+		private CancellationTokenSource _motionCts;
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
 
-		public float ConfThreshold { get; set; } = 0.5f;
-		public float IouThreshold { get; set; } = 0.45f;
-	public bool ReverseBoxOrder = false;
-		public float CropRatio { get; set; } = 2.0f;
-		public int MoveSpeed { get; set; } = 20;
-		public int MoveAccel { get; set; } = 10000;
+		// ====== 开放参数 ======
+		public float ConfThreshold = 0.5f, IouThreshold = 0.45f;
+		public float CropRatio = 2.0f;
+		public CaptureMode CaptureMode { get; set; } = CaptureMode.FlyCapture;
+		public InferenceMode InferenceMode { get; set; } = InferenceMode.PerImage;
+		public In12EdgeMap EdgeMapping { get; set; } = In12EdgeMap.RisingLeftFallingRight;
+	// 兼容旧接口
+		public TriggerEdgeMode EdgeMode { get { return (TriggerEdgeMode)(int)EdgeMapping; } set { EdgeMapping = (In12EdgeMap)(int)value; } }
+		public bool UseContinuousMode { get { return CaptureMode == CaptureMode.StopCapture; } set { CaptureMode = value ? CaptureMode.StopCapture : CaptureMode.FlyCapture; } }
+		public int CurrentIndex => _displayIndex;
+		public Bitmap GetCurrentDisplayImage() { var m = GetDisplayImage(); if (m == null) return null; var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(m); m.Dispose(); return bmp; }
+
+		public enum TriggerEdgeMode { RisingLeftFallingRight = 0, RisingRightFallingLeft = 1 }
 		public bool MissingAsNg { get; set; } = true;
-		public bool UseContinuousMode { get; set; } = false;
+		public bool ReverseBoxOrder { get; set; }
+		public int SideAxis { get; set; } = 0;
+		public float StartPosition { get; set; } = 0f;
+		public float EndPosition { get; set; } = 100f;
+		public float ForwardSpeed { get; set; } = 50f;
+		public float ReturnSpeed { get; set; } = 200f;
+		public float Accel { get; set; } = 5000f;
+		public float Decel { get; set; } = 5000f;
+	public int FwdInPort { get; set; } = 14;
+		public int RevInPort { get; set; } = 15;
+		public int DatumInPort { get; set; } = 16;
+		public int In12Port { get; set; } = 12;
+		public int Cam7OutPort { get; set; } = 14;
+		public int Cam8OutPort { get; set; } = 15;
+		public int TriggerPulseMs { get; set; } = 50;
 
-		public enum TriggerEdgeMode { RisingLeftFallingRight, RisingRightFallingLeft }
-		public TriggerEdgeMode EdgeMode { get; set; } = TriggerEdgeMode.RisingLeftFallingRight;
-
-		public long TotalCount => _totalCount;
-		public long OkCount => _okCount;
-		public long NgCount => _ngCount;
-		public int CurrentIndex => _currentDisplayIndex;
-		public bool IsMoving => _isMoving;
+		public long TotalCount => _totalCount; public long OkCount => _okCount; public long NgCount => _ngCount;
+		public int ImageCount => _displayImages.Count;
+		public bool IsMoving { get; private set; }
 
 		public SideStationProcessor(AiModelManager models, string savePath, SkuData sku,
-			MotionControlManager motionMgr, HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
+			MotionControlManager motion, HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
+		{ _models = models; _savePath = savePath; _sku = sku; _motion = motion; _imageSaver = imageSaver; _perfMonitor = perfMonitor; }
+
+		public void UpdateSku(SkuData sku) { _sku = sku; }
+
+		public void OnCam7(Bitmap bmp, long pid) { if (bmp != null) AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); }
+		public void OnCam8(Bitmap bmp, long pid) { if (bmp != null) AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); }
+
+		private void AddImage(ConcurrentQueue<SideImageCtx> q, ref int count, Bitmap bmp, long pid, Side side)
 		{
-			_models = models;
-			_savePath = savePath;
-			_sku = sku;
-			_motionMgr = motionMgr;
-			_imageSaver = imageSaver;
-			_perfMonitor = perfMonitor;
-			_processQueue = new BlockingCollection<(string, ImageContext)>(200);
-			_cts = new CancellationTokenSource();
+			q.Enqueue(new SideImageCtx { Image = bmp, ProductId = pid, Side = side });
+			Interlocked.Increment(ref count);
 		}
 
-		public void UpdateSku(SkuData sku) { lock (_batchLock) _sku = sku; }
-		public void OnCam7(Bitmap bitmap, long productId) => AddImage(_leftQueue, bitmap, productId, "Left");
-		public void OnCam8(Bitmap bitmap, long productId) => AddImage(_rightQueue, bitmap, productId, "Right");
+		public void Start() { Logger.Info("侧面工位已启动"); }
+		public void Stop() { _motionCts?.Cancel(); }
 
-		private void AddImage(ConcurrentQueue<ImageContext> queue, Bitmap bitmap, long productId, string side)
-		{
-			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
-			queue.Enqueue(ctx);
-			_processQueue.Add((side, ctx));
-			Logger.Debug($"[Side] 图像入队 side={side}, ProductId={productId}, LeftQ={_leftQueue.Count}, RightQ={_rightQueue.Count}, ProcessQ={_processQueue.Count}");
-		}
-
-		public void Start()
-		{
-			_processThread = new Thread(ProcessLoop) { Name = "SideStationProcessor", IsBackground = true, Priority = ThreadPriority.AboveNormal };
-			_processThread.Start();
-		}
-
-		public void Stop() { _cts.Cancel(); _processThread?.Join(3000); }
-
+		/// <summary>IN13下降沿触发 → MainFrm调用此方法</summary>
 		public void StartDetection()
 		{
-			lock (_batchLock)
-			{
-				if (_batchCollecting) return;
-				_batchCollecting = true;
-				_currentBatchProductId = DateTime.Now.Ticks;
-				_currentBatchIndex = 0;
-				_currentDisplayImages.Clear();
-				StartMotionControl();
-			}
-		}
-
-		private void StartMotionControl()
-		{
-			if (_motionMgr == null || !_motionMgr.IsConnected)
-			{
-				Logger.Warning("[Side] 运动控制卡未连接，跳过侧面运动控制");
-				_batchCollecting = false;
-				return;
-			}
-
-			Logger.Info($"[Side] 运动控制开始: 起点={_startPosition}, 终点={_endPosition}, P={_sku.P}, 模式={(UseContinuousMode ? "连续" : "步进")}, EdgeMode={EdgeMode}");
-			_isMoving = true;
-			try
-			{
-				_motionMgr.MoveAbs(2, _startPosition);
-				Thread.Sleep(100);
-
-				if (UseContinuousMode)
-				{
-					_motionMgr.MoveAbs(2, _endPosition);
-					while (_currentBatchIndex < _sku.P && _motionMgr.IsMoving(2))
-						Thread.Sleep(10);
-				}
-				else
-				{
-					float currentPos = _startPosition;
-					float step = (_endPosition - _startPosition) / _sku.P;
-
-					for (int i = 0; i < _sku.P && _currentBatchIndex < _sku.P; i++)
-					{
-						currentPos = i == 0 ? _startPosition + step / 2 : currentPos + step;
-						_motionMgr.GoPosition(2, currentPos);
-						while (_motionMgr.IsMoving(2)) Thread.Sleep(10);
-
-						TriggerCameraByPosition();
-
-						int timeout = 5000;
-						while (_currentBatchIndex <= i && timeout > 0) { Thread.Sleep(10); timeout -= 10; }
-					}
-				}
-
-				if (_currentBatchIndex < _sku.P && MissingAsNg) FillMissingResults();
-			}
-			catch (Exception ex) { Logger.Error($"侧面运动控制异常: {ex.Message}"); }
-			finally
-			{
-				_motionMgr.MoveAbs(2, _startPosition);
-				_isMoving = false;
-				_batchCollecting = false;
-			}
-		}
-
-		private void TriggerCameraByPosition()
-		{
-			if (_motionMgr.GetInput(12, out bool sensorState))
-			{
-				int cameraId = EdgeMode == TriggerEdgeMode.RisingLeftFallingRight ?
-					(sensorState ? 7 : 8) : (sensorState ? 8 : 7);
-				Logger.Debug($"[Side] IN12={(sensorState ? "高" : "低")}, EdgeMode={EdgeMode}, 触发Camera{cameraId}");
-				_motionMgr.SetOutput(cameraId + 7, true);
-				Thread.Sleep(50);
-				_motionMgr.SetOutput(cameraId + 7, false);
-			}
-			else
-			{
-				Logger.Warning("[Side] 无法读取IN12传感器状态");
-			}
-		}
-
-		private void FillMissingResults()
-		{
-			while (_currentBatchIndex < _sku.P)
-			{
-				var result = new SideDetectionResult { BoxStatus = new List<string> { MissingAsNg ? "缺少" : "OK" } };
-				_leftResults.Add(result);
-				_rightResults.Add(result);
-				_currentBatchIndex++;
-			}
-			ProcessBatch();
-		}
-
-		private void ProcessLoop()
-		{
-			while (!_cts.Token.IsCancellationRequested)
+			if (IsMoving) return;
+			IsMoving = true;
+		SetLimitSwitches();
+			_motionCts = new CancellationTokenSource();
+			Task.Run(() =>
 			{
 				try
 				{
-					if (_processQueue.TryTake(out var item, 100, _cts.Token))
-						ProcessSingleImage(item.side, item.ctx);
+					Logger.Info("[Side] ====== 侧面检测开始 P=" + _sku.P + " 模式=" + CaptureMode + " 推理=" + InferenceMode + " ======");
+					ClearBatch();
+					StartMotion();
+					ProcessResults();
 				}
-				catch (OperationCanceledException) { break; }
-				catch (Exception ex) { Logger.Error($"侧面工位处理异常: {ex.Message}"); }
+				catch (Exception ex) { Logger.Error("[Side] 异常: " + ex.Message); }
+				finally { IsMoving = false; }
+			});
+		}
+
+		/// <summary>运动控制: 从起始位走到结束位，监听IN12控制拍照</summary>
+		private void StartMotion()
+		{
+			int p = _sku.P;
+			Logger.Info("[Side] 运动开始: 轴" + SideAxis + " " + StartPosition + "→" + EndPosition + " 前进速度=" + ForwardSpeed + " 回程速度=" + ReturnSpeed);
+
+			// 先到起始位
+			_motion.MoveAbs(SideAxis, StartPosition);
+			_motion.WaitForMoveComplete(SideAxis, 10000);
+
+			// 设置前进速度
+			SetAxisSpeed(ForwardSpeed);
+
+			// 开始向结束位移动
+			_motion.MoveAbs(SideAxis, EndPosition);
+
+			bool prevIn12 = false;
+			bool firstRead = true;
+			var sw = Stopwatch.StartNew();
+
+			while (!_motionCts.Token.IsCancellationRequested)
+			{
+				// 检查是否已收够图片
+				if (_leftCount >= p && _rightCount >= p) { Logger.Info("[Side] 图片已收够, 提前返回"); break; }
+
+				// 检查是否已到结束位
+				float curPos = _motion.GetPosition(SideAxis);
+				if (Math.Abs(curPos - EndPosition) < 0.5f || sw.ElapsedMilliseconds > 60000)
+				{ Logger.Info("[Side] 到达结束位 pos=" + curPos.ToString("F1")); break; }
+
+				// 读取IN12
+				bool curIn12;
+				if (!_motion.GetInput(In12Port, out curIn12)) { Thread.Sleep(5); continue; }
+
+				// 边沿检测
+				if (firstRead) { prevIn12 = curIn12; firstRead = false; continue; }
+				if (curIn12 == prevIn12) { Thread.Sleep(2); continue; }
+
+				// 上升沿/下降沿触发拍照
+				int trigCam;
+				if (curIn12 && !prevIn12) // 上升沿
+					trigCam = (EdgeMapping == In12EdgeMap.RisingLeftFallingRight) ? 7 : 8;
+				else // 下降沿
+					trigCam = (EdgeMapping == In12EdgeMap.RisingLeftFallingRight) ? 8 : 7;
+
+				prevIn12 = curIn12;
+
+				if (CaptureMode == CaptureMode.StopCapture)
+				{
+					_motion.StopAxis(SideAxis);
+					_motion.WaitForMoveComplete(SideAxis, 2000);
+				}
+
+				// 发送触发脉冲
+				int outPort = (trigCam == 7) ? Cam7OutPort : Cam8OutPort;
+				_motion.SetOutput(outPort, true);
+				Thread.Sleep(TriggerPulseMs);
+				_motion.SetOutput(outPort, false);
+
+				Logger.Debug("[Side] IN12边沿 触发Cam" + trigCam + " pos=" + curPos.ToString("F1") + " L=" + _leftCount + "/" + p + " R=" + _rightCount + "/" + p);
+
+				if (CaptureMode == CaptureMode.StopCapture)
+				{
+					_motion.MoveAbs(SideAxis, EndPosition);
+					SetAxisSpeed(ForwardSpeed);
+				}
+			}
+
+			// 停止并返回起始位
+			_motion.StopAxis(SideAxis);
+			_motion.WaitForMoveComplete(SideAxis, 2000);
+			Logger.Info("[Side] 返回起始位 L=" + _leftCount + " R=" + _rightCount);
+			SetAxisSpeed(ReturnSpeed);
+			_motion.MoveAbs(SideAxis, StartPosition);
+			_motion.WaitForMoveComplete(SideAxis, 10000);
+		}
+
+	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } }
+		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
+
+		/// <summary>处理推理结果</summary>
+		private void ProcessResults()
+		{
+			int p = _sku.P;
+			var leftImages = new List<SideImageCtx>();
+			var rightImages = new List<SideImageCtx>();
+			while (leftImages.Count < _leftCount && _leftQueue.TryDequeue(out var ctx)) leftImages.Add(ctx);
+			while (rightImages.Count < _rightCount && _rightQueue.TryDequeue(out var ctx)) rightImages.Add(ctx);
+			_leftCount = 0; _rightCount = 0;
+
+			Logger.Info("[Side] 推理开始 L=" + leftImages.Count + " R=" + rightImages.Count + " 模式=" + InferenceMode);
+
+			var sw = Stopwatch.StartNew();
+			if (InferenceMode == InferenceMode.Batch)
+				ProcessBatchInference(leftImages, rightImages, p);
+			else
+				ProcessPerImageInference(leftImages, rightImages, p);
+
+			var inferMs = sw.Elapsed.TotalMilliseconds;
+
+			// 填充缺失结果
+			while (_leftResults.Count < p) _leftResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Left, Index = _leftResults.Count });
+			while (_rightResults.Count < p) _rightResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Right, Index = _rightResults.Count });
+
+			// 汇总
+			var mergedStatus = new List<string>();
+			for (int i = 0; i < p; i++)
+			{
+				string ls = i < _leftResults.Count ? _leftResults[i].Status : (MissingAsNg ? "缺少" : "OK");
+				string rs = i < _rightResults.Count ? _rightResults[i].Status : (MissingAsNg ? "缺少" : "OK");
+				mergedStatus.Add((ls == "OK" && rs == "OK") ? "OK" : (ls != "OK" ? ls : rs));
+			}
+			bool isOk = mergedStatus.All(s => s == "OK");
+			Interlocked.Increment(ref _totalCount);
+			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
+
+			// 绘制显示图
+			BuildDisplayImages(leftImages, rightImages, p);
+
+			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
+
+			// 存图
+			var swSave = Stopwatch.StartNew();
+			SaveImages(leftImages, rightImages, mergedStatus, isOk);
+			var saveMs = swSave.Elapsed.TotalMilliseconds;
+
+			Logger.Info("[Side] 完成 总耗时=" + sw.Elapsed.TotalMilliseconds.ToString("F0") + "ms 推理=" + inferMs.ToString("F0") + "ms 保存=" + saveMs.ToString("F0") + "ms 结果=" + (isOk ? "OK" : "NG"));
+			for (int i = 0; i < mergedStatus.Count; i++) Logger.Info("[Side]   盒" + (i + 1) + ": " + mergedStatus[i]);
+
+			OnResultReady?.Invoke(result);
+			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
+		}
+
+		private void ProcessPerImageInference(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
+		{
+			// 左图逐张推理
+			for (int i = 0; i < leftImages.Count; i++)
+			{
+				var res = InferSingle(leftImages[i], i);
+				lock (_resultLock) _leftResults.Add(res);
+			}
+			// 右图逐张推理
+			for (int i = 0; i < rightImages.Count; i++)
+			{
+				var res = InferSingle(rightImages[i], i);
+				lock (_resultLock) _rightResults.Add(res);
 			}
 		}
 
-		private void ProcessSingleImage(string side, ImageContext ctx)
+		private void ProcessBatchInference(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
-			var sw = System.Diagnostics.Stopwatch.StartNew();
+			var allCrops = new List<Mat>();
+			var allMeta = new List<Tuple<Side, int, int>>(); // Side, imgIdx, isTail(0=head,1=tail)
+			foreach (var img in leftImages)
+			{
+				try { var m = img.Image.ToMat(); int h = m.Height, w = m.Width; int cw = (int)(h * CropRatio); if (cw > w) cw = w;
+					var hd = new Mat(m, new CvRect(0, 0, cw, h)).Clone(); allCrops.Add(hd); allMeta.Add(Tuple.Create(Side.Left, allCrops.Count - 1, 0));
+					var tl = new Mat(m, new CvRect(w - cw, 0, cw, h)).Clone(); allCrops.Add(tl); allMeta.Add(Tuple.Create(Side.Left, allCrops.Count - 1, 1));
+					m.Dispose(); } catch { }
+			}
+			foreach (var img in rightImages)
+			{
+				try { var m = img.Image.ToMat(); int h = m.Height, w = m.Width; int cw = (int)(h * CropRatio); if (cw > w) cw = w;
+					var hd = new Mat(m, new CvRect(0, 0, cw, h)).Clone(); allCrops.Add(hd); allMeta.Add(Tuple.Create(Side.Right, allCrops.Count - 1, 0));
+					var tl = new Mat(m, new CvRect(w - cw, 0, cw, h)).Clone(); allCrops.Add(tl); allMeta.Add(Tuple.Create(Side.Right, allCrops.Count - 1, 1));
+					m.Dispose(); } catch { }
+			}
 
+			if (_models.SideDefectModel != null && allCrops.Count > 0)
+			{
+				var results = _models.SideDefectModel.PredictBatch(allCrops, ConfThreshold, IouThreshold);
+				var imgDefects = new Dictionary<int, List<BoxDefect>>();
+				for (int i = 0; i < results.Count; i++)
+				{
+					var r = results[i]; var meta = allMeta[i];
+					int imgIdx = meta.Item2 / 2, isTail = meta.Item3; Side side = meta.Item1;
+					if (r?.BoxesN == null) continue;
+					int key = (side == Side.Left ? 0 : 100) + imgIdx;
+					if (!imgDefects.ContainsKey(key)) imgDefects[key] = new List<BoxDefect>();
+					int srcW = 0, srcH = 0; // need original image dimensions for tail offset
+					var srcImgs = side == Side.Left ? leftImages : rightImages;
+					if (imgIdx < srcImgs.Count) { var tmp = srcImgs[imgIdx]; srcW = tmp.Image.Width; srcH = tmp.Image.Height; }
+					int tailOff = isTail == 1 ? (srcW - (int)(srcH * CropRatio)) : 0;
+					for (int j = 0; j < r.BoxesN.Length; j++)
+					{ var b = r.BoxesN[j]; imgDefects[key].Add(new BoxDefect(j, "缺陷" + r.ClassIds[j], new float[] { (tailOff + b.X) / srcW, b.Y / srcH, (tailOff + b.X + b.Width) / srcW, (b.Y + b.Height) / srcH }, r.Scores[j])); }
+				}
+				foreach (var kv in imgDefects)
+				{
+					int srcIdx = kv.Key % 100; Side side = kv.Key >= 100 ? Side.Right : Side.Left;
+					var sr = new SideResult { Index = srcIdx, Side = side, Defects = kv.Value, Status = kv.Value.Count > 0 ? "NG" : "OK" };
+					if (side == Side.Left) _leftResults.Add(sr); else _rightResults.Add(sr);
+				}
+			}
+			foreach (var m in allCrops) m.Dispose();
+		}
+
+		private SideResult InferSingle(SideImageCtx ctx, int idx)
+		{
+			var result = new SideResult { Index = idx, Side = ctx.Side, Status = "OK" };
 			try
 			{
-				var mat = BitmapConverter.ToMat(ctx.OriginalBitmap);
-				Mat cropped = null;
-				using (var cropScope = new StopwatchScope(t => { }))
+				using (var mat = ctx.Image.ToMat())
 				{
 					int h = mat.Height, w = mat.Width;
-					int cropW = (int)(h * CropRatio);
-					if (cropW > w) cropW = w;
-					int startX = (w - cropW) / 2;
-					cropped = new Mat(mat, new CvRect(startX, 0, cropW, h)).Clone();
-				}
-
-			YoloInference.YoloResult yoloResult = null;
-				double inferTime = 0;
-				using (var inferScope = new StopwatchScope(t => inferTime = t))
-				{
-					if (_models.SideDefectModel != null)
-						yoloResult = _models.SideDefectModel.Predict(cropped, ConfThreshold, IouThreshold);
-				}
-				var defects = new List<BoxDefect>();
-				if (yoloResult != null && yoloResult.Boxes != null)
-				{
-					for (int i = 0; i < yoloResult.Boxes.Length; i++)
+					int cropW = (int)(h * CropRatio); if (cropW > w) cropW = w;
+					// 参考程序: 头+尾裁剪再批量推理
+					using (var head = new Mat(mat, new CvRect(0, 0, cropW, h)).Clone())
+					using (var tail = new Mat(mat, new CvRect(w - cropW, 0, cropW, h)).Clone())
 					{
-						var box = yoloResult.BoxesN[i];
-						defects.Add(new BoxDefect(i, "缺陷" + yoloResult.ClassIds[i],
-							new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }, yoloResult.Scores[i]));
+						if (_models.SideDefectModel != null)
+						{
+							var batch = new List<Mat> { head, tail };
+							var batchResults = _models.SideDefectModel.PredictBatch(batch, ConfThreshold, IouThreshold);
+							bool ng = false;
+							// 头部检测：坐标保持原样(0~cropW)
+							if (batchResults != null && batchResults.Count > 0 && batchResults[0]?.BoxesN != null)
+							{
+								ng = true;
+								for (int j = 0; j < batchResults[0].BoxesN.Length; j++)
+								{ var b = batchResults[0].BoxesN[j]; result.Defects.Add(new BoxDefect(j, "缺陷" + batchResults[0].ClassIds[j], new float[] { b.X / w, b.Y / h, (b.X + b.Width) / w, (b.Y + b.Height) / h }, batchResults[0].Scores[j])); }
+							}
+							// 尾部检测：坐标映射回原图(width-cropW ~ width)
+							if (batchResults != null && batchResults.Count > 1 && batchResults[1]?.BoxesN != null)
+							{
+								ng = true;
+								for (int j = 0; j < batchResults[1].BoxesN.Length; j++)
+								{ var b = batchResults[1].BoxesN[j]; result.Defects.Add(new BoxDefect(j, "缺陷" + batchResults[1].ClassIds[j], new float[] { (w - cropW + b.X) / w, b.Y / h, (w - cropW + b.X + b.Width) / w, (b.Y + b.Height) / h }, batchResults[1].Scores[j])); }
+							}
+							if (ng) result.Status = "NG";
+						}
 					}
 				}
-				bool isOk = defects.Count == 0;
-
-				double drawTime = 0;
-				Bitmap renderBitmap = null;
-				using (var drawScope = new StopwatchScope(t => drawTime = t))
-					renderBitmap = DrawDetectionResult(cropped, defects, isOk);
-
-				lock (_resultLock)
-				{
-					var result = new SideDetectionResult { BoxStatus = isOk ? new List<string> { "OK" } : defects.Select(d => d.DefectType).ToList() };
-					if (side == "Left") { _leftResults.Add(result); _currentDisplayImages.Add(renderBitmap); }
-					else _rightResults.Add(result);
-					_currentBatchIndex++;
-				}
-
-				if (_currentBatchIndex >= _sku.P) ProcessBatch();
 			}
-			catch (Exception ex) { Logger.Error($"侧面单图处理异常 side={side}: {ex.Message}"); }
-			finally { ctx.Dispose(); }
+			catch (Exception ex) { result.Status = "错误"; Logger.Error("[Side] 推理异常: " + ex.Message); }
+			return result;
 		}
 
-		private Bitmap DrawDetectionResult(Mat image, List<BoxDefect> defects, bool isOk)
-		{
-			var bitmap = image.ToBitmap();
-			using (var g = Graphics.FromImage(bitmap))
-			{
-				g.SmoothingMode = SmoothingMode.AntiAlias;
-				int w = bitmap.Width, h = bitmap.Height;
-
-				var colorMap = new Dictionary<string, Color>
-				{
-					{ "褶皱", Color.FromArgb(230, 126, 34) },
-					{ "破损", Color.FromArgb(231, 76, 60) },
-					{ "爆口", Color.FromArgb(155, 89, 182) }
-				};
-
-				foreach (var defect in defects)
-				{
-					var box = defect.BoundingBox;
-					if (box.Length < 4) continue;
-					int x1 = (int)(box[0] * w), y1 = (int)(box[1] * h);
-					int x2 = (int)(box[2] * w), y2 = (int)(box[3] * h);
-					var rect = new Rect(x1, y1, x2 - x1, y2 - y1);
-					var color = colorMap.ContainsKey(defect.DefectType) ? colorMap[defect.DefectType] : Color.Red;
-
-					using (var fill = new SolidBrush(Color.FromArgb(80, color)))
-						g.FillRectangle(fill, rect);
-					using (var pen = new Pen(color, 3))
-						g.DrawRectangle(pen, rect);
-
-					using (var font = new Font("微软雅黑", 10, FontStyle.Bold))
-					{
-						string label = defect.DefectType;
-						var labelSize = g.MeasureString(label, font);
-						int lx = x1, ly = y1 - (int)labelSize.Height - 4;
-						if (ly < 4) ly = y1 + 4;
-						using (var bgBrush = new SolidBrush(color))
-							g.FillRectangle(bgBrush, lx - 2, ly - 2, labelSize.Width + 8, labelSize.Height + 6);
-						g.DrawString(label, font, Brushes.White, lx + 2, ly + 1);
-					}
-				}
-
-				using (var font = new Font("微软雅黑", 14, FontStyle.Bold))
-				using (var brush = new SolidBrush(isOk ? Color.Green : Color.Red))
-					g.DrawString(isOk ? "OK" : "NG", font, brush, w - 50, 5);
-			}
-			return bitmap;
-		}
-
-		private void ProcessBatch()
+		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
 			lock (_resultLock)
 			{
-				int halfP = _sku.P / 2;
-				var leftStatus = new List<string>();
-				var rightStatus = new List<string>();
-				var mergedStatus = new List<string>();
-
-				for (int i = 0; i < halfP && i < _leftResults.Count; i++)
-					leftStatus.Add(_leftResults[i].BoxStatus.FirstOrDefault() ?? "OK");
-				for (int i = 0; i < halfP && i < _rightResults.Count; i++)
-					rightStatus.Add(_rightResults[i].BoxStatus.FirstOrDefault() ?? "OK");
-
-				while (leftStatus.Count < halfP) leftStatus.Add(MissingAsNg ? "缺少" : "OK");
-				while (rightStatus.Count < halfP) rightStatus.Add(MissingAsNg ? "缺少" : "OK");
-
-				for (int i = 0; i < _sku.P; i++)
+				_displayImages.Clear();
+				int count = Math.Max(leftImages.Count, rightImages.Count);
+				for (int i = 0; i < count; i++)
 				{
-					string lStatus = i < leftStatus.Count ? leftStatus[i] : "OK";
-					string rStatus = i < rightStatus.Count ? rightStatus[i] : "OK";
-					mergedStatus.Add((lStatus == "OK" && rStatus == "OK") ? "OK" : (lStatus != "OK" ? lStatus : rStatus));
+					var mat = new Mat(600, 800, MatType.CV_8UC3, new Scalar(30, 30, 30));
+					// 简化为单张显示：优先左图
+					var img = i < leftImages.Count ? leftImages[i] : (i < rightImages.Count ? rightImages[i] : null);
+					if (img != null) { try { var m = img.Image.ToMat(); mat = m.Clone(); m.Dispose(); } catch { } }
+					_displayImages.Add(mat);
 				}
-
-				bool isOk = mergedStatus.All(s => s == "OK");
-				var result = new ProductResult
-				{
-					ProductId = _currentBatchProductId,
-					CreateTime = DateTime.Now,
-					SideResult = isOk,
-					SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList()
-				};
-
-				Interlocked.Increment(ref _totalCount);
-				if (isOk) Interlocked.Increment(ref _okCount);
-				else Interlocked.Increment(ref _ngCount);
-
-				SaveBatchImages(mergedStatus, _currentBatchProductId, isOk);
-				OnResultReady?.Invoke(result);
-				OnStatusUpdate?.Invoke(leftStatus, rightStatus, mergedStatus, _sku.P);
-
-				_currentDisplayIndex = FindFirstNgIndex(mergedStatus);
-				_leftResults.Clear(); _rightResults.Clear();
+				_displayIndex = _displayImages.Count > 0 ? 0 : -1;
 			}
 		}
 
-		private int FindFirstNgIndex(List<string> statusList)
+		// ====== 轮播导航 ======
+		public Mat GetDisplayImage()
 		{
-			for (int i = 0; i < statusList.Count; i++)
-				if (statusList[i] != "OK") return i;
-			return 0;
+			lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; }
 		}
+		public void NavigatePrev() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex - 1 + _displayImages.Count) % _displayImages.Count; } }
+		public void NavigateNext() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex + 1) % _displayImages.Count; } }
 
-		public Bitmap GetCurrentDisplayImage()
+		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk)
 		{
-			lock (_resultLock)
+			try
 			{
-				if (_currentDisplayIndex < _currentDisplayImages.Count)
-					return (Bitmap)_currentDisplayImages[_currentDisplayIndex].Clone();
-				return null;
-			}
-		}
-
-		public void NavigatePrev()
-		{
-			lock (_resultLock)
-			{
-				if (_currentDisplayImages.Count > 0)
-				{
-					_currentDisplayIndex = (_currentDisplayIndex - 1 + _currentDisplayImages.Count) % _currentDisplayImages.Count;
-					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _sku.P);
-				}
-			}
-		}
-
-		public void NavigateNext()
-		{
-			lock (_resultLock)
-			{
-				if (_currentDisplayImages.Count > 0)
-				{
-					_currentDisplayIndex = (_currentDisplayIndex + 1) % _currentDisplayImages.Count;
-					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _sku.P);
-				}
-			}
-		}
-
-		private void SaveBatchImages(List<string> mergedStatus, long productId, bool isOk)
-		{
-			bool saveOkImage = _Config.IsSaveOkImage;
-			bool saveNgImage = _Config.IsSaveNgImage;
-
-			if (!saveOkImage && !saveNgImage) return;
-
-			string shift = GetCurrentShift();
-			string dateDir = DateTime.Now.ToString("yyMMdd");
-		string resultDir = isOk ? "OK" : "NG";
-			string ngTypes = GetNgTypesString(mergedStatus);
-
-			if ((isOk && saveOkImage) || (!isOk && saveNgImage))
-			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "侧面工位", resultDir);
+				bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage; if (!so && !sn) return;
+				string sh = GetShift(), dd = DateTime.Now.ToString("yyMMdd"), dir = Path.Combine(_savePath, dd, sh, "侧面工位", isOk ? "OK" : "NG");
 				Directory.CreateDirectory(dir);
-				for (int i = 0; i < _currentDisplayImages.Count; i++)
-				{
-					string fileName = $"{productId}_{i + 1}_{ngTypes}.jpg";
-					string filePath = Path.Combine(dir, fileName);
-					var jpegData = _currentDisplayImages[i].ToJpegBytesFast(85);
-					_imageSaver.AddSaveTask(filePath, jpegData, true, 85);
-				}
+				long pid = DateTime.Now.Ticks; string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
+				for (int i = 0; i < leftImages.Count; i++) { if (leftImages[i].Image != null) _imageSaver.AddSaveTask(Path.Combine(dir, pid + "_L" + (i + 1) + "_" + nt + ".jpg"), leftImages[i].Image.ToJpegBytesFast(85), true, 85); }
+				for (int i = 0; i < rightImages.Count; i++) { if (rightImages[i].Image != null) _imageSaver.AddSaveTask(Path.Combine(dir, pid + "_R" + (i + 1) + "_" + nt + ".jpg"), rightImages[i].Image.ToJpegBytesFast(85), true, 85); }
 			}
+			catch (Exception ex) { Logger.Error("[Side] 存图异常: " + ex.Message); }
 		}
+		private string GetShift() { var n = DateTime.Now.TimeOfDay; if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "晚班"; if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "早班"; return "中班"; }
 
-		private string GetCurrentShift()
-		{
-			var now = DateTime.Now.TimeOfDay;
-			if (now >= TimeSpan.Parse("00:00:00") && now <= TimeSpan.Parse("07:59:59")) return "晚班";
-			if (now >= TimeSpan.Parse("08:00:00") && now <= TimeSpan.Parse("15:59:59")) return "早班";
-			return "中班";
-		}
+		private void ClearBatch() { lock (_countLock) { while (_leftQueue.TryDequeue(out _)) ; while (_rightQueue.TryDequeue(out _)) ; _leftCount = 0; _rightCount = 0; } _leftResults.Clear(); _rightResults.Clear(); }
 
-		private string GetNgTypesString(List<string> statusList)
-		{
-			var ngTypes = statusList.Where(s => s != "OK").Distinct().ToList();
-			if (ngTypes.Count == 0) return "OK";
-			return string.Join("_", ngTypes);
-		}
-
-		public void SetMotionPositions(float startPos, float endPos)
-		{
-			_startPosition = startPos;
-			_endPosition = endPos;
-		}
-
-		public void ClearCounters()
-		{
-			Interlocked.Exchange(ref _totalCount, 0);
-			Interlocked.Exchange(ref _okCount, 0);
-			Interlocked.Exchange(ref _ngCount, 0);
-		}
-
-		public void Dispose()
-		{
-			if (_disposed) return;
-			_disposed = true;
-			_cts.Cancel();
-			_processThread?.Join(3000);
-			_cts.Dispose();
-			_processQueue.Dispose();
-		}
+		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
+		public void Dispose() { if (_disposed) return; _disposed = true; _motionCts?.Cancel(); }
 	}
 
-	public class SideDetectionResult
-	{
-		public List<string> BoxStatus { get; set; } = new List<string>();
-		public double InferenceTimeMs { get; set; }
-		public double TotalTimeMs { get; set; }
-	}
+	internal enum Side { Left, Right }
+	internal class SideImageCtx { public Bitmap Image; public long ProductId; public Side Side; }
+	internal class SideResult { public int Index; public Side Side; public string Status = "OK"; public List<BoxDefect> Defects = new List<BoxDefect>(); }
 }

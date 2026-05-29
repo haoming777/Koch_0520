@@ -7,7 +7,8 @@ using System.Linq;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using VisionMeasure.Utils;using CommonLib;
+using VisionMeasure.Utils;
+using CommonLib;
 
 namespace Hardware
 {
@@ -103,13 +104,7 @@ namespace Hardware
 			{
 				try
 				{
-					// 手动测试模式：跳过自动触发检测
-					if (VisionMeasure.MainFrm.ManualTestMode)
-					{
-						Thread.Sleep(50);
-						continue;
-					}
-					bool anyTriggered = false;
+					bool anyTriggered = false; long cycleTs = 0;
 
 					// 先读取所有端口当前状态（快照），避免共享端口时前一个相机消费边沿导致后一个丢失
 					var currentStates = new Dictionary<int, bool>();
@@ -150,7 +145,7 @@ namespace Hardware
 							else stationEnabled = VisionMeasure.MainFrm.SideEnabled;
 							if (!stationEnabled) continue;
 
-							long timestamp = _stopwatch.ElapsedTicks;
+							if (cycleTs == 0) cycleTs = _stopwatch.ElapsedTicks; long timestamp = cycleTs;
 							if (_pulseQueue.TryAdd(new PulseTask
 							{
 								CameraId = config.CameraId,
@@ -171,6 +166,7 @@ namespace Hardware
 					}
 
 					// 统一更新所有端口状态（在检测完所有相机之后）
+					cycleTs = 0;
 					foreach (var kv in currentStates)
 						_lastStates[kv.Key] = kv.Value;
 
@@ -190,22 +186,45 @@ namespace Hardware
 		private void PulseOutputLoop()
 		{
 			Logger.Info("脉冲输出线程启动");
-
 			while (!_cts.Token.IsCancellationRequested)
 			{
 				try
 				{
-					if (_pulseQueue.TryTake(out var task, 10, _cts.Token))
+					if (_pulseQueue.TryTake(out var first, 10, _cts.Token))
 					{
-						SendPulse(task);
+										 // 收集同一时间戳的所有脉冲，并行输出
+						var batch = new List<PulseTask> { first };
+						long ts = first.Timestamp;
+						var putBack = new List<PulseTask>();
+						int maxBatch = 10;
+						while (maxBatch-- > 0)
+						{
+							if (!_pulseQueue.TryTake(out var next, 0)) break;
+							if (next.Timestamp == ts) batch.Add(next);
+							else putBack.Add(next);
+						}
+						foreach (var t in putBack) _pulseQueue.TryAdd(t);
+						if (batch.Count > 1)
+							SendPulseBatch(batch);
+						else
+							SendPulse(first);
 					}
 				}
 				catch (OperationCanceledException) { break; }
-				catch (Exception ex)
-				{
-					Logger.Error($"脉冲输出异常: {ex.Message}");
-				}
+				catch (Exception ex) { Logger.Error($"脉冲输出异常: {ex.Message}"); }
 			}
+		}
+
+		private void SendPulseBatch(List<PulseTask> tasks)
+		{
+			try
+			{
+				if (_simulateMode) { Logger.Debug($"模拟模式：{tasks.Count}路脉冲并行输出"); return; }
+				foreach (var t in tasks) _motion.SetOutput(t.OutputPort, true);
+				PreciseDelay(tasks[0].PulseWidthMs);
+				foreach (var t in tasks) _motion.SetOutput(t.OutputPort, false);
+			}
+			catch (Exception ex) { Logger.Error($"批量脉冲输出失败: {ex.Message}"); try { foreach (var t in tasks) _motion.SetOutput(t.OutputPort, false); } catch { } }
 		}
 
 		private void SendPulse(PulseTask task)
@@ -217,7 +236,6 @@ namespace Hardware
 					Logger.Debug($"模拟模式：Camera{task.CameraId} 脉冲输出");
 					return;
 				}
-
 				_motion.SetOutput(task.OutputPort, true);
 				PreciseDelay(task.PulseWidthMs);
 				_motion.SetOutput(task.OutputPort, false);

@@ -39,6 +39,7 @@ namespace Models
 		public Bitmap FrontRenderImage { get; set; }
 		public Bitmap BackRenderImage { get; set; }
 		public Bitmap EndFaceRenderImage { get; set; }
+		public Bitmap EndFaceLowerRenderImage { get; set; }
 		public Bitmap SideRenderImage { get; set; }
 
 		// 性能耗时

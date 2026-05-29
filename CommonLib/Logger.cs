@@ -11,6 +11,7 @@ namespace CommonLib
 	public static class Logger
 	{
 		private static readonly BlockingCollection<LogEntry> _logQueue = new BlockingCollection<LogEntry>();
+		public static bool EnableDebugLog { get; set; } = true;
 		private static readonly string _logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
 		private const long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -99,6 +100,7 @@ namespace CommonLib
 
 		public static void Debug(string msg, object arg2 = null)
 		{
+			if (!EnableDebugLog) return;
 			string finalMsg = (arg2 == null) ? msg : (msg + " | " + arg2);
 			Log(LogLevel.Debug, finalMsg);
 		}

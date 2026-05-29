@@ -15,7 +15,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using VisionMeasure.Utils;using CommonLib;
+using VisionMeasure.Utils;
+using CommonLib;
 using VisionMeasure.From;
 using XL.Controls;
 using static CommonLib.Class_Config;
@@ -27,16 +28,17 @@ using DrawPoint = System.Drawing.Point;
 using DrawSize = System.Drawing.Size;
 using Timer = System.Windows.Forms.Timer;
 using VisionMeasure.Stations;  // 引入 FrontStationProcessor 所在的命名空间
-using VisionMeasure.Utils;using CommonLib;     // 引入 SystemConfig 所在的命名空间
+using VisionMeasure.Utils;
+using CommonLib;     // 引入 SystemConfig 所在的命名空间
 
 namespace VisionMeasure
 {
 	public partial class MainFrm : Form, ICamera
 	{
 		/// <summary>手动测试模式：true时停止所有自动触发</summary>
-			public static bool ManualTestMode = false;
-			/// <summary>各工位启用开关</summary>
-			public static bool FrontEnabled = true, BackEnabled = true, EndFaceEnabled = true, SideEnabled = true;
+		public static bool ManualTestMode = false;
+		/// <summary>各工位启用开关</summary>
+		public static bool FrontEnabled = true, BackEnabled = true, EndFaceEnabled = true, SideEnabled = true;
 		// ========== 硬件管理层 ==========
 		private MotionControlManager _motionMgr;
 		private CameraTriggerManager _triggerMgr;
@@ -50,6 +52,8 @@ namespace VisionMeasure
 
 		/// <summary>预加载的SKU数据库</summary>
 		public static SkuDatabase PreloadedSkuDb { get; set; }
+		private static MotionControlManager _staticMotionMgr;
+		public static MotionControlManager GetMotionManager() => _staticMotionMgr;
 
 		// ========== 工位处理器 ==========
 		private FrontStationProcessor _frontStation;
@@ -149,7 +153,7 @@ namespace VisionMeasure
 				Logger.Info("正在加载检测参数...");
 				_detectionParams = DetectionParameters.Instance;
 
-			// 初始化SKU数据库（优先使用预加载）
+				// 初始化SKU数据库（优先使用预加载）
 				UpdateLoadingProgress(15, "正在加载SKU数据...");
 				Logger.Info("正在加载SKU数据...");
 				if (PreloadedSkuDb != null)
@@ -229,6 +233,14 @@ namespace VisionMeasure
 
 				UpdateLoadingProgress(100, "系统初始化完成，准备启动...");
 				Logger.Info("系统初始化完成");
+
+				// 添加手动测试按钮
+				var btnTest = new Sunny.UI.UIButton { Text = "手动测试", Size = new System.Drawing.Size(100, 36),
+					Location = new System.Drawing.Point(800, 10), Anchor = AnchorStyles.Top | AnchorStyles.Right,
+					FillColor = System.Drawing.Color.FromArgb(0, 122, 204), Radius = 6, Font = new System.Drawing.Font("微软雅黑", 9F) };
+				btnTest.Click += BtnManualTest_Click;
+				this.Controls.Add(btnTest);
+				btnTest.BringToFront();
 			}
 			catch (Exception ex)
 			{
@@ -250,10 +262,14 @@ namespace VisionMeasure
 			// 运动控制卡
 			string controlIp = _detectionParams.Motion.ControlIp;
 			_motionMgr = new MotionControlManager(controlIp, useSimulateMode);
+			_staticMotionMgr = _motionMgr;
 
 			if (_motionMgr.Connect())
 			{
 				_motionMgr.InitAxes();
+				var axisCfg = CommonLib.AxisParamConfig.Load();
+				_motionMgr.ApplyAxisParams(axisCfg);
+				Logger.Info("轴" + axisCfg.Axis + "参数已从本地加载并应用");
 				if (MotionState != null) MotionState.State = UILightState.On;
 				Logger.Info("运动控制卡初始化成功");
 			}
@@ -489,14 +505,14 @@ namespace VisionMeasure
 			// 可选：统计触发次数
 			// _triggerCount[cameraId]++;
 		}
-	private void InitAiModels()
+		private void InitAiModels()
 		{
 			if (PreloadedModels != null)
 			{
-					_aiModels = PreloadedModels;
-					PreloadedModels = null;
-					Logger.Info("使用预加载的AI模型，跳过重复加载");
-					return;
+				_aiModels = PreloadedModels;
+				PreloadedModels = null;
+				Logger.Info("使用预加载的AI模型，跳过重复加载");
+				return;
 			}
 			var modelConfig = ModelPathConfig.LoadFromSysConfig();
 			_aiModels = new AiModelManager(modelConfig);
@@ -505,7 +521,7 @@ namespace VisionMeasure
 
 		private void InitStations()
 		{
-		string imgPath = _detectionParams.Save.ImageSavePath;
+			string imgPath = _detectionParams.Save.ImageSavePath;
 			// 恢复上次SKU
 			string lastSku = _detectionParams.LastSkuNumber;
 			if (!string.IsNullOrEmpty(lastSku))
@@ -518,19 +534,20 @@ namespace VisionMeasure
 
 			_frontStation = new FrontStationProcessor(_aiModels, _detectionParams);
 			_frontStation.OnResultReady += OnStationResult;
-		_frontStation.ReverseBoxOrder = _detectionParams.Station.FrontReverseBox;
+			_frontStation.ReverseBoxOrder = _detectionParams.Station.FrontReverseBox;
 			_frontStation.UpdateSku(_currentSku);
 			_frontStation.Start();
 
 			_endFaceStation = new EndFaceStationProcessor(_aiModels, imgPath, _currentSku.P, _imageSaver, _perfMonitor);
 			_endFaceStation.OnResultReady += OnStationResult;
-		_endFaceStation.ReverseBoxOrder = _detectionParams.Station.EndFaceReverseBox;
+			_endFaceStation.ReverseBoxOrder = _detectionParams.Station.EndFaceReverseBox;
 			_endFaceStation.OnStatusUpdate += OnEndFaceStatusUpdate;
 			_endFaceStation.UpdateSku(_currentSku);
 			_endFaceStation.Start();
 
 			_backStation = new BackStationProcessor(_aiModels, imgPath, _currentSku, _imageSaver, _perfMonitor);
-		_backStation.ReverseBoxOrder = _detectionParams.Station.BackReverseBox;
+			_backStation.ReverseBoxOrder = _detectionParams.Station.BackReverseBox;
+			_backStation.EnableDateCodeCheck = true;
 			_backStation.OnResultReady += OnStationResult;
 			_backStation.Start();
 
@@ -768,6 +785,8 @@ namespace VisionMeasure
 					UpdatePictureBox(xlPictureBox2, result.BackRenderImage);
 				if (result.EndFaceRenderImage != null)
 					UpdatePictureBox(xlPictureBox3, result.EndFaceRenderImage);
+				if (result.EndFaceLowerRenderImage != null)
+					UpdatePictureBox(xlPictureBox4, result.EndFaceLowerRenderImage);
 				if (result.SideRenderImage != null)
 					UpdatePictureBox(xlPictureBox5, result.SideRenderImage);
 
@@ -966,7 +985,7 @@ namespace VisionMeasure
 						UpdateSkuDisplay();
 						_frontStation?.UpdateSku(_currentSku);
 						_backStation?.UpdateSku(_currentSku);
-					// 保存到配置
+						// 保存到配置
 						_detectionParams.LastSkuNumber = skuNum;
 						_detectionParams.SaveToFile();
 						_sideStation?.UpdateSku(_currentSku);
@@ -998,10 +1017,10 @@ namespace VisionMeasure
 							_frontStation?.UpdateSku(_currentSku);
 							_backStation?.UpdateSku(_currentSku);
 							_sideStation?.UpdateSku(_currentSku);
-						_detectionParams.LastSkuNumber = skuNum;
+							_detectionParams.LastSkuNumber = skuNum;
 							_detectionParams.SaveToFile();
 							_endFaceStation?.UpdateSku(_currentSku);
-						_endFaceStation?.UpdatePCount(_currentSku.P);
+							_endFaceStation?.UpdatePCount(_currentSku.P);
 							Logger.Info($"SKU已切换(回车): {skuNum}, P={_currentSku.P}");
 						}
 						_skuSearchCombo.DroppedDown = false;
@@ -1047,7 +1066,7 @@ namespace VisionMeasure
 				Logger.Debug($"  条形码={_currentSku.BackBarcode}");
 				Logger.Debug($"  打码格式={_currentSku.CodingFormat}");
 
-			if (_skuSearchCombo != null) _skuSearchCombo.Text = _currentSku.SkuNumber ?? "";
+				if (_skuSearchCombo != null) _skuSearchCombo.Text = _currentSku.SkuNumber ?? "";
 				if (P_Lb != null) P_Lb.Text = _currentSku.P.ToString();
 				if (Z_Lb != null) Z_Lb.Text = _currentSku.Z.ToString();
 				if (MM_Lb != null) MM_Lb.Text = _currentSku.MM.ToString();
@@ -1316,7 +1335,7 @@ namespace VisionMeasure
 				_sideStation?.Dispose();
 
 				_triggerMgr?.Dispose();  // 释放触发管理器（包含后台线程）
-				// 释放所有相机SDK实例
+										 // 释放所有相机SDK实例
 				DisposeAllCameras();
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
@@ -1369,7 +1388,7 @@ namespace VisionMeasure
 		{
 			return _motionMgr;
 		}
-	/// <summary>
+		/// <summary>
 		/// 获取相机管理器（已弃用，现在相机由MainFrm直接管理）
 		/// </summary>
 		[Obsolete("相机现在由MainFrm直接管理，请使用GetDaHuaSDK(int cameraId)")]
@@ -1385,6 +1404,21 @@ namespace VisionMeasure
 		{
 			return _aiModels;
 		}
+
+			private void BtnManualTest_Click(object sender, EventArgs e)
+			{
+				using (var d = new OpenFileDialog { Title = "选择背面左图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
+				{if (d.ShowDialog() != DialogResult.OK) return;
+					var left = new Bitmap(d.FileName);
+					using (var d2 = new OpenFileDialog { Title = "选择背面右图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
+					{if (d2.ShowDialog() != DialogResult.OK) return;
+						var right = new Bitmap(d2.FileName);
+							_backStation?.UpdateSku(new SkuData { SkuNumber = "MANUAL", P = _currentSku?.P ?? 12, Z = _currentSku?.Z ?? 2, MM = _currentSku?.MM ?? 42, BackBarcode = _currentSku?.BackBarcode, CodingFormat = _currentSku?.CodingFormat, FrontPCode = _currentSku?.FrontPCode });
+						_backStation?.OnCam3(left, 0);
+						_backStation?.OnCam4(right, 0);
+						UIMessageTip.ShowOk(this, "已提交测试");
+					}}
+			}
 		#endregion
 	}
 }

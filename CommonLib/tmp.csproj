@@ -69,9 +69,6 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\..\..\项目所需\通讯\HslCommunication.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\VisionMeasure\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
-    </Reference>
     <Reference Include="Microsoft.ML.OnnxRuntime, Version=1.24.4.0, Culture=neutral, PublicKeyToken=f27f157f0a5b7bb6, processorArchitecture=MSIL">
       <HintPath>..\VisionMeasure\packages\Microsoft.ML.OnnxRuntime.Managed.1.24.4\lib\netstandard2.0\Microsoft.ML.OnnxRuntime.dll</HintPath>
     </Reference>
@@ -140,6 +137,7 @@
     <Compile Include="正运动\ControlParms.cs" />
     <Compile Include="正运动\takephotoVm.cs" />
     <Compile Include="正运动\Zmcaux.cs" />
+    <Compile Include="AxisParamConfig.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

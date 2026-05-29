@@ -15,6 +15,17 @@ namespace VisionMeasure
 		[STAThread]
 		static void Main()
 		{
+			// 单实例互斥
+			bool createdNew;
+			using (System.Threading.Mutex mtx = new System.Threading.Mutex(false, "Global\\KochVisionMeasure_SingleInstance", out createdNew))
+			{
+				if (!createdNew)
+				{
+					MessageBox.Show("程序已在运行中，无法重复打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+					return;
+				}
+			}
+
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
 
@@ -41,7 +52,6 @@ namespace VisionMeasure
 						var aiModels = new AiModelManager(modelConfig);
 						aiModels.LoadAllModels();
 
-						// 传递给MainFrm以避免重复加载
 						MainFrm.PreloadedSkuDb = skuDb;
 						MainFrm.PreloadedModels = aiModels;
 

@@ -61,18 +61,30 @@ namespace VisionMeasure.From
 						OpenTestForm();
 						break;
 
+					case "端面测试":
+						//new EndFaceTestForm(_mainFrm?.GetAiModelManager()).ShowDialog();
+						break;
+
+					case "侧面测试":
+						//new SideTestForm(_mainFrm?.GetAiModelManager()).ShowDialog();
+						break;
+
+					case "日期码测试":
+						//new DateCodeTestForm(_mainFrm?.GetAiModelManager()).ShowDialog();
+						break;
+
+					case "条码测试":
+						//new BarcodeTestForm(_mainFrm?.GetAiModelManager()).ShowDialog();
+						break;
+
 					case "系统设置":
 						SetSystem.MainFrm SetSystemMainFrm = new SetSystem.MainFrm();
 						SetSystemMainFrm.ShowDialog();
 						break;
 
 					case "手动调试":
-						if (_mainFrm != null && _mainFrm.GetMotionHandle() != IntPtr.Zero)
-						{
-							var controlFrm = new PLC监控.ControlFrm();
-							//var controlFrm = new PLC监控.ControlFrm(_mainFrm.GetMotionHandle());
-							controlFrm.ShowDialog();
-						}
+						var controlFrm = new PLC监控.ControlFrm(_mainFrm.GetMotionHandle());
+						controlFrm.ShowDialog();
 						break;
 				}
 			}
@@ -92,7 +104,7 @@ namespace VisionMeasure.From
 					var motionMgr = _mainFrm.GetMotionControlManager();
 					var cameraMgr = _mainFrm.GetCameraManager(); // 已弃用，相机现在由MainFrm直接管理
 					var aiModels = _mainFrm.GetAiModelManager();
-					var testForm = new UI.TestForm(motionMgr, cameraMgr, aiModels);
+					var testForm = new TestForm(motionMgr, cameraMgr, aiModels);
 					testForm.ShowDialog();
 				}
 			}

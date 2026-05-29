@@ -176,6 +176,12 @@ namespace Hardware
 			}
 		}
 
+		public void SetSpeed(int axis, float speed) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetSpeed(_handle, axis, speed); } catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); } }
+		public void SetAccel(int axis, float accel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetAccel(_handle, axis, accel); } catch (Exception ex) { Logger.Error("SetAccel: " + ex.Message); } }
+		public void SetDecel(int axis, float decel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetDecel(_handle, axis, decel); } catch (Exception ex) { Logger.Error("SetDecel: " + ex.Message); } }
+		public void SetLimitIn(int axis, int fwd, int rev, int datum) { if (_simulateMode || !IsConnected) return; try { ZAux_Direct_SetFwdIn(_handle, axis, fwd); ZAux_Direct_SetRevIn(_handle, axis, rev); ZAux_Direct_SetDatumIn(_handle, axis, datum); Logger.Info("限位设置: 轴" + axis + " FWD=IN" + fwd + " REV=IN" + rev + " DATUM=IN" + datum); } catch (Exception ex) { Logger.Error("SetLimitIn: " + ex.Message); } }
+	public void ApplyAxisParams(CommonLib.AxisParamConfig p) { if (_simulateMode || !IsConnected) return; try { int a = p.Axis; ZAux_Direct_SetAtype(_handle, a, p.Atype); ZAux_Direct_SetUnits(_handle, a, p.Units); ZAux_Direct_SetSpeed(_handle, a, p.Speed); ZAux_Direct_SetAccel(_handle, a, p.Accel); ZAux_Direct_SetDecel(_handle, a, p.Decel); ZAux_Direct_SetLspeed(_handle, a, p.Lspeed); ZAux_Direct_SetSramp(_handle, a, p.Sramp); ZAux_Direct_SetCreep(_handle, a, p.CreepSpeed); ZAux_Direct_SetFwdIn(_handle, a, p.FwdIn); ZAux_Direct_SetRevIn(_handle, a, p.RevIn); ZAux_Direct_SetDatumIn(_handle, a, p.DatumIn); Logger.Info("轴" + a + "参数已应用: 类型=" + p.Atype + " 速度=" + p.Speed + " 限位IN" + p.FwdIn + "/" + p.RevIn + "/" + p.DatumIn); } catch (Exception ex) { Logger.Error("ApplyAxisParams: " + ex.Message); } }
+
 		public bool SetOutput(int port, bool on)
 		{
 			if (_simulateMode)

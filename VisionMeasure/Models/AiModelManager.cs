@@ -25,7 +25,9 @@ namespace Models
 
 		// 背面模型
 		public YoloOnnx BackBarcodeModel { get; private set; }     // Yolo -> .onnx + meta.json
-		public Vimo BackDateCodeModel { get; private set; }        // Vimo -> .vimosln
+		public Vimo BackDateCodeSegModel { get; private set; }
+		public Vimo BackDateCodeClsModel { get; private set; }
+		public Vimo BackDateCodeOcrModel { get; private set; }
 		public YoloOnnx BackHookModel { get; private set; }        // Yolo -> .onnx + meta.json
 		public YoloOnnxSegmentation HookSlightModel { get; private set; } // 分割 -> .onnx
 		public Vimo BackCutCharModel { get; private set; }         // Vimo -> .vimosln
@@ -69,32 +71,32 @@ namespace Models
 			try
 			{
 				// P号码OCR模型 (Vimo)
-					if (!string.IsNullOrEmpty(_config.FrontPCodeOcrModel))
+				if (!string.IsNullOrEmpty(_config.FrontPCodeOcrModel))
+				{
+					string fullPath = _config.GetFullPath(_config.FrontPCodeOcrModel);
+					if (File.Exists(fullPath))
 					{
-						string fullPath = _config.GetFullPath(_config.FrontPCodeOcrModel);
-						if (File.Exists(fullPath))
+						try
 						{
-							try
-							{
-								FrontOcrModel = new Vimo();
-								// 使用配置的moduleId
-								string moduleId = _config.FrontPCodeOcrModuleId ?? "3";
-								int ret = FrontOcrModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
-								if (ret == 0)
-									Logger.Info($"正面P号码OCR模型加载成功: {fullPath} (moduleId={moduleId})");
-								else
-									Logger.Error($"正面P号码OCR模型加载失败: {FrontOcrModel.ErrorInfo}");
-							}
-							catch (Exception ex)
-							{
-								Logger.Error($"正面P号码OCR模型加载异常: {ex.Message}");
-							}
+							FrontOcrModel = new Vimo();
+							// 使用配置的moduleId
+							string moduleId = _config.FrontPCodeOcrModuleId ?? "3";
+							int ret = FrontOcrModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
+							if (ret == 0)
+								Logger.Info($"正面P号码OCR模型加载成功: {fullPath} (moduleId={moduleId})");
+							else
+								Logger.Error($"正面P号码OCR模型加载失败: {FrontOcrModel.ErrorInfo}");
 						}
-						else
+						catch (Exception ex)
 						{
-							Logger.Warning($"正面P号码OCR模型文件不存在: {fullPath}");
+							Logger.Error($"正面P号码OCR模型加载异常: {ex.Message}");
 						}
 					}
+					else
+					{
+						Logger.Warning($"正面P号码OCR模型文件不存在: {fullPath}");
+					}
+				}
 
 				// 盒子破检测模型 (Yolo)
 				if (!string.IsNullOrEmpty(_config.FrontBoxBreakModel))
@@ -199,27 +201,10 @@ namespace Models
 					}
 				}
 
-				// 日期码OCR模型 (Vimo -> .vimosln, 显卡1)
-				if (!string.IsNullOrEmpty(_config.BackDateCodeModel))
-				{
-					string fullPath = _config.GetFullPath(_config.BackDateCodeModel);
-					ReportProgress($"正在加载背面日期码OCR模型(Vimo, 显卡{_config.VimoGpuDeviceId}): {fullPath}", 70, 100);
-
-					if (File.Exists(fullPath))
-					{
-						BackDateCodeModel = new Vimo();
-						string moduleId = _config.BackDateCodeModuleId ?? "0";
-						int ret = BackDateCodeModel.Init(fullPath, _config.UseGpu, _config.VimoGpuDeviceId, moduleId);
-						if (ret == 0)
-							Logger.Info($"背面日期码OCR模型加载成功(显卡{_config.VimoGpuDeviceId}, moduleId={moduleId})");
-						else
-							Logger.Error($"背面日期码OCR模型加载失败: {BackDateCodeModel.ErrorInfo}");
-					}
-					else
-					{
-						Logger.Warning($"背面日期码OCR模型文件不存在: {fullPath}");
-					}
-				}
+				// 日期码模型 (3个Vimo子模型: 分割/分类/OCR, 显卡1)
+				BackDateCodeSegModel = LoadVimoModel(_config.BackDateCodeSegModel, "分割", "5");
+				BackDateCodeClsModel = LoadVimoModel(_config.BackDateCodeClsModel, "分类", "2");
+				BackDateCodeOcrModel = LoadVimoModel(_config.BackDateCodeOcrModel, "OCR", "2");
 
 				// 明显挂钩错位模型 (Yolo -> .onnx + meta.json, 显卡0)
 				if (!string.IsNullOrEmpty(_config.BackHookDamageModel))
@@ -345,6 +330,23 @@ namespace Models
 			HookSlightModel?.Dispose();
 
 			Logger.Info("AI模型管理器已释放");
+		}
+
+		private Vimo LoadVimoModel(string modelPath, string name, string moduleId = "0")
+		{
+			if (string.IsNullOrEmpty(modelPath)) return null;
+			string fullPath = _config.GetFullPath(modelPath);
+			if (!File.Exists(fullPath)) { Logger.Warning("背面日期码" + name + "模型文件不存在: " + fullPath); return null; }
+			// 优先GPU，失败自动降级CPU
+			Vimo v = new Vimo();
+			int ret = v.Init(fullPath, true, _config.VimoGpuDeviceId, moduleId);
+			if (ret == 0) { Logger.Info("背面日期码" + name + "模型加载成功(GPU" + _config.VimoGpuDeviceId + ")"); return v; }
+			Logger.Warning("背面日期码" + name + "GPU加载失败, 降级CPU: " + v.ErrorInfo);
+			v = new Vimo();
+			ret = v.Init(fullPath, false, _config.VimoGpuDeviceId, moduleId);
+			if (ret == 0) { Logger.Info("背面日期码" + name + "模型加载成功(CPU)"); return v; }
+			Logger.Error("背面日期码" + name + "模型加载失败: " + v.ErrorInfo);
+			return v;
 		}
 	}
 }

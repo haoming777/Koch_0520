@@ -189,13 +189,13 @@ namespace CommonLib
 			int FwdIn = _Config.axis0_Fwd;
 			int RevIn = _Config.axis0_Rev;
 
-			int res = ZAux_Direct_SetUnits(g_handle, axis, Convert.ToSingle(parms.Units));
-			res = ZAux_Direct_SetSpeed(g_handle, axis, Convert.ToSingle(parms.Speed));
-			res = ZAux_Direct_SetAccel(g_handle, axis, Convert.ToSingle(parms.Accel));
-			res = ZAux_Direct_SetDecel(g_handle, axis, Convert.ToSingle(parms.Decel));
-			res = ZAux_Direct_SetSramp(g_handle, axis, Convert.ToSingle(parms.Sramp));
-			res = ZAux_Direct_SetLspeed(g_handle, axis, Convert.ToSingle(parms.Lspeed));
-			res = ZAux_Direct_SetAtype(g_handle, axis, 1);
+			int res =	ZAux_Direct_SetUnits(g_handle, axis, Convert.ToSingle(parms.Units));
+			res =		ZAux_Direct_SetSpeed(g_handle, axis, Convert.ToSingle(parms.Speed));
+			res =		ZAux_Direct_SetAccel(g_handle, axis, Convert.ToSingle(parms.Accel));
+			res =		ZAux_Direct_SetDecel(g_handle, axis, Convert.ToSingle(parms.Decel));
+			res =		ZAux_Direct_SetSramp(g_handle, axis, Convert.ToSingle(parms.Sramp));
+			res =		ZAux_Direct_SetLspeed(g_handle, axis, Convert.ToSingle(parms.Lspeed));
+			res =		ZAux_Direct_SetAtype(g_handle, axis, 1);
 
 			switch (axis)
 			{

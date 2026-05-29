@@ -31,6 +31,8 @@
 			this.uiPanel6 = new Sunny.UI.UIPanel();
 			this.uiPanel1 = new Sunny.UI.UIPanel();
 			this.uiTableLayoutPanel1 = new Sunny.UI.UITableLayoutPanel();
+			this.uiPanel8 = new Sunny.UI.UIPanel();
+			this.uiPanel7 = new Sunny.UI.UIPanel();
 			this.uiPanel2 = new Sunny.UI.UIPanel();
 			this.closeBtn = new Sunny.UI.UIPanel();
 			this.uiPanel5 = new Sunny.UI.UIPanel();
@@ -76,6 +78,8 @@
 			this.uiTableLayoutPanel1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(47)))), ((int)(((byte)(60)))), ((int)(((byte)(76)))));
 			this.uiTableLayoutPanel1.ColumnCount = 1;
 			this.uiTableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+			this.uiTableLayoutPanel1.Controls.Add(this.uiPanel8, 0, 7);
+			this.uiTableLayoutPanel1.Controls.Add(this.uiPanel7, 0, 6);
 			this.uiTableLayoutPanel1.Controls.Add(this.uiPanel2, 0, 5);
 			this.uiTableLayoutPanel1.Controls.Add(this.closeBtn, 0, 9);
 			this.uiTableLayoutPanel1.Controls.Add(this.uiPanel6, 0, 4);
@@ -102,6 +106,38 @@
 			this.uiTableLayoutPanel1.TabIndex = 1;
 			this.uiTableLayoutPanel1.TagString = null;
 			// 
+			// uiPanel8
+			// 
+			this.uiPanel8.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.uiPanel8.FillColor = System.Drawing.Color.Transparent;
+			this.uiPanel8.Font = new System.Drawing.Font("微软雅黑", 14.25F);
+			this.uiPanel8.ForeColor = System.Drawing.Color.White;
+			this.uiPanel8.Location = new System.Drawing.Point(0, 315);
+			this.uiPanel8.Margin = new System.Windows.Forms.Padding(0);
+			this.uiPanel8.MinimumSize = new System.Drawing.Size(1, 1);
+			this.uiPanel8.Name = "uiPanel8";
+			this.uiPanel8.Size = new System.Drawing.Size(185, 45);
+			this.uiPanel8.TabIndex = 12;
+			this.uiPanel8.Text = "条码测试";
+			this.uiPanel8.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.uiPanel8.Visible = false;
+			// 
+			// uiPanel7
+			// 
+			this.uiPanel7.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.uiPanel7.FillColor = System.Drawing.Color.Transparent;
+			this.uiPanel7.Font = new System.Drawing.Font("微软雅黑", 14.25F);
+			this.uiPanel7.ForeColor = System.Drawing.Color.White;
+			this.uiPanel7.Location = new System.Drawing.Point(0, 270);
+			this.uiPanel7.Margin = new System.Windows.Forms.Padding(0);
+			this.uiPanel7.MinimumSize = new System.Drawing.Size(1, 1);
+			this.uiPanel7.Name = "uiPanel7";
+			this.uiPanel7.Size = new System.Drawing.Size(185, 45);
+			this.uiPanel7.TabIndex = 11;
+			this.uiPanel7.Text = "侧面测试";
+			this.uiPanel7.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.uiPanel7.Visible = false;
+			// 
 			// uiPanel2
 			// 
 			this.uiPanel2.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -114,7 +150,7 @@
 			this.uiPanel2.Name = "uiPanel2";
 			this.uiPanel2.Size = new System.Drawing.Size(185, 45);
 			this.uiPanel2.TabIndex = 10;
-			this.uiPanel2.Text = "PLC监控";
+			this.uiPanel2.Text = "端面测试";
 			this.uiPanel2.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
 			this.uiPanel2.Visible = false;
 			this.uiPanel2.Click += new System.EventHandler(this.switchTabBtn_Click);
@@ -230,6 +266,8 @@
 		private Sunny.UI.UIPanel uiPanel4;
 		private Sunny.UI.UIPanel uiPanel3;
 		private Sunny.UI.UIPanel switchTabBtn;
-        private Sunny.UI.UIPanel uiPanel2;
-    }
+		private Sunny.UI.UIPanel uiPanel8;
+		private Sunny.UI.UIPanel uiPanel7;
+		private Sunny.UI.UIPanel uiPanel2;
+	}
 }
