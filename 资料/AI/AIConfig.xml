@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Root xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <SDK>
-       <Item Name="C1" ModelsPath=".\AI\分割模型\model.vimosln" GPU="true" DeviceID="0" ModelID="5" RunEnable="true" />   
-       <Item Name="C2" ModelsPath=".\AI\分类模型\model.vimosln" GPU="true" DeviceID="0" ModelID="2" RunEnable="true" />
-       <Item Name="C3" ModelsPath=".\AI\OCR识别\model.vimosln" GPU="true" DeviceID="0" ModelID="2" RunEnable="true" />
-  </SDK>
-</Root>
