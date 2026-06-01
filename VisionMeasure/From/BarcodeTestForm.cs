@@ -6,6 +6,7 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using XL.Controls;
 
 namespace VisionMeasure.From
 {
@@ -22,7 +23,7 @@ namespace VisionMeasure.From
         private Button btnLoadLeft, btnLoadRight;
 
         // 结果展示 —— 可缩放拖拽的自定义控件
-        private ZoomablePictureBox pbLeftResult, pbRightResult;
+        private XL.Controls.ZoomablePictureBox pbLeftResult, pbRightResult;
 
         // 参数配置
         private TextBox txtRefBarcode;
@@ -223,11 +224,11 @@ namespace VisionMeasure.From
             rightPanel.Controls.Add(txtLog, 0, 2);
         }
 
-        private Panel CreateResultPanel(string title, out ZoomablePictureBox zoomBox)
+        private Panel CreateResultPanel(string title, out XL.Controls.ZoomablePictureBox zoomBox)
         {
             var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(4) };
             var lbl = new Label { Text = title, ForeColor = Color.White, BackColor = Color.FromArgb(122, 0, 245), Dock = DockStyle.Top, Height = 24, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Consolas", 9F, FontStyle.Bold) };
-            zoomBox = new ZoomablePictureBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(15, 15, 15) };
+            zoomBox = new XL.Controls.ZoomablePictureBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(15, 15, 15) };
             panel.Controls.Add(zoomBox);
             panel.Controls.Add(lbl);
             return panel;

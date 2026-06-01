@@ -59,7 +59,7 @@ namespace Hardware
 			{
 				Name = "TrigMonitor",
 				IsBackground = true,
-				Priority = ThreadPriority.Highest
+				Priority = ThreadPriority.AboveNormal
 			};
 			_monitorThread.Start();
 
@@ -145,6 +145,9 @@ namespace Hardware
 							else stationEnabled = VisionMeasure.MainFrm.SideEnabled;
 							if (!stationEnabled) continue;
 
+								// 侧面工位(Cam7/8)不占用OUT脉冲队列，由SideStation自己控制OUT14/15
+						bool isSideCam = config.CameraId >= 7 && config.CameraId <= 8 && VisionMeasure.MainFrm.SideEnabled;
+						if (isSideCam) { OnTriggered?.Invoke(config.CameraId); continue; }
 							if (cycleTs == 0) cycleTs = _stopwatch.ElapsedTicks; long timestamp = cycleTs;
 							if (_pulseQueue.TryAdd(new PulseTask
 							{

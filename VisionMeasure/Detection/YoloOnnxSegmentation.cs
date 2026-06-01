@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using CommonLib;
 using OpenCvSharp;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -82,7 +83,7 @@ namespace YoloSegmentationEnd2End // 按照要求修改了专属命名空间
 			catch (Exception ex)
 			{
 				// 如果当前机器没有 N 卡或缺少环境，自动优雅降级为 CPU 模式
-				Console.WriteLine($"[WARNING] CUDA 初始化失败，自动降级为 CPU 模式。原因: {ex.Message}");
+				Logger.Info($"[GPU] CUDA 初始化失败，自动降级为 CPU 模式。原因: {ex.Message}");
 				SessionOptions options = new SessionOptions();
 				options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
 				options.AppendExecutionProvider_CPU(0);

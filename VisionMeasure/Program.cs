@@ -12,6 +12,9 @@ namespace VisionMeasure
 {
 	static class Program
 	{
+		/// <summary>USB加密狗验证类实例</summary>
+		private static XLUsbDogClass UsbDogClass;
+
 		[STAThread]
 		static void Main()
 		{
@@ -24,6 +27,29 @@ namespace VisionMeasure
 					MessageBox.Show("程序已在运行中，无法重复打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
 					return;
 				}
+			}
+
+			// ================================================================
+			// USB加密狗验证
+			// ================================================================
+			try
+			{
+				UsbDogClass = new XLUsbDogClass();
+				bool dogValid = UsbDogClass.FindUsbDog();
+				if (!dogValid)
+				{
+					MessageBox.Show("未检测到加密狗，程序无法启动。\n请插入USB加密狗后重试。",
+						"加密狗验证失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+					return;
+				}
+				Logger.Info("USB加密狗验证通过");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"USB加密狗验证异常: {ex.Message}");
+				MessageBox.Show($"加密狗验证失败: {ex.Message}\n请检查加密狗是否正确插入。",
+					"加密狗验证失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+				return;
 			}
 
 			Application.EnableVisualStyles();
@@ -78,7 +104,54 @@ namespace VisionMeasure
 			}
 			else
 			{
-				Application.Run(new MainFrm());
+			}
+		}
+	}
+
+	/// <summary>
+	/// USB加密狗操作封装类
+	/// 依赖: XL.UsbDog.dll
+	/// </summary>
+	public class XLUsbDogClass
+	{
+		/// <summary>查找并验证加密狗</summary>
+		public bool FindUsbDog()
+		{
+			try
+			{
+				var dogType = Type.GetType("XL.UsbDog.XLUsbDogClass, XL.UsbDog");
+				if (dogType == null)
+				{
+					// 尝试 Assembly.LoadFrom 加载DLL
+					try
+					{
+						var asm = System.Reflection.Assembly.LoadFrom(
+							System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "XL.UsbDog.dll"));
+						dogType = asm.GetType("XL.UsbDog.XLUsbDogClass");
+					}
+					catch { }
+				}
+				if (dogType == null)
+				{
+					Logger.Error("XL.UsbDog.dll 未找到");
+					return false;
+				}
+
+				var instance = Activator.CreateInstance(dogType);
+				var findMethod = dogType.GetMethod("FindUsbDog", new Type[0]);
+				if (findMethod == null)
+				{
+					Logger.Error("FindUsbDog 方法未找到");
+					return false;
+				}
+
+				var result = findMethod.Invoke(instance, null);
+				return result is bool b && b;
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"FindUsbDog异常: {ex.Message}");
+				return false;
 			}
 		}
 	}

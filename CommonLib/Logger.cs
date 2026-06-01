@@ -12,6 +12,10 @@ namespace CommonLib
 	{
 		private static readonly BlockingCollection<LogEntry> _logQueue = new BlockingCollection<LogEntry>();
 		public static bool EnableDebugLog { get; set; } = true;
+		/// <summary>全流程追踪日志开关（默认关闭，调试时打开）</summary>
+		public static bool EnableTraceLog { get; set; } = false;
+		/// <summary>控制台输出开关（默认关闭，高频触发时控制台IO会阻塞线程）</summary>
+		public static bool EnableConsoleOutput { get; set; } = false;
 		private static readonly string _logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
 		private const long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -50,7 +54,7 @@ namespace CommonLib
 					writer.WriteLine(logLine);
 					if (_logQueue.Count == 0) writer.Flush();
 
-					WriteToConsole(entry.Level, logLine);
+					if (EnableConsoleOutput) WriteToConsole(entry.Level, logLine);
 				}
 			}
 			finally
@@ -103,6 +107,13 @@ namespace CommonLib
 			if (!EnableDebugLog) return;
 			string finalMsg = (arg2 == null) ? msg : (msg + " | " + arg2);
 			Log(LogLevel.Debug, finalMsg);
+		}
+
+		/// <summary>全流程追踪日志（仅在EnableTraceLog=true时输出）</summary>
+		public static void Trace(string msg)
+		{
+			if (!EnableTraceLog) return;
+			Log(LogLevel.Debug, "[TRACE] " + msg);
 		}
 
 		public static void Warning(string msg, object arg2 = null)

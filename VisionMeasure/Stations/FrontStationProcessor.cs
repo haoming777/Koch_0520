@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using CommonLib;
 using Config;
@@ -29,17 +30,26 @@ namespace VisionMeasure.Stations
 		private HighSpeedImageSaver _imageSaver;
 		private readonly AiModelManager _models;
 		private readonly DetectionParameters _detectionParams;
+		private Config.ModelParams _pcodeParams;
 
 		private Mat _leftBuffer = null;
 		private Mat _rightBuffer = null;
 		private readonly object _syncLock = new object();
 
-		private int _okCount = 0;
-		private int _ngCount = 0;
+		private long _okCount = 0;
+		private long _ngCount = 0;
+		private long _imgCount = 0;
 		private SkuData _currentSku = null;
 		private bool _lastIsOk = true;
 
-		public event Action<Bitmap, bool[], int, int> OnResultReady;
+		/// <summary>OK计数（公开只读，供统计显示使用）</summary>
+		public long OkCount => _okCount;
+		/// <summary>NG计数（公开只读，供统计显示使用）</summary>
+		public long NgCount => _ngCount;
+		/// <summary>收图计数</summary>
+		public long ImgCount => _imgCount;
+
+		public event Action<Bitmap, bool[], long, long> OnResultReady;
 		public event Action<List<string>, int> OnStatusUpdate;
 
 		public float ConfThreshold { get; set; } = 0.5f;
@@ -51,6 +61,7 @@ namespace VisionMeasure.Stations
 		{
 			_models = modelManager;
 			_detectionParams = detectionParams;
+			_pcodeParams = Config.ModelParams.Load("front_pcode");
 			_imageSaver = new HighSpeedImageSaver();
 		}
 
@@ -61,6 +72,7 @@ namespace VisionMeasure.Stations
 		public void OnCam1(Bitmap leftImg, object extraArg = null)
 		{
 			if (leftImg == null) return;
+			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam1 收到图像 {leftImg.Width}x{leftImg.Height}");
 			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = leftImg.ToMat(); Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY); }
 			CheckAndProcessAsync();
@@ -69,6 +81,7 @@ namespace VisionMeasure.Stations
 		public void OnCam2(Bitmap rightImg, object extraArg = null)
 		{
 			if (rightImg == null) return;
+			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam2 收到图像 {rightImg.Width}x{rightImg.Height}");
 			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = rightImg.ToMat(); Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY); }
 			CheckAndProcessAsync();
@@ -83,6 +96,7 @@ namespace VisionMeasure.Stations
 				{
 					leftToProcess = _leftBuffer; rightToProcess = _rightBuffer;
 					_leftBuffer = null; _rightBuffer = null;
+					Logger.Trace("[Front] ▶ 左右配对成功 图=" + leftToProcess.Width + "x" + leftToProcess.Height);
 					Logger.Debug("[Front] 左右图像配对成功，开始处理");
 				}
 			}
@@ -114,6 +128,7 @@ namespace VisionMeasure.Stations
 					}
 				}
 
+				Logger.Trace("[Front] ▷ 推理开始 P=" + pCount + " 并行P号+破损");
 				// 步骤1: 并行推理
 				var sw1 = System.Diagnostics.Stopwatch.StartNew();
 				var pNumberTask = Task.Run(() => RecognizePNumber(leftProc, rightProc, pCount, halfP));
@@ -130,7 +145,8 @@ namespace VisionMeasure.Stations
 					if (ngList.Count > 0) pNumberNg[kv.Key] = ngList;
 				}
 
-				Logger.Info($"[Front] 步骤1完成: 推理={sw1.Elapsed.TotalMilliseconds:F1}ms P号={pNumberResults.Values.Sum(v=>v.Count)} 破损={damageResults.Values.Sum(v=>v.Count)}");
+				Logger.Trace("[Front] ✓ 推理完成 " + sw1.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
+				Logger.Info($"[Front] 步骤1完成: 推理={sw1.Elapsed.TotalMilliseconds:F1}ms P号={pNumberResults.Values.Sum(v => v.Count)} 破损={damageResults.Values.Sum(v => v.Count)}");
 
 				// 步骤2: 汇总结果(P号仅EnablePNumberCheck时判NG)
 				var statusList = new List<string>();
@@ -155,6 +171,7 @@ namespace VisionMeasure.Stations
 
 				// 步骤4: 存图
 				SaveImages(leftProc, rightProc, mergedImage, ngArray);
+				Logger.Trace("[Front] ✓ 完成 结果=" + (isOk ? "OK" : "NG") + " 总=" + swTotal.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
 				OnResultReady?.Invoke(mergedImage, ngArray, _okCount, _ngCount);
 				OnStatusUpdate?.Invoke(statusList, pCount);
 				Logger.Info($"[Front] 处理完成 总耗时={swTotal.Elapsed.TotalMilliseconds:F2}ms P={pCount} OK={pCount - currentNgCount} NG={currentNgCount}");
@@ -179,7 +196,8 @@ namespace VisionMeasure.Stations
 			{
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
 				int boxWL = wL / halfP, boxWR = wR / halfP;
-				int startYL = hL * 2 / 3, startYR = hR * 2 / 3;
+				double pcRatio = (_pcodeParams != null) ? _pcodeParams.StartHeightRatioPCode : (2.0 / 3.0);
+			int startYL = (int)(hL * pcRatio), startYR = (int)(hR * pcRatio);
 				string refPNumber = _currentSku?.FrontPCode;
 				bool hasRef = !string.IsNullOrEmpty(refPNumber);
 

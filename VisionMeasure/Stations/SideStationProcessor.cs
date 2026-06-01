@@ -91,6 +91,7 @@ namespace Stations
 		public int TriggerPulseMs { get; set; } = 50;
 
 		public long TotalCount => _totalCount; public long OkCount => _okCount; public long NgCount => _ngCount;
+		public long TriggerCount, OutLeftCount, OutRightCount, ImgLeftCount, ImgRightCount;
 		public int ImageCount => _displayImages.Count;
 		public bool IsMoving { get; private set; }
 
@@ -112,24 +113,51 @@ namespace Stations
 		public void Start() { Logger.Info("侧面工位已启动"); }
 		public void Stop() { _motionCts?.Cancel(); }
 
-		/// <summary>IN13下降沿触发 → MainFrm调用此方法</summary>
-		public void StartDetection()
+		/// <summary>模拟检测：跳过运动轴，直接处理队列图片</summary>
+		public void SimulateDetection()
 		{
 			if (IsMoving) return;
 			IsMoving = true;
-		SetLimitSwitches();
+			int originalP = _sku.P;
+			int simP = Math.Max(_leftCount, _rightCount);
+			if (simP > 0) _sku.P = simP;
 			_motionCts = new CancellationTokenSource();
 			Task.Run(() =>
 			{
 				try
 				{
-					Logger.Info("[Side] ====== 侧面检测开始 P=" + _sku.P + " 模式=" + CaptureMode + " 推理=" + InferenceMode + " ======");
-					ClearBatch();
-					StartMotion();
+					Logger.Info("[Side] ====== 侧面模拟检测开始 P=" + _sku.P + " L=" + _leftCount + " R=" + _rightCount + " ======");
 					ProcessResults();
 				}
+				catch (Exception ex) { Logger.Error("[Side] 模拟异常: " + ex.Message); }
+				finally { _sku.P = originalP; IsMoving = false; }
+			});
+		}
+
+		/// <summary>IN13下降沿触发 → MainFrm调用此方法</summary>
+		public void StartDetection()
+		{
+			if (IsMoving) { Logger.Warning("[Side] 上一批未完成，强制中断回起点"); _motionCts?.Cancel(); _motion.StopAxis(SideAxis); _motion.SetSpeed(SideAxis, ReturnSpeed); _motion.MoveAbs(SideAxis, StartPosition); }
+			IsMoving = true;
+		SetLimitSwitches();
+			_motionCts = new CancellationTokenSource();
+			var cts = _motionCts; // 捕获当前令牌，防止被后续周期覆盖
+			Task.Run(() =>
+			{
+				try
+				{
+					Logger.Info("[Side] ====== 侧面检测开始 P=" + _sku.P + " ======");
+					ClearBatch();
+					lock (_resultLock) { _leftResults.Clear(); _rightResults.Clear(); }
+					var streamTask = Task.Run(() => ProcessStream(cts.Token));
+					StartMotion();
+					// 运动结束，取消ProcessStream线程，防止废弃线程积累导致CPU饿死
+					cts.Cancel();
+					streamTask.Wait(3000);
+					FinalizeResults();
+				}
 				catch (Exception ex) { Logger.Error("[Side] 异常: " + ex.Message); }
-				finally { IsMoving = false; }
+				finally { IsMoving = false; cts.Dispose(); }
 			});
 		}
 
@@ -188,10 +216,7 @@ namespace Stations
 
 				// 发送触发脉冲
 				int outPort = (trigCam == 7) ? Cam7OutPort : Cam8OutPort;
-				_motion.SetOutput(outPort, true);
-				Thread.Sleep(TriggerPulseMs);
-				_motion.SetOutput(outPort, false);
-
+				_motion.HwPulse(outPort, TriggerPulseMs);
 				Logger.Debug("[Side] IN12边沿 触发Cam" + trigCam + " pos=" + curPos.ToString("F1") + " L=" + _leftCount + "/" + p + " R=" + _rightCount + "/" + p);
 
 				if (CaptureMode == CaptureMode.StopCapture)
@@ -213,7 +238,90 @@ namespace Stations
 	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } }
 		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
 
-		/// <summary>处理推理结果</summary>
+		/// <summary>实时流式处理：运动过程中拍一张推理一张显示一张</summary>
+		private List<SideImageCtx> _processedLeftImgs = new List<SideImageCtx>();
+		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
+
+		private void ProcessStream(CancellationToken cancel)
+		{
+			int p = _sku.P, processed = 0;
+			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
+			while (!cancel.IsCancellationRequested && processed < p * 2)
+			{
+				SideImageCtx ctx;
+				if (_leftQueue.TryDequeue(out ctx))
+				{
+					var res = InferSingle(ctx, _leftResults.Count);
+					lock (_resultLock) _leftResults.Add(res);
+					_processedLeftImgs.Add(ctx);
+					EmitPartial(p);
+					processed++;
+				}
+				else if (_rightQueue.TryDequeue(out ctx))
+				{
+					var res = InferSingle(ctx, _rightResults.Count);
+					lock (_resultLock) _rightResults.Add(res);
+					_processedRightImgs.Add(ctx);
+					EmitPartial(p);
+					processed++;
+				}
+				else Thread.Sleep(1);
+			}
+		}
+
+		private void EmitPartial(int p)
+		{
+			lock (_resultLock)
+			{
+				var st = new List<string>();
+				int n = Math.Max(_leftResults.Count, _rightResults.Count);
+				for (int i = 0; i < n; i++)
+				{
+					string ls = i < _leftResults.Count ? _leftResults[i].Status : "?";
+					string rs = i < _rightResults.Count ? _rightResults[i].Status : "?";
+					st.Add((ls == "OK" && rs == "OK") ? "OK" : (ls != "OK" && ls != "?" ? ls : (rs != "?" ? rs : "OK")));
+				}
+				OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), st, p);
+			}
+		}
+
+		private void FinalizeResults()
+		{
+			int p = _sku.P;
+			while (_leftResults.Count < p) _leftResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Left, Index = _leftResults.Count });
+			while (_rightResults.Count < p) _rightResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Right, Index = _rightResults.Count });
+			var mergedStatus = new List<string>();
+			for (int i = 0; i < p; i++)
+			{
+				string ls = i < _leftResults.Count ? _leftResults[i].Status : (MissingAsNg ? "缺少" : "OK");
+				string rs = i < _rightResults.Count ? _rightResults[i].Status : (MissingAsNg ? "缺少" : "OK");
+				mergedStatus.Add((ls == "OK" && rs == "OK") ? "OK" : (ls != "OK" ? ls : rs));
+			}
+			bool isOk = mergedStatus.All(s => s == "OK");
+			Interlocked.Increment(ref _totalCount);
+			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
+			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
+			// 生成轮播显示图
+				BuildDisplayImages(_processedLeftImgs, _processedRightImgs, p);
+				// 左右分别渲染显示图（xlPictureBox5=左侧面, xlPictureBox6=右侧面）
+				Bitmap leftRender = null, rightRender = null;
+				lock (_resultLock)
+				{
+					if (_processedLeftImgs.Count > 0)
+						leftRender = RenderSideImage(_processedLeftImgs[0], 0, p, _leftResults);
+					if (_processedRightImgs.Count > 0)
+						rightRender = RenderSideImage(_processedRightImgs[0], 0, p, _rightResults);
+				}
+				result.SideRenderImage = leftRender;
+				result.SideLeftRenderImage = leftRender;
+				result.SideRightRenderImage = rightRender;
+				SaveImages(_processedLeftImgs, _processedRightImgs, mergedStatus, isOk);
+			Logger.Info("[Side] 完成 P=" + p + " 结果=" + (isOk ? "OK" : "NG"));
+			OnResultReady?.Invoke(result);
+			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
+		}
+
+		/// <summary>处理推理结果（模拟检测使用）</summary>
 		private void ProcessResults()
 		{
 			int p = _sku.P;
@@ -252,7 +360,9 @@ namespace Stations
 			// 绘制显示图
 			BuildDisplayImages(leftImages, rightImages, p);
 
-			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
+			Bitmap leftRender = null, rightRender = null;
+				lock (_resultLock) { if (_displayImages.Count > 0) leftRender = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(_displayImages[0]); }
+				var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList(), SideRenderImage = leftRender, SideLeftRenderImage = leftRender, SideRightRenderImage = rightRender };
 
 			// 存图
 			var swSave = Stopwatch.StartNew();
@@ -379,13 +489,91 @@ namespace Stations
 				for (int i = 0; i < count; i++)
 				{
 					var mat = new Mat(600, 800, MatType.CV_8UC3, new Scalar(30, 30, 30));
-					// 简化为单张显示：优先左图
 					var img = i < leftImages.Count ? leftImages[i] : (i < rightImages.Count ? rightImages[i] : null);
 					if (img != null) { try { var m = img.Image.ToMat(); mat = m.Clone(); m.Dispose(); } catch { } }
-					_displayImages.Add(mat);
+					// 右下角标注第几张/总数
+					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(mat);
+					using (var g = Graphics.FromImage(bmp))
+					{
+						string label = (i + 1) + "/" + count;
+						using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
+						{
+							var sz = g.MeasureString(label, f);
+							using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+								g.FillRectangle(bg, bmp.Width - (int)sz.Width - 16, bmp.Height - (int)sz.Height - 12, sz.Width + 12, sz.Height + 10);
+							g.DrawString(label, f, Brushes.Cyan, bmp.Width - (int)sz.Width - 10, bmp.Height - (int)sz.Height - 8);
+						}
+						var defs = (img.Side == Side.Left ? _leftResults : _rightResults).Where(r => r.Index == i).SelectMany(r => r.Defects).ToList();
+						int bw = bmp.Width, bh = bmp.Height;
+						foreach (var d in defs)
+						{
+							if (d.BoundingBox == null || d.BoundingBox.Length < 4) continue;
+							int x1 = (int)(d.BoundingBox[0] * bw), y1 = (int)(d.BoundingBox[1] * bh);
+							int x2 = (int)(d.BoundingBox[2] * bw), y2 = (int)(d.BoundingBox[3] * bh);
+							if (x2 <= x1 || y2 <= y1) continue;
+							var rc = new Rectangle(x1, y1, x2 - x1, y2 - y1);
+							using (var fl = new SolidBrush(Color.FromArgb(80, Color.Red))) g.FillRectangle(fl, rc);
+							using (var pn = new Pen(Color.Red, Math.Max(4f, bmp.Height / 300f))) g.DrawRectangle(pn, rc);
+							using (var df = new Font("微软雅黑", Math.Max(32f, bmp.Height / 55f), FontStyle.Bold))
+							{
+								var dsz = g.MeasureString(d.DefectType, df);
+								int dy = y1 - (int)dsz.Height - 6; if (dy < 4) dy = y1 + 4;
+								using (var dbg = new SolidBrush(Color.Red)) g.FillRectangle(dbg, x1, dy, dsz.Width + 8, dsz.Height + 6);
+								g.DrawString(d.DefectType, df, Brushes.White, x1 + 3, dy + 2);
+							}
+						}
+						mat.Dispose();
+						mat = OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp);
+						bmp.Dispose();
+						_displayImages.Add(mat);
+					}
+					_displayIndex = _displayImages.Count > 0 ? 0 : -1;
 				}
-				_displayIndex = _displayImages.Count > 0 ? 0 : -1;
 			}
+		}
+
+		/// <summary>渲染单张侧面图（缺陷框+索引标注），供生产路径使用</summary>
+		private Bitmap RenderSideImage(SideImageCtx ctx, int index, int total, List<SideResult> results)
+		{
+			try
+			{
+				using (var mat = ctx.Image.ToMat())
+				{
+					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(mat);
+					using (var g = Graphics.FromImage(bmp))
+					{
+						string label = (index + 1) + "/" + total;
+						using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
+						{
+							var sz = g.MeasureString(label, f);
+							using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+								g.FillRectangle(bg, bmp.Width - (int)sz.Width - 16, bmp.Height - (int)sz.Height - 12, sz.Width + 12, sz.Height + 10);
+							g.DrawString(label, f, Brushes.Cyan, bmp.Width - (int)sz.Width - 10, bmp.Height - (int)sz.Height - 8);
+						}
+						var defs = results.Where(r => r.Index == index).SelectMany(r => r.Defects).ToList();
+						int bw = bmp.Width, bh = bmp.Height;
+						foreach (var d in defs)
+						{
+							if (d.BoundingBox == null || d.BoundingBox.Length < 4) continue;
+							int x1 = (int)(d.BoundingBox[0] * bw), y1 = (int)(d.BoundingBox[1] * bh);
+							int x2 = (int)(d.BoundingBox[2] * bw), y2 = (int)(d.BoundingBox[3] * bh);
+							if (x2 <= x1 || y2 <= y1) continue;
+							var rc = new Rectangle(x1, y1, x2 - x1, y2 - y1);
+							using (var fl = new SolidBrush(Color.FromArgb(80, Color.Red))) g.FillRectangle(fl, rc);
+							using (var pn = new Pen(Color.Red, Math.Max(4f, bmp.Height / 300f))) g.DrawRectangle(pn, rc);
+							using (var df = new Font("微软雅黑", Math.Max(32f, bmp.Height / 55f), FontStyle.Bold))
+							{
+								var dsz = g.MeasureString(d.DefectType, df);
+								int dy = y1 - (int)dsz.Height - 6; if (dy < 4) dy = y1 + 4;
+								using (var dbg = new SolidBrush(Color.Red)) g.FillRectangle(dbg, x1, dy, dsz.Width + 8, dsz.Height + 6);
+								g.DrawString(d.DefectType, df, Brushes.White, x1 + 3, dy + 2);
+							}
+						}
+					}
+					return bmp;
+				}
+			}
+			catch (Exception ex) { Logger.Error("[Side] 渲染异常: " + ex.Message); return null; }
 		}
 
 		// ====== 轮播导航 ======
@@ -395,11 +583,14 @@ namespace Stations
 		}
 		public void NavigatePrev() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex - 1 + _displayImages.Count) % _displayImages.Count; } }
 		public void NavigateNext() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex + 1) % _displayImages.Count; } }
+		public Mat GetCurrentLeftImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
+		public Mat GetCurrentRightImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
 
 		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk)
 		{
 			try
 			{
+				if (leftImages == null || rightImages == null) return;
 				bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage; if (!so && !sn) return;
 				string sh = GetShift(), dd = DateTime.Now.ToString("yyMMdd"), dir = Path.Combine(_savePath, dd, sh, "侧面工位", isOk ? "OK" : "NG");
 				Directory.CreateDirectory(dir);

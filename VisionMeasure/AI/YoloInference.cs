@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using CommonLib;
 using System.Threading.Tasks;
 using OpenCvSharp;
 using OpenCvSharp.Dnn;
@@ -128,7 +129,7 @@ namespace YoloInference
 					throw new ArgumentException("动态模式下 BatchSize 必须大于 0");
 
 				_expectedBatchSize = expectedBatchSize;
-				Console.WriteLine($"[INFO] 动态模型检测: 采用配置尺寸 {_inputW}x{_inputH}, 授权用户 BatchSize={_expectedBatchSize}");
+				Logger.Info($"[GPU] 动态模型检测: 采用配置尺寸 {_inputW}x{_inputH}, 授权用户 BatchSize={_expectedBatchSize}");
 			}
 			else
 			{
@@ -142,10 +143,10 @@ namespace YoloInference
 				}
 
 				_expectedBatchSize = 1;
-				Console.WriteLine($"[INFO] 静态模型验证通过: 尺寸 {_inputW}x{_inputH}, 强制 BatchSize=1");
+				Logger.Info($"[GPU] 静态模型验证通过: 尺寸 {_inputW}x{_inputH}, 强制 BatchSize=1");
 			}
 
-			Console.WriteLine($"[INFO] 架构路由识别: {(_isYolo26 ? "YOLO26 (端到端免NMS模式 [Batch, 300, 6])" : "标准YOLO (密集锚框模式)")}");
+			Logger.Info($"[GPU] 架构路由识别: {(_isYolo26 ? "YOLO26 (端到端免NMS模式 [Batch, 300, 6])" : "标准YOLO (密集锚框模式)")}");
 
 			// 5. 显存预热
 			Warmup(iterations: 3, warmupBatchSize: _expectedBatchSize);
@@ -168,24 +169,24 @@ namespace YoloInference
 
 				options.AppendExecutionProvider_CUDA(cudaProviderOptions);
 				_session = new InferenceSession(modelPath, options);
-				Console.WriteLine($"[INFO] 模型加载成功: CUDA 硬件加速引擎启动");
+				Logger.Info($"[GPU] 模型加载成功: CUDA 硬件加速引擎启动");
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine($"[WARNING] CUDA 初始化失败，尝试降级 CPU。原因: {ex.Message}");
+				Logger.Info($"[GPU] CUDA 初始化失败，尝试降级 CPU。原因: {ex.Message}");
 				SessionOptions options = new SessionOptions();
 				options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
 				options.AppendExecutionProvider_CPU(0);
 				options.InterOpNumThreads = 2;
 				options.IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2);
 				_session = new InferenceSession(modelPath, options);
-				Console.WriteLine("[INFO] 模型加载成功: 纯 CPU 模式");
+				Logger.Info("[GPU] 模型加载成功: 纯 CPU 模式");
 			}
 		}
 
 		private void Warmup(int iterations, int warmupBatchSize)
 		{
-			Console.WriteLine($"[INFO] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}])...");
+			Logger.Info($"[GPU] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}])...");
 			float[] dummyData = new float[warmupBatchSize * 3 * _inputH * _inputW];
 			var dummyTensor = new DenseTensor<float>(dummyData, new int[] { warmupBatchSize, 3, _inputH, _inputW });
 			var inputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor(_inputName, dummyTensor) };
@@ -194,7 +195,7 @@ namespace YoloInference
 			{
 				using (var results = _session.Run(inputs)) { }
 			}
-			Console.WriteLine("[INFO] 模型预热完毕，硬件已就绪！\n");
+			Logger.Info("[GPU] 模型预热完毕，硬件已就绪！\n");
 		}
 
 		public YoloResult Predict(Mat origImg, float? confThres = null, float? iouThres = null)
@@ -599,7 +600,7 @@ namespace YoloInference
 	//						// 保存结果图到磁盘
 	//						string outFilePath = Path.Combine(outputDir, $"Result_Batch{batchIdx}.jpg");
 	//						Cv2.ImWrite(outFilePath, drawImg);
-	//						Console.WriteLine($"[INFO] 检测结果图已保存至: {outFilePath}");
+	//						Logger.Info($"[GPU] 检测结果图已保存至: {outFilePath}");
 	//					}
 	//				}
 

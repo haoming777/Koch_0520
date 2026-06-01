@@ -736,6 +736,7 @@ namespace VisionMeasure.From
 		private void BtnSave_Click(object sender, EventArgs e)
 		{
 			SaveParameters();
+			this.DialogResult = DialogResult.OK;
 			this.Close();
 		}
 

@@ -282,6 +282,21 @@ namespace Hardware
 			Logger.Warning($"轴{axis}运动超时({timeoutMs}ms)");
 			return false;
 		}
+		public void HwPulse(int outPort, int pulseWidthMs)
+		{
+			if (_simulateMode || !IsConnected) return;
+			SetOutput(outPort, true);
+			System.Threading.Thread.Sleep(Math.Max(1, pulseWidthMs));
+			SetOutput(outPort, false);
+		}
+
+		public int GetInMulti(int startPort, int endPort)
+		{
+			if (_simulateMode || !IsConnected) return 0;
+			Int32 bits = 0;
+			ZAux_Direct_GetInMulti(_handle, startPort, endPort, out bits);
+			return bits;
+		}
 
 		public bool GoHomeAll()
 		{

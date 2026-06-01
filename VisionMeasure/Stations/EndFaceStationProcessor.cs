@@ -50,6 +50,9 @@ namespace Stations
 		private long _totalCount = 0;
 		private long _okCount = 0;
 		private long _ngCount = 0;
+		private long _imgUpperCount = 0;
+		private long _imgLowerCount = 0;
+		private Config.ModelParams _displayParams;
 
 		private Thread _processThread;
 		private CancellationTokenSource _cts;
@@ -66,6 +69,8 @@ namespace Stations
 		public long TotalCount => _totalCount;
 		public long OkCount => _okCount;
 		public long NgCount => _ngCount;
+		public long ImgUpperCount => _imgUpperCount;
+		public long ImgLowerCount => _imgLowerCount;
 		public int CurrentIndex => _currentDisplayIndex;
 		public int ImageCount => _currentDisplayImages.Count;
 
@@ -77,14 +82,15 @@ namespace Stations
 			_pCount = pCount;
 			_imageSaver = imageSaver;
 			_perfMonitor = perfMonitor;
+			_displayParams = Config.ModelParams.Load("endface_upper");
 			_batchQueue = new BlockingCollection<(List<ImageContext>, List<ImageContext>)>(50);
 			_cts = new CancellationTokenSource();
 		}
 
 		public void UpdatePCount(int pCount) => _pCount = pCount;
 		public void UpdateSku(SkuData sku) { _sku = sku; }
-		public void OnCam5(Bitmap bitmap, long productId) => EnqueueImage(_upperQueue, ref _upperCount, bitmap, productId, "Upper");
-		public void OnCam6(Bitmap bitmap, long productId) => EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower");
+		public void OnCam5(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgUpperCount); EnqueueImage(_upperQueue, ref _upperCount, bitmap, productId, "Upper"); }
+		public void OnCam6(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgLowerCount); EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower"); }
 
 		private void EnqueueImage(ConcurrentQueue<ImageContext> queue, ref int count, Bitmap bitmap, long productId, string name)
 		{
@@ -116,6 +122,17 @@ namespace Stations
 			return list;
 		}
 
+			private List<ImageContext> DequeueBatchN(ConcurrentQueue<ImageContext> queue, ref int count, int n)
+		{
+			var list = new List<ImageContext>();
+			while (list.Count < n && queue.TryDequeue(out var ctx))
+			{
+				list.Add(ctx);
+				count--;
+			}
+			return list;
+		}
+
 		public void Start()
 		{
 			_processThread = new Thread(ProcessLoop) { Name = "EndFaceStationProcessor", IsBackground = true, Priority = ThreadPriority.AboveNormal };
@@ -134,11 +151,24 @@ namespace Stations
 				{
 					if ((_upperCount > 0 || _lowerCount > 0) && _lastEnqueueTime != DateTime.MinValue
 						&& (DateTime.Now - _lastEnqueueTime).TotalMilliseconds > QueueTimeoutMs)
-					{
-						Logger.Warning($"[EndFace] 队列超时({QueueTimeoutMs}ms), 清空残留 Upper={_upperCount} Lower={_lowerCount}");
-						while (_upperQueue.TryDequeue(out var _)) _upperCount--;
-						while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
-					}
+						{
+							int actualP = Math.Min(_upperCount, _lowerCount);
+							if (actualP > 0)
+							{
+								Logger.Warning($"[EndFace] 队列超时({QueueTimeoutMs}ms), 强制处理现有图 Upper={_upperCount} Lower={_lowerCount} -> P={actualP}");
+								var upperList = DequeueBatchN(_upperQueue, ref _upperCount, actualP);
+								var lowerList = DequeueBatchN(_lowerQueue, ref _lowerCount, actualP);
+								while (_upperQueue.TryDequeue(out var _)) _upperCount--;
+								while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
+								_batchQueue.Add((upperList, lowerList));
+							}
+							else
+							{
+								Logger.Warning($"[EndFace] 队列超时且无配对图, 清空残留 Upper={_upperCount} Lower={_lowerCount}");
+								while (_upperQueue.TryDequeue(out var _)) _upperCount--;
+								while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
+							}
+						}
 				}
 				{
 					try
@@ -156,11 +186,10 @@ namespace Stations
 
 		private void ProcessBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages)
 		{
-			if (upperImages.Count != _pCount || lowerImages.Count != _pCount)
-			{
-				Logger.Error($"端面图片数量不匹配: Upper={upperImages.Count}, Lower={lowerImages.Count}, P={_pCount}");
-				return;
-			}
+			int actualP = Math.Min(upperImages.Count, lowerImages.Count);
+			if (actualP == 0) { Logger.Error("端面图片为空"); return; }
+			if (actualP < _pCount)
+				Logger.Warning($"[EndFace] 部分批次: Upper={upperImages.Count}, Lower={lowerImages.Count}, 预期P={_pCount}, 实际={actualP}");
 
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			long firstProductId = upperImages.FirstOrDefault()?.ProductId ?? 0;
@@ -172,10 +201,10 @@ namespace Stations
 				List<Mat> upperMats = null, lowerMats = null;
 				using (var cropScope = new StopwatchScope(t => cropTime = t))
 				{
-					int upperLeftPx = _sku?.UpperEndFace_LeftPx ?? 0;
-					int lowerLeftPx = _sku?.LowerEndFace_LeftPx ?? 0;
-					upperMats = CropImagesBatch(upperImages, upperLeftPx);
-					lowerMats = CropImagesBatch(lowerImages, lowerLeftPx);
+					int upperCropPx = _sku?.UpperEndFace_LeftPx ?? 0; // 上端面裁右边
+					int lowerCropPx = _sku?.LowerEndFace_LeftPx ?? 0; // 下端面裁左边
+					upperMats = CropImagesBatch(upperImages, upperCropPx, true);
+					lowerMats = CropImagesBatch(lowerImages, lowerCropPx, false);
 				}
 
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
@@ -195,7 +224,7 @@ namespace Stations
 				var lowerStatus = new List<string>();
 				var mergedStatus = new List<string>();
 
-				for (int i = 0; i < _pCount; i++)
+				for (int i = 0; i < actualP; i++)
 				{
 					string uStatus = upperDefects.ContainsKey(i) ? upperDefects[i].First().DefectType : "OK";
 					string lStatus = lowerDefects.ContainsKey(i) ? lowerDefects[i].First().DefectType : "OK";
@@ -225,13 +254,19 @@ namespace Stations
 					UpdateDisplayImages(upperMats, lowerMats, upperDefects, lowerDefects, upperStatus, lowerStatus);
 				}
 
-				// 取首张上下端面渲染图为显示图
+				// 显示逻辑: 有NG时显示第一张NG，全OK时显示最后一张
+				int displayIdx;
 				lock (_resultLock)
 				{
-					if (_upperDisplayImages.Count > 0 && _upperDisplayImages[0] != null)
-						result.EndFaceRenderImage = _upperDisplayImages[0].ToBitmap();
-					if (_lowerDisplayImages.Count > 0 && _lowerDisplayImages[0] != null)
-						result.EndFaceLowerRenderImage = _lowerDisplayImages[0].ToBitmap();
+					if (!isOk)
+						displayIdx = FindFirstNgIndex(upperStatus, lowerStatus);
+					else
+						displayIdx = Math.Max(0, _upperDisplayImages.Count - 1);
+					_currentDisplayIndex = displayIdx;
+					if (displayIdx < _upperDisplayImages.Count && _upperDisplayImages[displayIdx] != null)
+						result.EndFaceRenderImage = _upperDisplayImages[displayIdx].ToBitmap();
+					if (displayIdx < _lowerDisplayImages.Count && _lowerDisplayImages[displayIdx] != null)
+						result.EndFaceLowerRenderImage = _lowerDisplayImages[displayIdx].ToBitmap();
 				}
 
 				double saveTime = 0;
@@ -257,7 +292,7 @@ namespace Stations
 				});
 
 				OnResultReady?.Invoke(result);
-				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, _pCount);
+				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, actualP);
 				Logger.Info($"[EndFace] 批处理完成 ProductId={firstProductId} 总耗时={totalTime:F2}ms Crop={cropTime:F2}ms Infer={inferenceTime:F2}ms Draw={drawTime:F2}ms Save={saveTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
 			}
 			catch (Exception ex)
@@ -271,16 +306,20 @@ namespace Stations
 			}
 		}
 
-		private List<Mat> CropImagesBatch(List<ImageContext> images, int leftPx)
+		private List<Mat> CropImagesBatch(List<ImageContext> images, int cropPx, bool cropRight)
 		{
 			var mats = new List<Mat>();
 			foreach (var img in images)
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
-				// 步骤0a: CSV水平裁图
-				if (leftPx > 0)
+				// 步骤0a: CSV水平裁图（上端面裁右边，下端面裁左边）
+				if (cropPx > 0)
 				{
-					var croppedH = ImageHelper.CropImageHorizontallyCv2(mat, leftPx, mat.Width);
+					Mat croppedH;
+					if (cropRight)
+						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, null, cropPx); // 裁右边
+					else
+						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, cropPx, null); // 裁左边cropPx像素
 					mat.Dispose();
 					mat = croppedH;
 				}
@@ -324,7 +363,7 @@ namespace Stations
 		{
 			for (int i = 0; i < images.Count; i++)
 			{
-				var drawn = DrawDefectOnImage(mats[i], defects.ContainsKey(i) ? defects[i] : new List<BoxDefect>(), status[i], i, _pCount);
+				var drawn = DrawDefectOnImage(mats[i], defects.ContainsKey(i) ? defects[i] : new List<BoxDefect>(), status[i], i, images.Count);
 				images[i].RenderBitmap = drawn;
 			}
 		}
@@ -355,10 +394,10 @@ namespace Stations
 
 					using (var fill = new SolidBrush(Color.FromArgb(80, color)))
 						g.FillRectangle(fill, rect);
-					using (var pen = new Pen(color, 3))
+					using (var pen = new Pen(color, 6))
 						g.DrawRectangle(pen, rect);
 
-					using (var font = new Font("微软雅黑", 9, FontStyle.Bold))
+					int dfFont = (_displayParams != null && _displayParams.DrawFontDefect > 0) ? _displayParams.DrawFontDefect : 18; using (var font = new Font("微软雅黑", dfFont, FontStyle.Bold))
 					{
 						string label = defect.DefectType;
 						var labelSize = g.MeasureString(label, font);
@@ -371,11 +410,24 @@ namespace Stations
 				}
 
 				var statusColor = status == "OK" ? Color.Green : Color.Red;
-				using (var font = new Font("微软雅黑", 14, FontStyle.Bold))
+				int stFont = (_displayParams != null && _displayParams.DrawFontStatus > 0) ? _displayParams.DrawFontStatus : 48; using (var font = new Font("微软雅黑", stFont, FontStyle.Bold))
 				using (var brush = new SolidBrush(statusColor))
 				{
 					string display = status == "OK" ? "OK" : "NG";
-					g.DrawString(display, font, brush, w - 60, 5);
+					var ssz = g.MeasureString(display, font);
+					using (var sbg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+						g.FillRectangle(sbg, w - (int)ssz.Width - 16, 2, ssz.Width + 12, ssz.Height + 10);
+					g.DrawString(display, font, brush, w - (int)ssz.Width - 10, 5);
+				}
+
+				// 右下角：第几张/总数
+				string idxLabel = (index + 1) + "/" + total;
+				using (var f2 = new Font("微软雅黑", 22, FontStyle.Bold))
+				{
+					var isz = g.MeasureString(idxLabel, f2);
+					using (var bg2 = new SolidBrush(Color.FromArgb(180, Color.Black)))
+						g.FillRectangle(bg2, w - (int)isz.Width - 16, h - (int)isz.Height - 12, isz.Width + 12, isz.Height + 10);
+					g.DrawString(idxLabel, f2, Brushes.Cyan, w - (int)isz.Width - 10, h - (int)isz.Height - 8);
 				}
 			}
 			return bitmap;
@@ -390,11 +442,11 @@ namespace Stations
 				_currentDisplayImages.Clear();
 				_upperDisplayImages.Clear();
 				_lowerDisplayImages.Clear();
-				for (int i = 0; i < _pCount; i++)
+				for (int i = 0; i < upperMats.Count; i++)
 				{
-					var upperBmp = DrawDefectOnImage(upperMats[i], upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(), upperStatus[i], i, _pCount);
+					var upperBmp = DrawDefectOnImage(upperMats[i], upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(), upperStatus[i], i, upperMats.Count);
 					_upperDisplayImages.Add(BitmapConverter.ToMat(upperBmp)); upperBmp.Dispose();
-					var lowerBmp = DrawDefectOnImage(lowerMats[i], lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), lowerStatus[i], i, _pCount);
+					var lowerBmp = DrawDefectOnImage(lowerMats[i], lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), lowerStatus[i], i, lowerMats.Count);
 					_lowerDisplayImages.Add(BitmapConverter.ToMat(lowerBmp)); lowerBmp.Dispose();
 
 					int w = upperMats[i].Width;
@@ -436,7 +488,7 @@ namespace Stations
 					int x2 = (int)(box[2] * w), y2 = (int)(box[3] * midY);
 					var rect = new Rect(x1, y1, x2 - x1, y2 - y1);
 					var color = colorMap.ContainsKey(defect.DefectType) ? colorMap[defect.DefectType] : Color.Red;
-					using (var pen = new Pen(color, 3))
+					using (var pen = new Pen(color, 6))
 						g.DrawRectangle(pen, rect);
 				}
 
@@ -447,18 +499,25 @@ namespace Stations
 					int x2 = (int)(box[2] * w), y2 = midY + (int)(box[3] * midY);
 					var rect = new Rect(x1, y1, x2 - x1, y2 - y1);
 					var color = colorMap.ContainsKey(defect.DefectType) ? colorMap[defect.DefectType] : Color.Red;
-					using (var pen = new Pen(color, 3))
+					using (var pen = new Pen(color, 6))
 						g.DrawRectangle(pen, rect);
 				}
 
-				using (var font = new Font("微软雅黑", 12, FontStyle.Bold))
+				int stFont2 = (_displayParams != null && _displayParams.DrawFontStatus > 0) ? _displayParams.DrawFontStatus : 28; using (var font = new Font("微软雅黑", stFont2, FontStyle.Bold))
 				{
 					var upperColor = upperStatus == "OK" ? Color.Green : Color.Red;
 					var lowerColor = lowerStatus == "OK" ? Color.Green : Color.Red;
+					var uSz = g.MeasureString(upperStatus == "OK" ? "OK" : "NG", font);
+					var lSz = g.MeasureString(lowerStatus == "OK" ? "OK" : "NG", font);
+					using (var sbg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+					{
+						g.FillRectangle(sbg, w - (int)uSz.Width - 16, 2, uSz.Width + 12, uSz.Height + 10);
+						g.FillRectangle(sbg, w - (int)lSz.Width - 16, midY + 2, lSz.Width + 12, lSz.Height + 10);
+					}
 					using (var brush = new SolidBrush(upperColor))
-						g.DrawString(upperStatus == "OK" ? "OK" : "NG", font, brush, w - 50, 5);
+						g.DrawString(upperStatus == "OK" ? "OK" : "NG", font, brush, w - (int)uSz.Width - 10, 5);
 					using (var brush = new SolidBrush(lowerColor))
-						g.DrawString(lowerStatus == "OK" ? "OK" : "NG", font, brush, w - 50, midY + 5);
+						g.DrawString(lowerStatus == "OK" ? "OK" : "NG", font, brush, w - (int)lSz.Width - 10, midY + 5);
 				}
 			}
 			return bitmap;
@@ -466,7 +525,7 @@ namespace Stations
 
 		private int FindFirstNgIndex(List<string> upperStatus, List<string> lowerStatus)
 		{
-			for (int i = 0; i < _pCount; i++)
+			for (int i = 0; i < _upperDisplayImages.Count; i++)
 				if (upperStatus[i] != "OK" || lowerStatus[i] != "OK")
 					return i;
 			return 0;
@@ -502,26 +561,30 @@ namespace Stations
 			}
 		}
 
+		public bool NavigationEnabled { get; set; } = false;
+
 		public void NavigatePrev()
 		{
+			if (!NavigationEnabled) return;
 			lock (_resultLock)
 			{
 				if (_currentDisplayImages.Count > 0)
 				{
 					_currentDisplayIndex = (_currentDisplayIndex - 1 + _currentDisplayImages.Count) % _currentDisplayImages.Count;
-					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _pCount);
+					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _currentDisplayImages.Count);
 				}
 			}
 		}
 
 		public void NavigateNext()
 		{
+			if (!NavigationEnabled) return;
 			lock (_resultLock)
 			{
 				if (_currentDisplayImages.Count > 0)
 				{
 					_currentDisplayIndex = (_currentDisplayIndex + 1) % _currentDisplayImages.Count;
-					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _pCount);
+					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), new List<string>(), _currentDisplayImages.Count);
 				}
 			}
 		}
@@ -545,7 +608,7 @@ namespace Stations
 			{
 				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
 				Directory.CreateDirectory(dir);
-				for (int i = 0; i < _pCount; i++)
+				for (int i = 0; i < upperImages.Count; i++)
 				{
 					if (upperImages[i].RenderBitmap != null)
 					{
@@ -568,7 +631,7 @@ namespace Stations
 			{
 				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
 				Directory.CreateDirectory(dir);
-				for (int i = 0; i < _pCount; i++)
+				for (int i = 0; i < upperImages.Count; i++)
 				{
 					string fileName = $"{productId}_{i + 1}_upper_{ngTypes}.bmp";
 					string filePath = Path.Combine(dir, fileName);

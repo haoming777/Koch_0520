@@ -555,6 +555,19 @@ namespace VisionMeasure
 			_sideStation.OnResultReady += OnStationResult;
 			_sideStation.OnStatusUpdate += OnSideStatusUpdate;
 
+			// 从AxisParams.json加载运动轴参数（与ControlFrm共用同一配置）
+			var axisCfg = AxisParamConfig.Load();
+			_sideStation.SideAxis = axisCfg.Axis;
+			_sideStation.StartPosition = axisCfg.StartPos;
+			_sideStation.EndPosition = axisCfg.EndPos;
+			_sideStation.ForwardSpeed = axisCfg.FwdSpeed;
+			_sideStation.ReturnSpeed = axisCfg.RetSpeed;
+			_sideStation.Accel = axisCfg.Accel;
+			_sideStation.Decel = axisCfg.Decel;
+			_sideStation.FwdInPort = axisCfg.FwdIn;
+			_sideStation.RevInPort = axisCfg.RevIn;
+			_sideStation.DatumInPort = axisCfg.DatumIn;
+
 			// 同步IN12边缘模式
 			_sideStation.EdgeMode = CameraTriggerConfig.In12EdgeMode == CameraTriggerConfig.SideSensorEdgeMode.RisingRightFallingLeft
 				? SideStationProcessor.TriggerEdgeMode.RisingRightFallingLeft
@@ -562,7 +575,7 @@ namespace VisionMeasure
 			_sideStation.ReverseBoxOrder = _detectionParams.Station.SideReverseBox;
 			_sideStation.UseContinuousMode = _detectionParams.Side.UseContinuousMode;
 			_sideStation.MissingAsNg = _detectionParams.Side.MissingAsNg;
-			Logger.Info($"侧面工位配置: EdgeMode={_sideStation.EdgeMode}, ContinuousMode={_sideStation.UseContinuousMode}, MissingAsNg={_sideStation.MissingAsNg}");
+			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode}");
 
 			_sideStation.Start();
 		}
@@ -765,7 +778,7 @@ namespace VisionMeasure
 
 		#region 工位结果回调
 
-		private void OnStationResult(Bitmap mergedImage, bool[] ngArray, int okCount, int ngCount)
+		private void OnStationResult(Bitmap mergedImage, bool[] ngArray, long okCount, long ngCount)
 		{
 			if (mergedImage == null) return;
 			if (this.InvokeRequired)
@@ -789,6 +802,10 @@ namespace VisionMeasure
 					UpdatePictureBox(xlPictureBox4, result.EndFaceLowerRenderImage);
 				if (result.SideRenderImage != null)
 					UpdatePictureBox(xlPictureBox5, result.SideRenderImage);
+				if (result.SideLeftRenderImage != null)
+					UpdatePictureBox(xlPictureBox5, result.SideLeftRenderImage);
+				if (result.SideRightRenderImage != null)
+					UpdatePictureBox(xlPictureBox6, result.SideRightRenderImage);
 
 				if (result.IsComplete)
 					UpdateStatistics(result);

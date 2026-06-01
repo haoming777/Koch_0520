@@ -1,4 +1,4 @@
-using Config;
+﻿using Config;
 using Models;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
@@ -29,6 +29,16 @@ using static CommonLib.Class_Config;
 
 namespace Stations
 {
+	/// <summary>
+	/// 背面工位处理器
+	/// 负责:
+	///   1. 配对左右相机图像(Camera5/Camera6 → OnCam3/OnCam4)
+	///   2. 条码检测(ZXing + OpenCV预处理管线)
+	///   3. 日期码识别(C1分割 + C2重影分类 + C3 OCR, 三步流水线)
+	///   4. 挂钩明显/轻微错位检测(YOLO + 分割厚度计算)
+	///   5. 结果绘制(分盒框, 虚线分区, OK/NG标签)
+	///   6. 图像保存(渲染图 + 原图)
+	/// </summary>
 	public class BackStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -39,9 +49,11 @@ namespace Stations
 		private Mat _leftBuffer, _rightBuffer;
 		private readonly object _syncLock = new object();
 		private long _totalCount, _okCount, _ngCount;
+		private long _imgCount = 0;
 		private bool _lastIsOk = true;
 		private bool _disposed;
 		private Config.ModelParams _barcodeParams;
+		private Config.ModelParams _datecodeParams;
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, int> OnStatusUpdate;
@@ -53,16 +65,24 @@ namespace Stations
 
 		public BackStationProcessor(AiModelManager models, string savePath, SkuData sku,
 			HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
-		{ _models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor; _barcodeParams = Config.ModelParams.Load("barcode"); }
+		{ _models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor; _barcodeParams = Config.ModelParams.Load("barcode"); _datecodeParams = Config.ModelParams.Load("datecode"); }
 
+		/// <summary>更新当前SKU数据(含条码基准、日期码格式等)</summary>
 		public void UpdateSku(SkuData sku) { _sku = sku; }
+		/// <summary>OK累计数</summary>
 		public long TotalCount => _totalCount;
+		/// <summary>OK累计数</summary>
 		public long OkCount => _okCount;
+		/// <summary>NG累计数</summary>
 		public long NgCount => _ngCount;
+		/// <summary>收图累计数</summary>
+		public long ImgCount => _imgCount;
 
+		/// <summary>相机5(背面左)图像回调</summary>
 		public void OnCam3(Bitmap bmp, long pid)
 		{
 			if (bmp == null) return;
+			Interlocked.Increment(ref _imgCount);
 			Logger.Debug("[Back] OnCam3(左) " + bmp.Width + "x" + bmp.Height);
 			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = bmp.ToMat(); }
 			CheckAndProcess();
@@ -71,6 +91,7 @@ namespace Stations
 		public void OnCam4(Bitmap bmp, long pid)
 		{
 			if (bmp == null) return;
+			Interlocked.Increment(ref _imgCount);
 			Logger.Debug("[Back] OnCam4(右) " + bmp.Width + "x" + bmp.Height);
 			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = bmp.ToMat(); }
 			CheckAndProcess();
@@ -102,6 +123,7 @@ namespace Stations
 			try
 			{
 				Logger.Info("[Back] ====== 开始 P=" + p + " " + leftMat.Width + "x" + leftMat.Height + " ======");
+				Logger.Trace("[Back] ▶ ====== 开始推理 P=" + p + " 图=" + leftMat.Width + "x" + leftMat.Height);
 
 				// 步骤0: 裁图
 				Mat leftProc = leftMat, rightProc = rightMat;
@@ -118,6 +140,7 @@ namespace Stations
 
 				// 步骤1: 并行推理
 				Logger.Debug("[Back] 步骤1: 推理...");
+				Logger.Trace("[Back] ▷ 推理中 条码+日期+挂钩 并行");
 				var sw1 = System.Diagnostics.Stopwatch.StartNew();
 				Dictionary<int, List<BoxDefect>> barcodeDict = null, dateCodeDict = null, hookDict = null;
 				var tasks = new List<Task>();
@@ -128,6 +151,7 @@ namespace Stations
 				Task.WaitAll(tasks.ToArray());
 				var inferMs = sw1.Elapsed.TotalMilliseconds;
 				Logger.Info("[Back] 步骤1完成: 推理=" + inferMs.ToString("F1") + "ms");
+				Logger.Trace("[Back] ✓ 推理完成 " + inferMs.ToString("F0") + "ms");
 
 				// 步骤2: 汇总
 				var all = new List<BoxDefect>();
@@ -136,7 +160,12 @@ namespace Stations
 				if (dateCodeDict != null) { var its = dateCodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); dc = its.Count(d => !d.DefectType.StartsWith("日期:") && !d.DefectType.StartsWith("双排:")); }
 				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType == "轻微挂钩错位"); }
 				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
-				foreach (var d in all) if (d.BoxIndex >= 0 && d.BoxIndex < status.Count) status[d.BoxIndex] = d.DefectType;
+				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
+				foreach (var d in all) {
+					if (d.BoxIndex < 0 || d.BoxIndex >= status.Count) continue;
+					bool isDisplayOnly = d.DefectType.StartsWith("条码:") || d.DefectType.StartsWith("日期:") || d.DefectType.StartsWith("双排:");
+					if (!isDisplayOnly) status[d.BoxIndex] = d.DefectType;
+				}
 				for (int i = 0; i < status.Count; i++) Logger.Info("[Back]   盒" + (i + 1) + ": " + status[i]);
 				bool isOk = status.All(s => s == "OK");
 				result.BackResult = isOk;
@@ -147,6 +176,7 @@ namespace Stations
 
 				// 步骤3: 绘制+合并
 				Logger.Debug("[Back] 步骤3: 绘制+合并...");
+				Logger.Trace("[Back] ▷ 绘制中");
 				var sw3 = System.Diagnostics.Stopwatch.StartNew();
 				var lr = DrawResult(leftProc, all.Where(d => d.BoxIndex < hp).ToList(), status, 0, hp);
 				var rr = DrawResult(rightProc, all.Where(d => d.BoxIndex >= hp).ToList(), status, hp, p);
@@ -168,6 +198,7 @@ namespace Stations
 					InferenceTimeMs = inferMs, DrawTimeMs = drawMs, SaveTimeMs = saveMs, TotalTimeMs = total, Result = isOk
 				});
 				Logger.Info("[Back] ====== 完成: 总=" + total.ToString("F1") + "ms 结果=" + (isOk ? "OK" : "NG") + " ======");
+				Logger.Trace("[Back] ✓ 全流程完成 结果=" + (isOk?"OK":"NG") + " 总=" + total.ToString("F0") + "ms");
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(status, p);
 			}
@@ -184,7 +215,7 @@ namespace Stations
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			string refBarcode = _sku?.BackBarcode;
-			if (string.IsNullOrEmpty(refBarcode)) return r;
+// 即使无参考条码也继续解码（仅显示识别结果，不做比对）
 			try
 			{
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
@@ -238,15 +269,29 @@ namespace Stations
 						}
 					};
 					var results = reader.DecodeMultiple(bmp);
-					float[] defBox = new float[] { 0.05f, (float)oy / fh, 0.95f, (float)(oy + 0.5f * roi.Height) / fh };
+					float pad = roi.Width * 0.03f; // 盒区间隙3%
+					float[] defBox = new float[] { (float)(ox + pad) / fw, (float)oy / fh, (float)(ox + roi.Width - pad) / fw, (float)(oy + roi.Height) / fh };
+
+					if (results == null || results.Length == 0)
+					{
+						// OpenCV预处理未找到条码，用原图灰度重试
+						using (var gray = new Mat())
+						{
+							Cv2.CvtColor(roi, gray, roi.Channels() == 3 ? ColorConversionCodes.BGR2GRAY : ColorConversionCodes.BGRA2GRAY);
+							using (var rawBmp = gray.ToBitmap())
+							{
+								results = reader.DecodeMultiple(rawBmp);
+								Logger.Debug("[Back] 盒" + (boxIdx + 1) + " 灰度重试=" + (results != null ? results.Length : 0) + "个");
+							}
+						}
+					}
 
 					if (results == null || results.Length == 0)
 						return new BoxDefect(boxIdx, "条码缺少", defBox);
-
 					string bestText = null;
 					ResultPoint[] bestPts = null;
 					if (results.Length == 1) { bestText = results[0].Text; bestPts = results[0].ResultPoints; }
-					else
+					else if (!string.IsNullOrEmpty(refBarcode))
 					{
 						if (results.Any(res => res.Text == refBarcode))
 						{ bestText = refBarcode; bestPts = results.First(res => res.Text == refBarcode).ResultPoints; }
@@ -261,22 +306,22 @@ namespace Stations
 							}
 						}
 					}
+					else { bestText = results[0].Text; bestPts = results[0].ResultPoints; }
 
+					// 条码框直接覆盖整个搜索区域（每盒区完整宽度 × 下1/3高度），确保框大而可见
 					float[] normBox = defBox;
-					if (bestPts != null && bestPts.Length >= 2)
-					{
-						float mx = float.MaxValue, my = float.MaxValue, Mx = float.MinValue, My = float.MinValue;
-						foreach (var pt in bestPts) { float gx = pt.X + ox, gy = pt.Y + oy; if (gx < mx) mx = gx; if (gy < my) my = gy; if (gx > Mx) Mx = gx; if (gy > My) My = gy; }
-						normBox = new float[] { mx / fw, my / fh, Mx / fw, My / fh };
-					}
 
-					Logger.Debug("[Back] 条码盒" + (boxIdx + 1) + ": 识=" + (bestText ?? "(空)") + " 标=" + refBarcode + " " + (bestText == refBarcode ? "OK" : "NG"));
-					if (bestText == refBarcode)
+					bool hasRef = !string.IsNullOrEmpty(refBarcode);
+					Logger.Debug("[Back] 条码盒" + (boxIdx + 1) + ": 识=" + (bestText ?? "(空)") + " 标=" + (hasRef ? refBarcode : "(无)") + " " + (hasRef && bestText == refBarcode ? "OK" : hasRef ? "NG" : ""));
+					if (hasRef && bestText == refBarcode)
 						return new BoxDefect(boxIdx, "条码:" + bestText, normBox);
-					return new BoxDefect(boxIdx, "条码错误(识:" + bestText + "/标:" + refBarcode + ")", normBox);
+					if (!hasRef)
+						return new BoxDefect(boxIdx, "条码:" + (bestText ?? results[0].Text), normBox);
+					// 条码不匹配：用"条码错:"前缀显示码值，自动触发NG状态+橙色
+					return new BoxDefect(boxIdx, "条码错:" + bestText, normBox);
 				}
 			}
-			catch { return new BoxDefect(boxIdx, "条码缺少", new float[] { 0.05f, (float)oy / fh, 0.95f, (float)(oy + roi.Height * 0.5f) / fh }); }
+			catch (Exception ex) { Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message); float pad2 = roi.Width * 0.03f; return new BoxDefect(boxIdx, "条码缺少", new float[] { (float)(ox + pad2) / fw, (float)oy / fh, (float)(ox + roi.Width - pad2) / fw, (float)(oy + roi.Height) / fh }); }
 		}
 
 		private static Mat ApplyBarcodePreprocess(Mat src, Config.ModelParams p)
@@ -331,7 +376,12 @@ namespace Stations
 				using (Mat merged = new Mat())
 				{
 					Cv2.HConcat(left, right, merged);
-					r = ProcessDateCodeFull(merged, codingFormat, p);
+					double dcRatio = (_datecodeParams != null) ? _datecodeParams.StartHeightRatioDateCode : (2.0 / 3.0);
+					int fullH = merged.Height, cropY = (int)(fullH * dcRatio);
+					using (var crop = new Mat(merged, new CvRect(0, cropY, merged.Width, fullH - cropY)).Clone())
+					{
+						r = ProcessDateCodeFull(crop, codingFormat, p, cropY, fullH);
+					}
 				}
 				Logger.Debug("[Back] 日期码: " + r.Count + "盒识别");
 			}
@@ -340,7 +390,7 @@ namespace Stations
 		}
 
 		/// <summary>三步流水线: C1全图分割→C2重影分类→C3 OCR (参考AIRunThread.cs)</summary>
-		private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p)
+		private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p, int cropY, int fullH)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			int fw = img.Width, fh = img.Height, halfW = fw / 2, boxW = fw / p;
@@ -386,11 +436,12 @@ namespace Stations
 					if (boxIdx < 0) boxIdx = 0;
 					if (boxIdx >= p) boxIdx = p - 1;
 
-					int mx = Math.Max(0, rect.X - 5), my = Math.Max(0, rect.Y - 5);
-					int mw = Math.Min(fw - mx, rect.Width + 10), mh = Math.Min(fh - my, rect.Height + 10);
+					int mx = Math.Max(0, rect.X - 5), myRaw = Math.Max(0, rect.Y - 5);
+					int mw = Math.Min(fw - mx, rect.Width + 10), mh = Math.Min(fh - myRaw, rect.Height + 10);
+					int my = myRaw + cropY; // 全图坐标（用于normBox归一化）
 
 					// C2: 重影分类
-					using (var cropC2 = new Mat(img, new CvRect(mx, my, mw, mh)).Clone())
+					using (var cropC2 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 					{
 						ResponseList<ClassificationResponse> clsRsp;
 						int clsRet = _models.BackDateCodeClsModel.Run(cropC2, out clsRsp);
@@ -408,7 +459,7 @@ namespace Stations
 						}
 
 						// C3: OCR
-						using (var cropC3 = new Mat(img, new CvRect(mx, my, mw, mh)).Clone())
+						using (var cropC3 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 						{
 							ResponseList<OcrResponse> ocrRsp;
 							int ocrRet = _models.BackDateCodeOcrModel.Run(cropC3, out ocrRsp);
@@ -421,12 +472,12 @@ namespace Stations
 								foreach (var blk in rt.Item2.Blocks)
 									if (!string.IsNullOrWhiteSpace(blk.Label)) texts.Add(blk.Label);
 							}
-							if (c2Shadow) { if (!r.ContainsKey(boxIdx)) r[boxIdx] = new List<BoxDefect>(); r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影", new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fh, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fh })); }
+							if (c2Shadow) { if (!r.ContainsKey(boxIdx)) r[boxIdx] = new List<BoxDefect>(); r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影", new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fullH, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fullH })); }
 							if (texts.Count == 0) continue;
 
 							string allText = string.Join(" ", texts);
 							Logger.Debug("[Back] 日期码盒" + (boxIdx + 1) + ": " + allText);
-							float[] normBox = new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fh, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fh };
+							float[] normBox = new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fullH, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fullH };
 
 							int result;
 							if (codingFormat.Contains("MFG") && !codingFormat.Contains("双排")) result = CheckMFG(allText);
@@ -577,17 +628,20 @@ namespace Stations
 					var rc = new Rect(x1, y1, x2 - x1, y2 - y1);
 					bool isOk = d.DefectType.StartsWith("条码:") || d.DefectType.StartsWith("日期:") || d.DefectType.StartsWith("双排:");
 					Color c = isOk ? Color.Lime : Color.Red;
-					if (d.DefectType.Contains("条码错误") || d.DefectType.Contains("条码缺少")) c = Color.Orange;
+					if (d.DefectType.StartsWith("条码错") || d.DefectType.Contains("条码错误") || d.DefectType.Contains("条码缺少")) c = Color.Orange;
 					if (d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影")) c = Color.Orange;
 					if (d.DefectType.Contains("明显")) c = Color.DarkRed;
 					if (d.DefectType.Contains("轻微")) c = Color.OrangeRed;
-					bool borderOnly = d.DefectType.Contains("条码缺少") || d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影");
+					bool borderOnly = d.DefectType.StartsWith("条码错") || d.DefectType.Contains("条码缺少") || d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影");
 					if (!borderOnly) using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
-					using (var pn = new Pen(c, borderOnly ? 2 : 4) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
-					using (var f = new Font("微软雅黑", 36, FontStyle.Bold))
+					using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
+					bool isBarcode = d.DefectType.StartsWith("条码") || d.DefectType.Contains("条码");
+					int labelFont = isBarcode ? ((_barcodeParams != null && _barcodeParams.DrawFontBarcode > 0) ? _barcodeParams.DrawFontBarcode : 28)
+						: ((_barcodeParams != null && _barcodeParams.DrawFontDefect > 0) ? _barcodeParams.DrawFontDefect : 18);
+					using (var f = new Font("微软雅黑", labelFont, FontStyle.Bold))
 					{
 						string label = d.DefectType;
-						if (label.Length > 18) label = label.Substring(0, 18);
+						if (label.Length > 30) label = label.Substring(0, 30);
 						var sz = g.MeasureString(label, f);
 						int ly = y1 - (int)sz.Height - 8; if (ly < 8) ly = y1 + 8;
 						using (var bg = new SolidBrush(c)) g.FillRectangle(bg, x1 - 4, ly - 4, sz.Width + 16, sz.Height + 12);
@@ -599,7 +653,7 @@ namespace Stations
 					using (var dp = new Pen(Color.FromArgb(100, 100, 100), 3) { DashStyle = DashStyle.Dash })
 						for (int i = 1; i < n; i++) g.DrawLine(dp, i * w / n, 0, i * w / n, h);
 
-				using (var f = new Font("微软雅黑", 48, FontStyle.Bold))
+				int stFont = (_barcodeParams != null && _barcodeParams.DrawFontStatus > 0) ? _barcodeParams.DrawFontStatus : 48; using (var f = new Font("微软雅黑", stFont, FontStyle.Bold))
 					for (int i = 0; i < n && start + i < status.Count; i++)
 					{
 						string s = status[start + i];
@@ -610,7 +664,7 @@ namespace Stations
 						using (var br = new SolidBrush(c)) g.DrawString(disp, f, br, cx - sz.Width / 2, 60);
 
 						int boxNum = ReverseBoxOrder ? (status.Count - (start + i)) : (start + i + 1);
-						using (var fn2 = new Font("微软雅黑", 28, FontStyle.Bold))
+						int bxFont = (_barcodeParams != null && _barcodeParams.DrawFontBoxNum > 0) ? _barcodeParams.DrawFontBoxNum : 28; using (var fn2 = new Font("微软雅黑", bxFont, FontStyle.Bold))
 						{
 							string idxStr = "盒" + boxNum;
 							var nsz = g.MeasureString(idxStr, fn2);

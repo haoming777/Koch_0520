@@ -41,6 +41,8 @@ namespace Models
 		public Bitmap EndFaceRenderImage { get; set; }
 		public Bitmap EndFaceLowerRenderImage { get; set; }
 		public Bitmap SideRenderImage { get; set; }
+		public Bitmap SideLeftRenderImage { get; set; }
+		public Bitmap SideRightRenderImage { get; set; }
 
 		// 性能耗时
 		public double TotalTimeMs { get; set; }

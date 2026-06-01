@@ -40,15 +40,15 @@ namespace Config
 		[Newtonsoft.Json.JsonIgnore] public bool EnableRotationRetry { get=>BcEnableRotationRetry; set=>BcEnableRotationRetry=value; }
 		public float BcContrastAlpha { get; set; } = 1.0f;
 		public int BcBrightnessBeta { get; set; } = 0;
-		public bool BcEnableGaussianBlur { get; set; } = true;
+		public bool BcEnableGaussianBlur { get; set; } = false;
 		public bool BcEnableMedianBlur { get; set; } = false;
 		public bool BcEnableEqualizeHist { get; set; } = false;
-		public int BcThresholdMode { get; set; } = 1; // 0=None 1=Adaptive 2=Otsu 3=Fixed
+		public int BcThresholdMode { get; set; } = 0; // 0=None 1=Adaptive 2=Otsu 3=Fixed
 		public int BcAdaptiveBlockSize { get; set; } = 11;
 		public double BcAdaptiveC { get; set; } = 2.0;
 		public int BcFixedThreshold { get; set; } = 128;
 		public bool BcEnableInvert { get; set; } = false;
-		public bool BcEnableMorphClose { get; set; } = true;
+		public bool BcEnableMorphClose { get; set; } = false;
 		public bool BcEnableMorphOpen { get; set; } = false;
 		public bool BcEnableMorphDilate { get; set; } = false;
 		public bool BcEnableMorphErode { get; set; } = false;
@@ -56,8 +56,8 @@ namespace Config
 		public bool BcEnableFilterBestMatch { get; set; } = true;
 		public int BcMinBarcodeLength { get; set; } = 3;
 		public int BcMaxBarcodeLength { get; set; } = 50;
-		public bool BcTryHarder { get; set; } = false;
-		public bool BcEnableRotationRetry { get; set; } = false;
+		public bool BcTryHarder { get; set; } = true;
+		public bool BcEnableRotationRetry { get; set; } = true;
 
 		// —— 挂钩 ——
 		public float HookThickness { get; set; } = 30f;
@@ -74,6 +74,16 @@ namespace Config
 		public float EndFaceUpperIou { get; set; } = 0.2f;
 		public float EndFaceLowerConf { get; set; } = 0.5f;
 		public float EndFaceLowerIou { get; set; } = 0.2f;
+
+		// —— 绘制字号（0=使用代码默认值，可按模型分别配置） ——
+		public int DrawFontBarcode { get; set; } = 28;
+		public int DrawFontDefect { get; set; } = 18;
+		public int DrawFontStatus { get; set; } = 48;
+		public int DrawFontBoxNum { get; set; } = 28;
+
+		// —— 各检测项裁剪起始比例 ——
+		public double StartHeightRatioPCode { get; set; } = 2.0 / 3.0;
+		public double StartHeightRatioDateCode { get; set; } = 2.0 / 3.0;
 
 		public static ModelParams CreateDefault(string key, string name)
 		{

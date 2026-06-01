@@ -91,11 +91,11 @@ namespace VisionMeasure.Utils
 					var vals = lines[i].Split(',');
 					string spec = idxSpec >= 0 && idxSpec < vals.Length ? vals[idxSpec].Trim() : "";
 					if (string.IsNullOrEmpty(spec)) continue;
-					// 查找匹配的SKU
+					// 查找匹配的SKU（按P值匹配，忽略MM）
 					foreach (var sku in _skuList)
 					{
-						string skuSpec = sku.P + "P" + sku.MM + "mm";
-						if (skuSpec != spec) continue;
+						string skuSpec = sku.P + "P";
+						if (!spec.StartsWith(skuSpec)) continue;
 						sku.FrontLeft_LeftPx = ParseInt(vals, idxFL_L);
 						sku.FrontLeft_RightPx = ParseInt(vals, idxFL_R);
 						sku.FrontRight_LeftPx = ParseInt(vals, idxFR_L);
