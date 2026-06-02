@@ -73,13 +73,16 @@ namespace Hardware
 			};
 			_monitorThread.Start();
 
-			_pulseThread = new Thread(PulseOutputLoop)
+			if (!ExternalTriggerEnabled)
 			{
-				Name = "TrigPulseOut",
-				IsBackground = true,
-				Priority = ThreadPriority.AboveNormal
-			};
-			_pulseThread.Start();
+				_pulseThread = new Thread(PulseOutputLoop)
+				{
+					Name = "TrigPulseOut",
+					IsBackground = true,
+					Priority = ThreadPriority.AboveNormal
+				};
+				_pulseThread.Start();
+			}
 
 			// 统计报告线程：每15秒输出端口触发统计
 			_statsThread = new Thread(StatsReportLoop)
@@ -109,6 +112,8 @@ namespace Hardware
 		public static long[] ImageReceivedCount = new long[9];
 		// 最新GetInMulti快照（供SideStation直接读取，避免单独GetInput调用竞争ZMC）
 		public static volatile int LastInBits;
+		/// <summary>外部触发模式：true=所有OUT脉冲由外部硬件控制，程序只检测IN13启动侧面</summary>
+		public static bool ExternalTriggerEnabled = false;
 
 		private void MonitorLoop()
 		{
@@ -120,20 +125,19 @@ namespace Hardware
 			}
 			catch { }
 			Logger.Info("信号监听线程启动");
-			var spinWait = new SpinWait();
-			// 预分配，避免每循环 new Dictionary 导致 GC 暂停干扰触发时序
+			// 预分配，避免GC
 			var newStates = new Dictionary<int, bool>(4);
 
 			while (!_cts.Token.IsCancellationRequested && _isRunning)
 			{
 				try
 				{
-					bool anyTriggered = false; long cycleTs = 0;
+					long cycleTs = 0;
 					_monitorLoopCount++;
 
-					// 批量读取IN4~IN13（一次API调用，原子快照，消除端口间读取延迟）
+					// 批量读取IN4~IN13（纯忙循环，无SpinWait/Sleep，最大化扫描速率）
 					int inBits = _motion.GetInMulti(4, 13);
-				LastInBits = inBits;
+					LastInBits = inBits;
 
 					newStates.Clear();
 					foreach (var config in CameraTriggerConfig.TriggerConfigs.Values)
@@ -156,7 +160,6 @@ namespace Hardware
 						{
 							lock (_statsLock) { _inputEdgeCounts[config.InputPort] = _inputEdgeCounts.GetValueOrDefault(config.InputPort) + 1; }
 
-							// 检查对应工位是否启用
 							bool stationEnabled = true;
 							if (config.CameraId <= 2) stationEnabled = VisionMeasure.MainFrm.FrontEnabled;
 							else if (config.CameraId <= 4) stationEnabled = VisionMeasure.MainFrm.EndFaceEnabled;
@@ -164,9 +167,11 @@ namespace Hardware
 							else stationEnabled = VisionMeasure.MainFrm.SideEnabled;
 							if (!stationEnabled) continue;
 
-							// 侧面工位(Cam7/8)不占用OUT脉冲队列，由SideStation自己控制OUT14/15
 							bool isSideCam = config.CameraId >= 7 && config.CameraId <= 8 && VisionMeasure.MainFrm.SideEnabled;
 							if (isSideCam) { OnTriggered?.Invoke(config.CameraId); continue; }
+
+						// 外部触发模式：跳过脉冲队列（硬件负责OUT脉冲）
+						if (ExternalTriggerEnabled) { continue; }
 
 							if (cycleTs == 0) cycleTs = _stopwatch.ElapsedTicks;
 							long timestamp = cycleTs;
@@ -178,8 +183,7 @@ namespace Hardware
 								Timestamp = timestamp
 							}))
 							{
-								anyTriggered = true;
-								Interlocked.Increment(ref _totalPulses);
+								_ = Interlocked.Increment(ref _totalPulses);
 								lock (_countLock)
 								{
 									_triggerCounts[config.CameraId] = _triggerCounts.GetValueOrDefault(config.CameraId) + 1;
@@ -188,14 +192,11 @@ namespace Hardware
 							}
 						}
 					}
-					// 统一更新所有端口状态（检测完所有相机之后，防止共享端口互相吃边沿）
 					foreach (var kv in newStates)
 						_lastStates[kv.Key] = kv.Value;
 
-					if (!anyTriggered)
-						spinWait.SpinOnce();
-					else
-						spinWait.Reset();
+					// 控制扫描速率 ≈2000Hz，防止纯忙循环把ZMC打崩
+					Thread.SpinWait(2000);
 				}
 				catch (Exception ex)
 				{

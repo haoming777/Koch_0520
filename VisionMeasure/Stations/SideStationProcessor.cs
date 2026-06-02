@@ -153,8 +153,10 @@ namespace Stations
 					ClearBatch();
 					lock (_resultLock) { _leftResults.Clear(); _rightResults.Clear(); }
 					var streamTask = Task.Run(() => ProcessStream(cts.Token));
-					StartMotion();
-					// 运动结束，取消ProcessStream线程，防止废弃线程积累导致CPU饿死
+					StartMotion(cts.Token);
+					// 等待最后几张相机图像到达（硬件触发后图像传输有延迟）
+					Thread.Sleep(500);
+					// 运动结束，取消ProcessStream线程
 					cts.Cancel();
 					streamTask.Wait(3000);
 					FinalizeResults();
@@ -164,103 +166,38 @@ namespace Stations
 			});
 		}
 
-		/// <summary>运动控制: 从起始位走到结束位，监听IN12控制拍照</summary>
-		private void StartMotion()
+		/// <summary>运动控制: 纯轴运动，相机触发由外部硬件控制</summary>
+		private void StartMotion(CancellationToken cancel)
 		{
 			int p = _sku.P;
 			Logger.Info("[Side] 运动开始: 轴" + SideAxis + " " + StartPosition + "→" + EndPosition + " 前进速度=" + ForwardSpeed + " 回程速度=" + ReturnSpeed);
 
-			// 先到起始位
+			// 到起点
 			_motion.MoveAbs(SideAxis, StartPosition);
-			_motion.WaitForMoveComplete(SideAxis, 10000);
+			WaitMoveCancelable(SideAxis, 10000, cancel);
 
-			// 设置前进速度
+			// 前进到终点
 			SetAxisSpeed(ForwardSpeed);
-
-			// 开始向结束位移动
 			_motion.MoveAbs(SideAxis, EndPosition);
+			WaitMoveCancelable(SideAxis, 60000, cancel);
 
-			// ── 独立脉冲线程（与CameraTriggerManager设计一致，避免阻塞IN12监听）──
-			var pulseQueue = new BlockingCollection<(int port, int ms)>(100);
-			var pulseCts = CancellationTokenSource.CreateLinkedTokenSource(_motionCts.Token);
-			var pulseTask = Task.Run(() =>
-			{
-				try
-				{
-					foreach (var (port, ms) in pulseQueue.GetConsumingEnumerable(pulseCts.Token))
-						_motion.HwPulse(port, ms);
-				}
-				catch (OperationCanceledException) { }
-				catch (Exception ex) { Logger.Error("[Side] 脉冲线程异常: " + ex.Message); }
-			});
-
-			bool prevIn12 = false;
-			bool firstRead = true;
-			var sw = Stopwatch.StartNew();
-			int posCheckCounter = 0;
-
-			while (!_motionCts.Token.IsCancellationRequested)
-			{
-				// 检查是否已收够图片
-				if (_leftCount >= p && _rightCount >= p) { Logger.Info("[Side] 图片已收够, 提前返回"); break; }
-
-				// 检查是否已到结束位（每20次循环读一次，减少ZMC竞争）
-				if (++posCheckCounter >= 20)
-				{
-					posCheckCounter = 0;
-					float curPos = _motion.GetPosition(SideAxis);
-					if (Math.Abs(curPos - EndPosition) < 0.5f || sw.ElapsedMilliseconds > 60000)
-					{ Logger.Info("[Side] 到达结束位 pos=" + curPos.ToString("F1")); break; }
-				}
-
-				// 读取IN12（从MonitorLoop的GetInMulti快照读取，避免ZMC竞争）
-				bool curIn12 = (Hardware.CameraTriggerManager.LastInBits & (1 << (In12Port - 4))) != 0;
-				// 边沿检测
-				if (firstRead) { prevIn12 = curIn12; firstRead = false; continue; }
-				if (curIn12 == prevIn12) { Thread.Sleep(2); continue; }
-
-				// 上升沿/下降沿触发拍照
-				int trigCam;
-				if (curIn12 && !prevIn12) // 上升沿
-					trigCam = (EdgeMapping == In12EdgeMap.RisingLeftFallingRight) ? 7 : 8;
-				else // 下降沿
-					trigCam = (EdgeMapping == In12EdgeMap.RisingLeftFallingRight) ? 8 : 7;
-
-				prevIn12 = curIn12;
-
-				if (CaptureMode == CaptureMode.StopCapture)
-				{
-					_motion.StopAxis(SideAxis);
-					_motion.WaitForMoveComplete(SideAxis, 2000);
-				}
-
-				// 发送触发脉冲到独立线程（非阻塞，即刻返回继续监听IN12）
-				int outPort = (trigCam == 7) ? Cam7OutPort : Cam8OutPort;
-				if (!pulseQueue.TryAdd((outPort, TriggerPulseMs)))
-					Logger.Warning("[Side] 脉冲队列已满，丢弃Cam" + trigCam + "触发");
-				Logger.Debug("[Side] IN12边沿 触发Cam" + trigCam + " pos=" + curPos.ToString("F1") + " L=" + _leftCount + "/" + p + " R=" + _rightCount + "/" + p);
-
-				if (CaptureMode == CaptureMode.StopCapture)
-				{
-					_motion.MoveAbs(SideAxis, EndPosition);
-					SetAxisSpeed(ForwardSpeed);
-				}
-			}
-
-			// 脉冲线程收尾
-			pulseQueue.CompleteAdding();
-			pulseCts.Cancel();
-			try { pulseTask.Wait(5000); } catch { }
-			pulseCts.Dispose();
-			pulseQueue.Dispose();
-
-			// 停止并返回起始位
-			_motion.StopAxis(SideAxis);
-			_motion.WaitForMoveComplete(SideAxis, 2000);
+			// 返回起点
 			Logger.Info("[Side] 返回起始位 L=" + _leftCount + " R=" + _rightCount);
 			SetAxisSpeed(ReturnSpeed);
 			_motion.MoveAbs(SideAxis, StartPosition);
-			_motion.WaitForMoveComplete(SideAxis, 10000);
+			WaitMoveCancelable(SideAxis, 10000, cancel);
+		}
+
+		/// <summary>可取消的等轴到位</summary>
+		private void WaitMoveCancelable(int axis, int timeoutMs, CancellationToken cancel)
+		{
+			var sw = Stopwatch.StartNew();
+			while (!cancel.IsCancellationRequested && sw.ElapsedMilliseconds < timeoutMs)
+			{
+				if (!_motion.IsMoving(axis)) return;
+				Thread.Sleep(50);
+			}
+			cancel.ThrowIfCancellationRequested();
 		}
 
 	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } }
@@ -284,6 +221,7 @@ namespace Stations
 					_processedLeftImgs.Add(ctx);
 					EmitPartial(p);
 					processed++;
+					Thread.Sleep(20); // 摊开CPU负载，避免48次连续推理把其他工位的线程饿死
 				}
 				else if (_rightQueue.TryDequeue(out ctx))
 				{
@@ -292,6 +230,7 @@ namespace Stations
 					_processedRightImgs.Add(ctx);
 					EmitPartial(p);
 					processed++;
+					Thread.Sleep(20);
 				}
 				else Thread.Sleep(1);
 			}

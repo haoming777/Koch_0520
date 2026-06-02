@@ -307,6 +307,26 @@ namespace Hardware
 			}
 		}
 
+		/// <summary>开启连续插补模式（运动段之间不减速，MoveOp在段间精确触发）</summary>
+		public void SetMerge(int axis, bool on)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try { ZAux_Direct_SetMerge(_handle, axis, on ? 1 : 0); }
+			catch (Exception ex) { Logger.Error("SetMerge: " + ex.Message); }
+		}
+
+		/// <summary>运动到指定位置后，自动脉冲输出（硬件级，零PC延迟）</summary>
+		public void MoveAbsAndPulse(int axis, float targetPos, int outPort, int pulseMs)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				ZAux_Direct_Single_MoveAbs(_handle, axis, targetPos);
+				ZAux_Direct_MoveOp2(_handle, axis, outPort, 1, pulseMs);
+			}
+			catch (Exception ex) { Logger.Error($"MoveAbsAndPulse 轴{axis} OUT{outPort}: {ex.Message}"); }
+		}
+
 		public int GetInMulti(int startPort, int endPort)
 		{
 			if (_simulateMode || !IsConnected) return 0;
@@ -320,6 +340,35 @@ namespace Hardware
 		{
 			if (_simulateMode || !IsConnected) return;
 			ZAux_Direct_SetOutMulti(_handle, (ushort)startPort, (ushort)endPort, states);
+		}
+
+		// ── 心跳 ──
+		private CancellationTokenSource _heartbeatCts;
+
+		public void StartHeartbeat()
+		{
+			if (_simulateMode || !IsConnected) return;
+			StopHeartbeat();
+			_heartbeatCts = new CancellationTokenSource();
+			var token = _heartbeatCts.Token;
+			Task.Run(async () =>
+			{
+				while (!token.IsCancellationRequested)
+				{
+					try { ZAux_Direct_SetUserVar(_handle, "HeartBeat_Flag", 0f); }
+					catch { }
+					try { await Task.Delay(150, token); }
+					catch { break; }
+				}
+			}, token);
+			Logger.Info("心跳已启动 (每150ms)");
+		}
+
+		public void StopHeartbeat()
+		{
+			_heartbeatCts?.Cancel();
+			_heartbeatCts?.Dispose();
+			_heartbeatCts = null;
 		}
 
 		public bool GoHomeAll()
@@ -373,6 +422,7 @@ namespace Hardware
 
 		public void Disconnect()
 		{
+			StopHeartbeat();
 			if (_simulateMode)
 			{
 				_connected = false;

@@ -394,8 +394,11 @@ namespace VisionMeasure
 				if (pw > 0) { CameraTriggerConfig.DefaultPulseWidthMs = pw; foreach (var kv in CameraTriggerConfig.TriggerConfigs) kv.Value.PulseWidthMs = pw; }
 				_triggerMgr = new CameraTriggerManager(_motionMgr, useSimulateMode);
 				_triggerMgr.OnTriggered += OnCameraTriggered;
+				Hardware.CameraTriggerManager.ExternalTriggerEnabled = true; // 相机触发由外部ZMC BASIC程序控制
 				_triggerMgr.Start();
 				Logger.Info("触发管理器已启动");
+				// 每150ms重置心跳标志，ZMC BASIC程序监控此标志检测PC是否存活
+				_motionMgr?.StartHeartbeat();
 			}
 			else
 			{
