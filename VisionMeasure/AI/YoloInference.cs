@@ -82,7 +82,7 @@ namespace YoloInference
 		/// <summary>
 		/// 构造函数
 		/// </summary>
-		public YoloOnnx(string modelPath, string metaJsonPath, int expectedBatchSize = 1)
+		public YoloOnnx(string modelPath, string metaJsonPath, int expectedBatchSize = 1, int gpuDeviceId = 0)
 		{
 			if (!File.Exists(metaJsonPath))
 				throw new FileNotFoundException($"找不到配置文件: {metaJsonPath}");
@@ -109,7 +109,7 @@ namespace YoloInference
 			_isYolo26 = !string.IsNullOrEmpty(meta.BaseModel) && meta.BaseModel.IndexOf("26", StringComparison.OrdinalIgnoreCase) >= 0;
 
 			// 2. 初始化 ONNX Session
-			InitSession(modelPath);
+			InitSession(modelPath, gpuDeviceId);
 
 			// 3. 解析并校验输入张量
 			var inputMeta = _session.InputMetadata.First();
@@ -152,16 +152,20 @@ namespace YoloInference
 			Warmup(iterations: 3, warmupBatchSize: _expectedBatchSize);
 		}
 
-		private void InitSession(string modelPath)
+		private void InitSession(string modelPath, int gpuDeviceId = 0)
 		{
 			try
 			{
 				SessionOptions options = new SessionOptions();
 				options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+				// 限制CPU线程：GPU推理时CPU只做预处理，单线程足够，避免5个模型×全核=CPU炸满
+				options.InterOpNumThreads = 1;
+				options.IntraOpNumThreads = 1;
 
 				var cudaProviderOptions = new OrtCUDAProviderOptions();
 				cudaProviderOptions.UpdateOptions(new Dictionary<string, string>()
 				{
+					{ "device_id", gpuDeviceId.ToString() },
 					{ "cudnn_conv_algo_search", "HEURISTIC" },
 					{ "arena_extend_strategy", "kNextPowerOfTwo" },
 					{ "do_copy_in_default_stream", "1" }

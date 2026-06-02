@@ -428,8 +428,8 @@ namespace VisionMeasure.Stations
 				if (so || sn) _imageSaver.Enqueue(merged, System.IO.Path.Combine(dir, $"{pid}_渲染_{nt}.jpg"), ImageFormat.Jpeg);
 				if (sor || snr)
 				{
-					_imageSaver.Enqueue(left.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_左原图_{nt}.bmp"), ImageFormat.Bmp);
-					_imageSaver.Enqueue(right.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_右原图_{nt}.bmp"), ImageFormat.Bmp);
+					_imageSaver.Enqueue(left.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_左原图_{nt}.jpg"), ImageFormat.Jpeg);
+					_imageSaver.Enqueue(right.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_右原图_{nt}.jpg"), ImageFormat.Jpeg);
 				}
 			}
 			catch (Exception ex) { Logger.Error($"正面工位存图异常: {ex.Message}"); }

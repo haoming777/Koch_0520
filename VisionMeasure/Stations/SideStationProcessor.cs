@@ -59,6 +59,8 @@ namespace Stations
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
+		/// <summary>实时显示事件：每推理一张立即推送渲染图到UI (Side, Bitmap)</summary>
+		public event Action<Side, Bitmap> OnRealTimeDisplay;
 
 		// ====== 开放参数 ======
 		public float ConfThreshold = 0.5f, IouThreshold = 0.45f;
@@ -137,6 +139,7 @@ namespace Stations
 		/// <summary>IN13下降沿触发 → MainFrm调用此方法</summary>
 		public void StartDetection()
 		{
+			if (_disposed) { Logger.Warning("[Side] 已释放，忽略StartDetection"); return; }
 			if (IsMoving) { Logger.Warning("[Side] 上一批未完成，强制中断回起点"); _motionCts?.Cancel(); _motion.StopAxis(SideAxis); _motion.SetSpeed(SideAxis, ReturnSpeed); _motion.MoveAbs(SideAxis, StartPosition); }
 			IsMoving = true;
 		SetLimitSwitches();
@@ -177,24 +180,41 @@ namespace Stations
 			// 开始向结束位移动
 			_motion.MoveAbs(SideAxis, EndPosition);
 
+			// ── 独立脉冲线程（与CameraTriggerManager设计一致，避免阻塞IN12监听）──
+			var pulseQueue = new BlockingCollection<(int port, int ms)>(100);
+			var pulseCts = CancellationTokenSource.CreateLinkedTokenSource(_motionCts.Token);
+			var pulseTask = Task.Run(() =>
+			{
+				try
+				{
+					foreach (var (port, ms) in pulseQueue.GetConsumingEnumerable(pulseCts.Token))
+						_motion.HwPulse(port, ms);
+				}
+				catch (OperationCanceledException) { }
+				catch (Exception ex) { Logger.Error("[Side] 脉冲线程异常: " + ex.Message); }
+			});
+
 			bool prevIn12 = false;
 			bool firstRead = true;
 			var sw = Stopwatch.StartNew();
+			int posCheckCounter = 0;
 
 			while (!_motionCts.Token.IsCancellationRequested)
 			{
 				// 检查是否已收够图片
 				if (_leftCount >= p && _rightCount >= p) { Logger.Info("[Side] 图片已收够, 提前返回"); break; }
 
-				// 检查是否已到结束位
-				float curPos = _motion.GetPosition(SideAxis);
-				if (Math.Abs(curPos - EndPosition) < 0.5f || sw.ElapsedMilliseconds > 60000)
-				{ Logger.Info("[Side] 到达结束位 pos=" + curPos.ToString("F1")); break; }
+				// 检查是否已到结束位（每20次循环读一次，减少ZMC竞争）
+				if (++posCheckCounter >= 20)
+				{
+					posCheckCounter = 0;
+					float curPos = _motion.GetPosition(SideAxis);
+					if (Math.Abs(curPos - EndPosition) < 0.5f || sw.ElapsedMilliseconds > 60000)
+					{ Logger.Info("[Side] 到达结束位 pos=" + curPos.ToString("F1")); break; }
+				}
 
-				// 读取IN12
-				bool curIn12;
-				if (!_motion.GetInput(In12Port, out curIn12)) { Thread.Sleep(5); continue; }
-
+				// 读取IN12（从MonitorLoop的GetInMulti快照读取，避免ZMC竞争）
+				bool curIn12 = (Hardware.CameraTriggerManager.LastInBits & (1 << (In12Port - 4))) != 0;
 				// 边沿检测
 				if (firstRead) { prevIn12 = curIn12; firstRead = false; continue; }
 				if (curIn12 == prevIn12) { Thread.Sleep(2); continue; }
@@ -214,9 +234,10 @@ namespace Stations
 					_motion.WaitForMoveComplete(SideAxis, 2000);
 				}
 
-				// 发送触发脉冲
+				// 发送触发脉冲到独立线程（非阻塞，即刻返回继续监听IN12）
 				int outPort = (trigCam == 7) ? Cam7OutPort : Cam8OutPort;
-				_motion.HwPulse(outPort, TriggerPulseMs);
+				if (!pulseQueue.TryAdd((outPort, TriggerPulseMs)))
+					Logger.Warning("[Side] 脉冲队列已满，丢弃Cam" + trigCam + "触发");
 				Logger.Debug("[Side] IN12边沿 触发Cam" + trigCam + " pos=" + curPos.ToString("F1") + " L=" + _leftCount + "/" + p + " R=" + _rightCount + "/" + p);
 
 				if (CaptureMode == CaptureMode.StopCapture)
@@ -225,6 +246,13 @@ namespace Stations
 					SetAxisSpeed(ForwardSpeed);
 				}
 			}
+
+			// 脉冲线程收尾
+			pulseQueue.CompleteAdding();
+			pulseCts.Cancel();
+			try { pulseTask.Wait(5000); } catch { }
+			pulseCts.Dispose();
+			pulseQueue.Dispose();
 
 			// 停止并返回起始位
 			_motion.StopAxis(SideAxis);
@@ -488,92 +516,152 @@ namespace Stations
 				int count = Math.Max(leftImages.Count, rightImages.Count);
 				for (int i = 0; i < count; i++)
 				{
-					var mat = new Mat(600, 800, MatType.CV_8UC3, new Scalar(30, 30, 30));
-					var img = i < leftImages.Count ? leftImages[i] : (i < rightImages.Count ? rightImages[i] : null);
-					if (img != null) { try { var m = img.Image.ToMat(); mat = m.Clone(); m.Dispose(); } catch { } }
-					// 右下角标注第几张/总数
-					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(mat);
-					using (var g = Graphics.FromImage(bmp))
+					SideImageCtx img = i < leftImages.Count ? leftImages[i] : (i < rightImages.Count ? rightImages[i] : null);
+					Bitmap bmp;
+					if (img != null)
 					{
-						string label = (i + 1) + "/" + count;
-						using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
-						{
-							var sz = g.MeasureString(label, f);
-							using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
-								g.FillRectangle(bg, bmp.Width - (int)sz.Width - 16, bmp.Height - (int)sz.Height - 12, sz.Width + 12, sz.Height + 10);
-							g.DrawString(label, f, Brushes.Cyan, bmp.Width - (int)sz.Width - 10, bmp.Height - (int)sz.Height - 8);
-						}
-						var defs = (img.Side == Side.Left ? _leftResults : _rightResults).Where(r => r.Index == i).SelectMany(r => r.Defects).ToList();
-						int bw = bmp.Width, bh = bmp.Height;
-						foreach (var d in defs)
-						{
-							if (d.BoundingBox == null || d.BoundingBox.Length < 4) continue;
-							int x1 = (int)(d.BoundingBox[0] * bw), y1 = (int)(d.BoundingBox[1] * bh);
-							int x2 = (int)(d.BoundingBox[2] * bw), y2 = (int)(d.BoundingBox[3] * bh);
-							if (x2 <= x1 || y2 <= y1) continue;
-							var rc = new Rectangle(x1, y1, x2 - x1, y2 - y1);
-							using (var fl = new SolidBrush(Color.FromArgb(80, Color.Red))) g.FillRectangle(fl, rc);
-							using (var pn = new Pen(Color.Red, Math.Max(4f, bmp.Height / 300f))) g.DrawRectangle(pn, rc);
-							using (var df = new Font("微软雅黑", Math.Max(32f, bmp.Height / 55f), FontStyle.Bold))
-							{
-								var dsz = g.MeasureString(d.DefectType, df);
-								int dy = y1 - (int)dsz.Height - 6; if (dy < 4) dy = y1 + 4;
-								using (var dbg = new SolidBrush(Color.Red)) g.FillRectangle(dbg, x1, dy, dsz.Width + 8, dsz.Height + 6);
-								g.DrawString(d.DefectType, df, Brushes.White, x1 + 3, dy + 2);
-							}
-						}
-						mat.Dispose();
-						mat = OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp);
-						bmp.Dispose();
-						_displayImages.Add(mat);
+						var results = img.Side == Side.Left ? _leftResults : _rightResults;
+						bmp = RenderSideImage(img, i, count, results);
 					}
-					_displayIndex = _displayImages.Count > 0 ? 0 : -1;
+					else
+					{
+						bmp = new Bitmap(800, 600);
+						using (var g = Graphics.FromImage(bmp))
+						{
+							g.Clear(Color.FromArgb(30, 30, 30));
+							using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
+							{ g.DrawString((i + 1) + "/" + count + " 缺少", f, Brushes.Gray, 50, bmp.Height / 2 - 30); }
+						}
+					}
+					var mat = OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp);
+					bmp.Dispose();
+					_displayImages.Add(mat);
 				}
+				_displayIndex = _displayImages.Count > 0 ? 0 : -1;
 			}
 		}
 
-		/// <summary>渲染单张侧面图（缺陷框+索引标注），供生产路径使用</summary>
+		/// <summary>渲染单张侧面图（半透明裁图区+边界线+缺陷框+状态+序号），参考侧面调试工具风格</summary>
 		private Bitmap RenderSideImage(SideImageCtx ctx, int index, int total, List<SideResult> results)
 		{
 			try
 			{
-				using (var mat = ctx.Image.ToMat())
+				using (var src = ctx.Image.ToMat())
 				{
-					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(mat);
+					var drawImg = src.Clone();
+					int w = drawImg.Width, h = drawImg.Height;
+					int cropW = (int)(h * CropRatio);
+					if (cropW > w) cropW = w;
+
+					// ── 1. 裁图区域半透明覆盖 (OpenCV) ──
+					// 头部区域 (左侧, 淡蓝色半透明)
+					using (var overlay = new Mat(drawImg.Size(), MatType.CV_8UC3, new Scalar(0, 0, 0)))
+					{
+						Cv2.Rectangle(overlay, new OpenCvSharp.Rect(0, 0, cropW, h), new Scalar(255, 140, 0), -1);
+						Cv2.AddWeighted(drawImg, 0.85, overlay, 0.15, 0, drawImg);
+					}
+					// 尾部区域 (右侧, 淡蓝色半透明)
+					using (var overlay = new Mat(drawImg.Size(), MatType.CV_8UC3, new Scalar(0, 0, 0)))
+					{
+						Cv2.Rectangle(overlay, new OpenCvSharp.Rect(w - cropW, 0, cropW, h), new Scalar(255, 140, 0), -1);
+						Cv2.AddWeighted(drawImg, 0.85, overlay, 0.15, 0, drawImg);
+					}
+					// 裁图区边界实线 (橙色)
+					Cv2.Line(drawImg, new OpenCvSharp.Point(cropW, 0), new OpenCvSharp.Point(cropW, h), new Scalar(0, 165, 255), 2);
+					Cv2.Line(drawImg, new OpenCvSharp.Point(w - cropW, 0), new OpenCvSharp.Point(w - cropW, h), new Scalar(0, 165, 255), 2);
+
+					// ── 2. 转Bitmap，GDI+绘制文字 ──
+					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(drawImg);
+					drawImg.Dispose();
 					using (var g = Graphics.FromImage(bmp))
 					{
-						string label = (index + 1) + "/" + total;
-						using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
-						{
-							var sz = g.MeasureString(label, f);
-							using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
-								g.FillRectangle(bg, bmp.Width - (int)sz.Width - 16, bmp.Height - (int)sz.Height - 12, sz.Width + 12, sz.Height + 10);
-							g.DrawString(label, f, Brushes.Cyan, bmp.Width - (int)sz.Width - 10, bmp.Height - (int)sz.Height - 8);
-						}
-						var defs = results.Where(r => r.Index == index).SelectMany(r => r.Defects).ToList();
-						int bw = bmp.Width, bh = bmp.Height;
+						g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+						float penW = Math.Max(3f, h / 400f);
+						float fontSz = Math.Max(20f, h / 60f);
+						float bigFontSz = Math.Max(48f, h / 30f);
+
+						// ── 缺陷框 (红色填充+边框+标签) ──
+						var res = results.FirstOrDefault(r => r.Index == index);
+						var defs = res?.Defects ?? new List<BoxDefect>();
 						foreach (var d in defs)
 						{
 							if (d.BoundingBox == null || d.BoundingBox.Length < 4) continue;
-							int x1 = (int)(d.BoundingBox[0] * bw), y1 = (int)(d.BoundingBox[1] * bh);
-							int x2 = (int)(d.BoundingBox[2] * bw), y2 = (int)(d.BoundingBox[3] * bh);
+							int x1 = (int)(d.BoundingBox[0] * w), y1 = (int)(d.BoundingBox[1] * h);
+							int x2 = (int)(d.BoundingBox[2] * w), y2 = (int)(d.BoundingBox[3] * h);
 							if (x2 <= x1 || y2 <= y1) continue;
 							var rc = new Rectangle(x1, y1, x2 - x1, y2 - y1);
-							using (var fl = new SolidBrush(Color.FromArgb(80, Color.Red))) g.FillRectangle(fl, rc);
-							using (var pn = new Pen(Color.Red, Math.Max(4f, bmp.Height / 300f))) g.DrawRectangle(pn, rc);
-							using (var df = new Font("微软雅黑", Math.Max(32f, bmp.Height / 55f), FontStyle.Bold))
+							using (var fl = new SolidBrush(Color.FromArgb(60, 255, 0, 0))) g.FillRectangle(fl, rc);
+							using (var pn = new Pen(Color.Red, penW)) g.DrawRectangle(pn, rc);
+							using (var df = new Font("微软雅黑", fontSz, FontStyle.Bold))
 							{
-								var dsz = g.MeasureString(d.DefectType, df);
+								string dt = string.IsNullOrEmpty(d.DefectType) ? "缺陷" : d.DefectType;
+								var dsz = g.MeasureString(dt, df);
 								int dy = y1 - (int)dsz.Height - 6; if (dy < 4) dy = y1 + 4;
 								using (var dbg = new SolidBrush(Color.Red)) g.FillRectangle(dbg, x1, dy, dsz.Width + 8, dsz.Height + 6);
-								g.DrawString(d.DefectType, df, Brushes.White, x1 + 3, dy + 2);
+								g.DrawString(dt, df, Brushes.White, x1 + 3, dy + 2);
 							}
 						}
+
+						// ── 状态标签 (顶部居中: OK=绿, NG=红) ──
+						string status = res?.Status ?? "?";
+						Color stColor = status == "OK" ? Color.LimeGreen : (status == "?" ? Color.Gray : Color.Red);
+						using (var sf = new Font("微软雅黑", bigFontSz, FontStyle.Bold))
+						{
+							var stSz = g.MeasureString(status, sf);
+							int stX = w / 2 - (int)stSz.Width / 2;
+							using (var stBg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+								g.FillRectangle(stBg, stX - 8, 4, stSz.Width + 16, stSz.Height + 8);
+							using (var stBr = new SolidBrush(stColor))
+								g.DrawString(status, sf, stBr, stX, 8);
+						}
+
+						// ── 序号 (右下角, 青色) ──
+						string label = (index + 1) + "/" + total;
+						using (var f = new Font("微软雅黑", bigFontSz, FontStyle.Bold))
+						{
+							var sz = g.MeasureString(label, f);
+							using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+								g.FillRectangle(bg, w - (int)sz.Width - 16, h - (int)sz.Height - 12, sz.Width + 12, sz.Height + 10);
+							g.DrawString(label, f, Brushes.Cyan, w - (int)sz.Width - 10, h - (int)sz.Height - 8);
+						}
+
+						// ── 图例 (右下角, 小字) ──
+						DrawSmallLegend(g, w, h, fontSz);
 					}
 					return bmp;
 				}
 			}
 			catch (Exception ex) { Logger.Error("[Side] 渲染异常: " + ex.Message); return null; }
+		}
+
+		private static void DrawSmallLegend(Graphics g, int imgW, int imgH, float fontSz)
+		{
+			var items = new[] {
+				("裁剪区域", Color.Orange),
+				("缺陷框", Color.Red),
+			};
+			int n = items.Length, pad = 6, itemH = (int)(fontSz * 1.3f);
+			int legendW = (int)(fontSz * 6f), legendH = n * itemH + pad * 2 + (int)(fontSz * 1.2f);
+			int lx = imgW - legendW - 10, ly = imgH - legendH - 60;
+
+			using (var bgBrush = new SolidBrush(Color.FromArgb(200, 40, 40, 40)))
+				g.FillRectangle(bgBrush, lx, ly, legendW, legendH);
+			using (var pen = new Pen(Color.Gray, 1))
+				g.DrawRectangle(pen, lx, ly, legendW, legendH);
+
+			using (var titleFont = new Font("微软雅黑", fontSz, FontStyle.Bold))
+			using (var itemFont = new Font("微软雅黑", fontSz * 0.75f, FontStyle.Regular))
+			{
+				var titleSz = g.MeasureString("图例", titleFont);
+				g.DrawString("图例", titleFont, Brushes.White, lx + (legendW - titleSz.Width) / 2, ly + pad);
+				for (int i = 0; i < n; i++)
+				{
+					int iy = ly + pad + (int)(fontSz * 1.2f) + i * itemH;
+					using (var brush = new SolidBrush(items[i].Item2))
+						g.FillRectangle(brush, lx + 8, iy + 2, (int)(fontSz * 0.9f), (int)(fontSz * 0.7f));
+					g.DrawString(items[i].Item1, itemFont, Brushes.White, lx + (int)(fontSz * 1.6f), iy);
+				}
+			}
 		}
 
 		// ====== 轮播导航 ======
@@ -608,7 +696,7 @@ namespace Stations
 		public void Dispose() { if (_disposed) return; _disposed = true; _motionCts?.Cancel(); }
 	}
 
-	internal enum Side { Left, Right }
+	public enum Side { Left, Right }
 	internal class SideImageCtx { public Bitmap Image; public long ProductId; public Side Side; }
 	internal class SideResult { public int Index; public Side Side; public string Status = "OK"; public List<BoxDefect> Defects = new List<BoxDefect>(); }
 }

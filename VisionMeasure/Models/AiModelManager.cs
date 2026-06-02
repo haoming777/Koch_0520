@@ -134,17 +134,17 @@ namespace Models
 		{
 			try
 			{
-				// 上端面缺陷模型 (Yolo -> .onnx + meta.json, 显卡0)
+				// 上端面缺陷模型 (Yolo -> .onnx + meta.json, 显卡1)
 				if (!string.IsNullOrEmpty(_config.EndFaceUpperModel))
 				{
 					string fullPath = _config.GetFullPath(_config.EndFaceUpperModel);
 					string metaPath = Path.ChangeExtension(fullPath, "json");
-					ReportProgress($"正在加载上端面缺陷检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 40, 100);
+					ReportProgress($"正在加载上端面缺陷检测模型(Yolo, 显卡{_config.VimoGpuDeviceId}): {fullPath}", 40, 100);
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						EndFaceUpperModel = new YoloOnnx(fullPath, metaPath, 8);
-						Logger.Info($"上端面缺陷检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						EndFaceUpperModel = new YoloOnnx(fullPath, metaPath, 8, gpuDeviceId: _config.VimoGpuDeviceId);
+						Logger.Info($"上端面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 					}
 					else
 					{
@@ -152,17 +152,17 @@ namespace Models
 					}
 				}
 
-				// 下端面缺陷模型 (Yolo -> .onnx + meta.json, 显卡0)
+				// 下端面缺陷模型 (Yolo -> .onnx + meta.json, 显卡1)
 				if (!string.IsNullOrEmpty(_config.EndFaceLowerModel))
 				{
 					string fullPath = _config.GetFullPath(_config.EndFaceLowerModel);
 					string metaPath = Path.ChangeExtension(fullPath, "json");
-					ReportProgress($"正在加载下端面缺陷检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 50, 100);
+					ReportProgress($"正在加载下端面缺陷检测模型(Yolo, 显卡{_config.VimoGpuDeviceId}): {fullPath}", 50, 100);
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						EndFaceLowerModel = new YoloOnnx(fullPath, metaPath, 8);
-						Logger.Info($"下端面缺陷检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						EndFaceLowerModel = new YoloOnnx(fullPath, metaPath, 8, gpuDeviceId: _config.VimoGpuDeviceId);
+						Logger.Info($"下端面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 					}
 					else
 					{
@@ -287,8 +287,8 @@ namespace Models
 					{
 						try
 						{
-							SideDefectModel = new YoloOnnx(fullPath, metaPath, 2);
-							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+							SideDefectModel = new YoloOnnx(fullPath, metaPath, 2, gpuDeviceId: _config.VimoGpuDeviceId);
+							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 						}
 						catch (Exception ex)
 						{

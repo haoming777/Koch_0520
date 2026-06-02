@@ -60,6 +60,7 @@ namespace VisionMeasure
 		private EndFaceStationProcessor _endFaceStation;
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
+	private volatile bool _sideTriggerPending;
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -142,6 +143,9 @@ namespace VisionMeasure
 			try
 			{
 				Logger.Info("========== 系统启动 ==========");
+
+				uiMonitor1.Activte = true;
+				uiMonitor2.Activte = true;
 
 				// 初始化数据库
 				UpdateLoadingProgress(5, "正在初始化数据库...");
@@ -385,6 +389,9 @@ namespace VisionMeasure
 			if (_motionMgr != null && _motionMgr.IsConnected && !useSimulateMode)
 			{
 				CameraTriggerConfig.ApplyIn12EdgeMode();
+				// 从DetectionParams加载触发脉冲宽度(ms)，覆盖硬编码默认值
+				int pw = _detectionParams.Camera.PulseWidthMs;
+				if (pw > 0) { CameraTriggerConfig.DefaultPulseWidthMs = pw; foreach (var kv in CameraTriggerConfig.TriggerConfigs) kv.Value.PulseWidthMs = pw; }
 				_triggerMgr = new CameraTriggerManager(_motionMgr, useSimulateMode);
 				_triggerMgr.OnTriggered += OnCameraTriggered;
 				_triggerMgr.Start();
@@ -460,50 +467,53 @@ namespace VisionMeasure
 		/// <param name="cameraId">被触发的相机ID</param>
 		private void OnCameraTriggered(int cameraId)
 		{
-			var cfg = CameraTriggerConfig.GetConfig(cameraId);
-			int outPort = cfg?.OutputPort ?? -1;
-			Logger.Debug($"相机{cameraId} 触发脉冲已发送 IN{cfg?.InputPort}->OUT{outPort}", "Trigger");
-
-			// 侧面工位：IN13上升沿→Camera7触发→启动运动控制
-			if (cameraId == 7 && SideEnabled && _sideStation != null && !_sideStation.IsMoving)
+			// 侧面工位：
+			// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
+			if (cameraId == 7 && SideEnabled && _sideStation != null && _motionMgr != null && _motionMgr.IsConnected)
 			{
-				Logger.Info("[Side] IN13检测到工件，启动侧面运动控制");
-				Task.Run(() => _sideStation.StartDetection());
-			}
-
-			this.BeginInvoke(new Action(() =>
-			{
-				switch (cameraId)
+				float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
+				float startPos = _sideStation.StartPosition;
+				if (Math.Abs(curPos - startPos) > 0.5f)
 				{
-					case 1:
-						// 更新正面左相机触发指示灯
-						break;
-					case 2:
-						// 更新正面右相机触发指示灯
-						break;
-					case 3:
-						// 更新背面左相机触发指示灯
-						break;
-					case 4:
-						// 更新背面右相机触发指示灯
-						break;
-					case 5:
-						// 更新上端面相机触发指示灯
-						break;
-					case 6:
-						// 更新下端面相机触发指示灯
-						break;
-					case 7:
-						// 更新左侧面相机触发指示灯
-						break;
-					case 8:
-						// 更新右侧面相机触发指示灯
-						break;
+					Logger.Info($"[Side] IN13↑ 轴不在起点(cur={curPos:F1}, target={startPos:F1})，预归位");
+					Task.Run(() =>
+					{
+						_motionMgr.SetSpeed(_sideStation.SideAxis, _sideStation.ReturnSpeed);
+						_motionMgr.MoveAbs(_sideStation.SideAxis, startPos);
+						_motionMgr.WaitForMoveComplete(_sideStation.SideAxis, 15000);
+						Logger.Info($"[Side] 预归位完成 pos={_motionMgr.GetPosition(_sideStation.SideAxis):F1}");
+					});
 				}
-			}));
-
-			// 可选：统计触发次数
-			// _triggerCount[cameraId]++;
+			}
+			// IN13下降沿(Camera8) → 启动检测（此时轴已在起点）
+			if (cameraId == 8 && SideEnabled && _sideStation != null)
+			{
+				if (!_sideStation.IsMoving)
+				{
+					Logger.Info("[Side] IN13↓ 检测到工件，启动侧面运动控制");
+					_sideTriggerPending = false;
+					Task.Factory.StartNew(() => _sideStation.StartDetection(), TaskCreationOptions.LongRunning);
+				}
+				else if (!_sideTriggerPending)
+				{
+					Logger.Info("[Side] IN13↓ 侧面正忙，标记待触发（当前周期结束后自动启动）");
+					_sideTriggerPending = true;
+					Task.Run(() =>
+					{
+						while (_sideTriggerPending && _sideStation != null)
+						{
+							Thread.Sleep(50);
+							if (!_sideStation.IsMoving)
+							{
+								Logger.Info("[Side] 待触发IN13↓ 上一批已完成，启动新的侧面运动控制");
+								_sideTriggerPending = false;
+								_sideStation.StartDetection();
+								break;
+							}
+						}
+					});
+				}
+			}
 		}
 		private void InitAiModels()
 		{
@@ -554,6 +564,17 @@ namespace VisionMeasure
 			_sideStation = new SideStationProcessor(_aiModels, imgPath, _currentSku, _motionMgr, _imageSaver, _perfMonitor);
 			_sideStation.OnResultReady += OnStationResult;
 			_sideStation.OnStatusUpdate += OnSideStatusUpdate;
+			_sideStation.OnRealTimeDisplay += (side, bmp) =>
+			{
+				if (bmp == null) return;
+				this.BeginInvoke(new Action(() =>
+				{
+					if (side == Side.Left)
+						UpdatePictureBox(xlPictureBox5, bmp);
+					else
+						UpdatePictureBox(xlPictureBox6, bmp);
+				}));
+			};
 
 			// 从AxisParams.json加载运动轴参数（与ControlFrm共用同一配置）
 			var axisCfg = AxisParamConfig.Load();
@@ -575,7 +596,9 @@ namespace VisionMeasure
 			_sideStation.ReverseBoxOrder = _detectionParams.Station.SideReverseBox;
 			_sideStation.UseContinuousMode = _detectionParams.Side.UseContinuousMode;
 			_sideStation.MissingAsNg = _detectionParams.Side.MissingAsNg;
-			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode}");
+			int sidePw = _detectionParams.Camera.PulseWidthMs;
+			if (sidePw > 0) _sideStation.TriggerPulseMs = sidePw;
+			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode} Pulse={_sideStation.TriggerPulseMs}ms");
 
 			_sideStation.Start();
 		}
@@ -639,7 +662,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[1]);
 				if (FrontEnabled) _frontStation?.OnCam1(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera1] OnImage异常: {ex.Message}"); }
@@ -651,7 +675,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[2]);
 				if (FrontEnabled) _frontStation?.OnCam2(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera2] OnImage异常: {ex.Message}"); }
@@ -663,7 +688,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[3]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam5(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera3] OnImage异常: {ex.Message}"); }
@@ -675,7 +701,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[4]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam6(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera4] OnImage异常: {ex.Message}"); }
@@ -687,7 +714,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[5]);
 				if (BackEnabled) _backStation?.OnCam3(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera5] OnImage异常: {ex.Message}"); }
@@ -699,7 +727,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[6]);
 				if (BackEnabled) _backStation?.OnCam4(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera6] OnImage异常: {ex.Message}"); }
@@ -711,7 +740,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[7]);
 				if (SideEnabled) _sideStation?.OnCam7(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera7] OnImage异常: {ex.Message}"); }
@@ -723,7 +753,8 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+//				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[8]);
 				if (SideEnabled) _sideStation?.OnCam8(bitmap, pid);
 			}
 			catch (Exception ex) { Logger.Error($"[Camera8] OnImage异常: {ex.Message}"); }
@@ -1346,6 +1377,7 @@ namespace VisionMeasure
 
 				SaveCurrentShiftStatistics();
 
+				_sideTriggerPending = false; // 终止待触发轮询任务
 				_frontStation?.Dispose();
 				_backStation?.Dispose();
 				_endFaceStation?.Dispose();

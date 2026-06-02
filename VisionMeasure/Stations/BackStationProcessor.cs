@@ -712,8 +712,8 @@ namespace Stations
 				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_渲染_" + nt + ".jpg"), merged.ToJpegBytesFast(85), true, 85);
 			if ((isOk && sor) || (!isOk && snr))
 			{
-				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_左原图_" + nt + ".bmp"), leftRaw.ToBmpBytesFast(), false);
-				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_右原图_" + nt + ".bmp"), rightRaw.ToBmpBytesFast(), false);
+				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_左原图_" + nt + ".jpg"), leftRaw.ToJpegBytesFast(85), false);
+				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_右原图_" + nt + ".jpg"), rightRaw.ToJpegBytesFast(85), false);
 			}
 		}
 

@@ -254,19 +254,15 @@ namespace Stations
 					UpdateDisplayImages(upperMats, lowerMats, upperDefects, lowerDefects, upperStatus, lowerStatus);
 				}
 
-				// 显示逻辑: 有NG时显示第一张NG，全OK时显示最后一张
-				int displayIdx;
+				// 显示逻辑: 上下端面独立——各自有NG时显示第一张NG，全OK时显示最后一张
 				lock (_resultLock)
 				{
-					if (!isOk)
-						displayIdx = FindFirstNgIndex(upperStatus, lowerStatus);
-					else
-						displayIdx = Math.Max(0, _upperDisplayImages.Count - 1);
-					_currentDisplayIndex = displayIdx;
-					if (displayIdx < _upperDisplayImages.Count && _upperDisplayImages[displayIdx] != null)
-						result.EndFaceRenderImage = _upperDisplayImages[displayIdx].ToBitmap();
-					if (displayIdx < _lowerDisplayImages.Count && _lowerDisplayImages[displayIdx] != null)
-						result.EndFaceLowerRenderImage = _lowerDisplayImages[displayIdx].ToBitmap();
+					int upperIdx = FindFirstNgInList(upperStatus, _upperDisplayImages.Count);
+					int lowerIdx = FindFirstNgInList(lowerStatus, _lowerDisplayImages.Count);
+					if (upperIdx < _upperDisplayImages.Count && _upperDisplayImages[upperIdx] != null)
+						result.EndFaceRenderImage = _upperDisplayImages[upperIdx].ToBitmap();
+					if (lowerIdx < _lowerDisplayImages.Count && _lowerDisplayImages[lowerIdx] != null)
+						result.EndFaceLowerRenderImage = _lowerDisplayImages[lowerIdx].ToBitmap();
 				}
 
 				double saveTime = 0;
@@ -312,23 +308,18 @@ namespace Stations
 			foreach (var img in images)
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
-				// 步骤0a: CSV水平裁图（上端面裁右边，下端面裁左边）
+				// 水平裁图（上端面裁右边，下端面裁左边）
 				if (cropPx > 0)
 				{
 					Mat croppedH;
 					if (cropRight)
-						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, null, cropPx); // 裁右边
+						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, null, cropPx);
 					else
-						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, cropPx, null); // 裁左边cropPx像素
+						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, cropPx, null);
 					mat.Dispose();
 					mat = croppedH;
 				}
-				// 步骤0b: 垂直裁图(保留上2/3)
-				int h = mat.Height, w = mat.Width;
-				int cropH = h * 2 / 3;
-				var cropped = new Mat(mat, new CvRect(0, 0, w, cropH)).Clone();
-				mats.Add(cropped);
-				mat.Dispose();
+				mats.Add(mat);
 			}
 			return mats;
 		}
@@ -531,6 +522,15 @@ namespace Stations
 			return 0;
 		}
 
+		/// <summary>在单侧状态列表中找第一个NG，全OK返回最后一张</summary>
+		private int FindFirstNgInList(List<string> statusList, int count)
+		{
+			for (int i = 0; i < count && i < statusList.Count; i++)
+				if (statusList[i] != "OK")
+					return i;
+			return Math.Max(0, count - 1);
+		}
+
 		public Mat GetCurrentDisplayImage()
 		{
 			lock (_resultLock)
@@ -633,14 +633,14 @@ namespace Stations
 				Directory.CreateDirectory(dir);
 				for (int i = 0; i < upperImages.Count; i++)
 				{
-					string fileName = $"{productId}_{i + 1}_upper_{ngTypes}.bmp";
+					string fileName = $"{productId}_{i + 1}_upper_{ngTypes}.jpg";
 					string filePath = Path.Combine(dir, fileName);
-					var upperData = upperImages[i].OriginalBitmap.ToBmpBytesFast();
+					var upperData = upperImages[i].OriginalBitmap.ToJpegBytesFast(85);
 					_imageSaver.AddSaveTask(filePath, upperData, false);
 
-					fileName = $"{productId}_{i + 1}_lower_{ngTypes}.bmp";
+					fileName = $"{productId}_{i + 1}_lower_{ngTypes}.jpg";
 					filePath = Path.Combine(dir, fileName);
-					var lowerData = lowerImages[i].OriginalBitmap.ToBmpBytesFast();
+					var lowerData = lowerImages[i].OriginalBitmap.ToJpegBytesFast(85);
 					_imageSaver.AddSaveTask(filePath, lowerData, false);
 				}
 			}

@@ -285,9 +285,26 @@ namespace Hardware
 		public void HwPulse(int outPort, int pulseWidthMs)
 		{
 			if (_simulateMode || !IsConnected) return;
-			SetOutput(outPort, true);
-			System.Threading.Thread.Sleep(Math.Max(1, pulseWidthMs));
-			SetOutput(outPort, false);
+			// 用Thread.Sleep代替SpinWait，不烧CPU，给MonitorLoop让出时间片
+			try
+			{
+				int pw = Math.Max(1, pulseWidthMs);
+				SetOutput(outPort, true);
+				if (pw > 2)
+					Thread.Sleep(pw - 2);  // 大段时间让出CPU，最后2ms用SpinWait精确收尾
+				var sw = System.Diagnostics.Stopwatch.StartNew();
+				long targetTicks = pw * System.Diagnostics.Stopwatch.Frequency / 1000;
+				var spinWait = new System.Threading.SpinWait();
+				while (sw.ElapsedTicks < targetTicks)
+					spinWait.SpinOnce();
+				SetOutput(outPort, false);
+				Logger.Debug($"[HwPulse] OUT{outPort} 脉冲 {pw}ms");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[HwPulse] OUT{outPort} 失败: {ex.Message}");
+				try { SetOutput(outPort, false); } catch { }
+			}
 		}
 
 		public int GetInMulti(int startPort, int endPort)
@@ -296,6 +313,13 @@ namespace Hardware
 			Int32 bits = 0;
 			ZAux_Direct_GetInMulti(_handle, startPort, endPort, out bits);
 			return bits;
+		}
+
+		/// <summary>批量设置输出端口（一次API调用设置多路）</summary>
+		public void SetOutMulti(int startPort, int endPort, uint[] states)
+		{
+			if (_simulateMode || !IsConnected) return;
+			ZAux_Direct_SetOutMulti(_handle, (ushort)startPort, (ushort)endPort, states);
 		}
 
 		public bool GoHomeAll()

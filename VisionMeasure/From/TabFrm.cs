@@ -6,6 +6,8 @@ using UI;
 using VisionMeasure.Utils;
 using CommonLib;
 using System.Drawing;
+using PLC调试.Class;
+using PLC调试;
 
 namespace VisionMeasure.From
 {
