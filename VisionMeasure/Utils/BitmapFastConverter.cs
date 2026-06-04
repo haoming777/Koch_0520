@@ -8,6 +8,10 @@ using System.Linq;
 {
 	public static class BitmapFastConverter
 	{
+		// 缓存JPEG编码器，避免每次存图遍历ImageCodecInfo
+		private static readonly ImageCodecInfo JpegCodec = ImageCodecInfo.GetImageEncoders()
+			.First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+
 		public static byte[] ToJpegBytesFast(this Bitmap bitmap, int quality = 85)
 		{
 			if (bitmap == null) return null;
@@ -15,15 +19,9 @@ using System.Linq;
 			{
 				using (var ms = new MemoryStream())
 				{
-					var jpegEncoder = ImageCodecInfo.GetImageEncoders()
-						.FirstOrDefault(codec => codec.MimeType == "image/jpeg");
-					if (jpegEncoder != null)
-					{
-						var encoderParams = new EncoderParameters(1);
-						encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, quality);
-						bitmap.Save(ms, jpegEncoder, encoderParams);
-					}
-					else { bitmap.Save(ms, ImageFormat.Jpeg); }
+					var encoderParams = new EncoderParameters(1);
+					encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, quality);
+					bitmap.Save(ms, JpegCodec, encoderParams);
 					return ms.ToArray();
 				}
 			}

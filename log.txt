@@ -1,1659 +1,317 @@
-[19:41:49.630] [Info] USB加密狗验证通过
-[19:41:49.783] [Info] 检测参数加载成功: D:\上位机\bin\Config\DetectionParams.json
-[19:41:49.784] [Info] SKU数据库初始化，CSV路径: D:\上位机\bin\Config\主数据.csv
-[19:41:49.786] [Info] 读取CSV文件: D:\上位机\bin\Config\主数据.csv, 共 2095 行
-[19:41:49.786] [Debug] 表头列0: 'SKU'
-[19:41:49.786] [Debug] 表头列1: '背卡条码'
-[19:41:49.786] [Debug] 表头列2: '背卡P号(正面)'
-[19:41:49.786] [Debug] 表头列3: 'PZ信息'
-[19:41:49.786] [Debug] 表头列4: '宽'
-[19:41:49.786] [Debug] 表头列5: '高'
-[19:41:49.786] [Debug] 表头列6: '打码格式'
-[19:41:49.786] [Debug] 表头列7: 'PZMM'
-[19:41:49.786] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
-[19:41:49.787] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
-[19:41:49.787] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
-[19:41:49.787] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
-[19:41:49.787] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
-[19:41:49.787] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
-[19:41:49.788] [Info] 从CSV加载了 2094 个SKU
-[19:41:49.789] [Info] 裁图CSV加载: 8行, 列索引 spec=0
-[19:41:49.795] [Info] 裁图参数已合并: 2004个SKU
-[19:41:49.799] [Info] ========== 开始加载AI模型 ==========
-[19:41:49.799] [Info] GPU配置: Vimo模型使用显卡1, Yolo模型使用显卡0
-[19:41:49.803] [Info] Init加载
-[19:41:51.644] [Info] Init加载完成
-[19:41:51.644] [Info] 正面P号码OCR模型加载成功: D:\上位机\bin\AI\Models\正面\P号码识别\model.vimosln (moduleId=2)
-[19:41:52.055] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
-[19:41:52.055] [Info] [GPU] 动态模型检测: 采用配置尺寸 960x960, 授权用户 BatchSize=12
-[19:41:52.055] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
-[19:41:52.056] [Info] [GPU] 开始显存预热 (3 次, 张量=[12, 3, 960, 960])...
-[19:41:52.786] [Info] [GPU] 模型预热完毕，硬件已就绪！
+[13:51:53.688] [Info] USB加密狗验证通过
+[13:51:53.864] [Info] 检测参数加载成功: D:\上位机\bin\Config\DetectionParams.json
+[13:51:53.868] [Info] SKU数据库初始化，CSV路径: D:\上位机\bin\Config\主数据.csv
+[13:51:53.870] [Info] 读取CSV文件: D:\上位机\bin\Config\主数据.csv, 共 2095 行
+[13:51:53.870] [Debug] 表头列0: 'SKU'
+[13:51:53.870] [Debug] 表头列1: '背卡条码'
+[13:51:53.870] [Debug] 表头列2: '背卡P号(正面)'
+[13:51:53.870] [Debug] 表头列3: 'PZ信息'
+[13:51:53.870] [Debug] 表头列4: '宽'
+[13:51:53.870] [Debug] 表头列5: '高'
+[13:51:53.870] [Debug] 表头列6: '打码格式'
+[13:51:53.870] [Debug] 表头列7: 'PZMM'
+[13:51:53.870] [Info] 列索引: SKU=0, PZ=7, 打码格式=6, P号码=2, 条形码=1
+[13:51:53.871] [Debug] SKU 181712291: P=3, Z=2, MM=70, P号码=P18328850, 条形码=
+[13:51:53.871] [Debug] SKU 183100777: P=5, Z=1, MM=85, P号码=P18332658, 条形码=
+[13:51:53.871] [Debug] SKU 183900565: P=6, Z=1, MM=42, P号码=P18351960, 条形码=
+[13:51:53.871] [Debug] SKU 183900771: P=9, Z=1, MM=42, P号码=P18379207, 条形码=
+[13:51:53.871] [Debug] SKU 183900943: P=9, Z=1, MM=42, P号码=P18379091, 条形码=
+[13:51:53.872] [Info] 从CSV加载了 2094 个SKU
+[13:51:53.873] [Info] 裁图CSV加载: 8行, 列索引 spec=0
+[13:51:53.879] [Info] 裁图参数已合并: 2004个SKU
+[13:51:53.885] [Info] ========== 开始加载AI模型 ==========
+[13:51:53.885] [Info] GPU配置: Vimo模型使用显卡1, Yolo模型使用显卡0
+[13:51:53.889] [Info] Init加载
+[13:51:55.593] [Info] Init加载完成
+[13:51:55.593] [Info] 正面P号码OCR模型加载成功: D:\上位机\bin\AI\Models\正面\P号码识别\model.vimosln (moduleId=2)
+[13:51:55.931] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
+[13:51:55.931] [Info] [GPU] 动态模型检测: 采用配置尺寸 960x960, 授权用户 BatchSize=12
+[13:51:55.931] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
+[13:51:55.932] [Info] [GPU] 开始显存预热 (3 次, 张量=[12, 3, 960, 960])...
+[13:51:56.957] [Info] [GPU] 模型预热完毕，硬件已就绪！
 
-[19:41:52.786] [Info] 正面盒子破检测模型加载成功: D:\上位机\bin\AI\Models\正面\盒子破检测\best.onnx
-[19:41:52.787] [Info] 正在加载上端面缺陷检测模型(Yolo, 显卡1): D:\上位机\bin\AI\Models\端面\上端面\best.onnx
-[19:41:52.929] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
-[19:41:52.929] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=8
-[19:41:52.929] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
-[19:41:52.929] [Info] [GPU] 开始显存预热 (3 次, 张量=[8, 3, 640, 640])...
-[19:41:53.078] [Info] [GPU] 模型预热完毕，硬件已就绪！
+[13:51:56.958] [Info] 正面盒子破检测模型加载成功: D:\上位机\bin\AI\Models\正面\盒子破检测\best.onnx
+[13:51:56.958] [Info] 正在加载上端面缺陷检测模型(Yolo, 显卡1): D:\上位机\bin\AI\Models\端面\上端面\best.onnx
+[13:51:57.115] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
+[13:51:57.115] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=8
+[13:51:57.115] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
+[13:51:57.115] [Info] [GPU] 开始显存预热 (3 次, 张量=[8, 3, 640, 640])...
+[13:51:57.350] [Info] [GPU] 模型预热完毕，硬件已就绪！
 
-[19:41:53.078] [Info] 上端面缺陷检测模型加载成功(显卡1)
-[19:41:53.078] [Info] 正在加载下端面缺陷检测模型(Yolo, 显卡1): D:\上位机\bin\AI\Models\端面\下端面\best.onnx
-[19:41:53.224] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
-[19:41:53.224] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=8
-[19:41:53.224] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
-[19:41:53.224] [Info] [GPU] 开始显存预热 (3 次, 张量=[8, 3, 640, 640])...
-[19:41:53.355] [Info] [GPU] 模型预热完毕，硬件已就绪！
+[13:51:57.350] [Info] 上端面缺陷检测模型加载成功(显卡1)
+[13:51:57.350] [Info] 正在加载下端面缺陷检测模型(Yolo, 显卡1): D:\上位机\bin\AI\Models\端面\下端面\best.onnx
+[13:51:57.512] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
+[13:51:57.512] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=8
+[13:51:57.512] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
+[13:51:57.512] [Info] [GPU] 开始显存预热 (3 次, 张量=[8, 3, 640, 640])...
+[13:51:57.728] [Info] [GPU] 模型预热完毕，硬件已就绪！
 
-[19:41:53.355] [Info] 下端面缺陷检测模型加载成功(显卡1)
-[19:41:53.357] [Info] Init加载
-[19:41:53.718] [Info] Init加载完成
-[19:41:53.718] [Info] 背面日期码分割模型加载成功(GPU1)
-[19:41:53.732] [Info] Init加载
-[19:41:53.837] [Info] Init加载完成
-[19:41:53.837] [Info] 背面日期码分类模型加载成功(GPU1)
-[19:41:53.838] [Info] Init加载
-[19:41:54.364] [Info] Init加载完成
-[19:41:54.364] [Info] 背面日期码OCR模型加载成功(GPU1)
-[19:41:54.364] [Info] 正在加载背面挂钩明显错位检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\背面\明显挂钩错位\best.onnx
-[19:41:54.528] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
-[19:41:54.528] [Info] [GPU] 动态模型检测: 采用配置尺寸 960x960, 授权用户 BatchSize=2
-[19:41:54.528] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
-[19:41:54.528] [Info] [GPU] 开始显存预热 (3 次, 张量=[2, 3, 960, 960])...
-[19:41:54.626] [Info] [GPU] 模型预热完毕，硬件已就绪！
+[13:51:57.728] [Info] 下端面缺陷检测模型加载成功(显卡1)
+[13:51:57.730] [Info] Init加载
+[13:51:58.080] [Info] Init加载完成
+[13:51:58.080] [Info] 背面日期码分割模型加载成功(GPU1)
+[13:51:58.082] [Info] Init加载
+[13:51:58.188] [Info] Init加载完成
+[13:51:58.188] [Info] 背面日期码分类模型加载成功(GPU1)
+[13:51:58.189] [Info] Init加载
+[13:51:58.718] [Info] Init加载完成
+[13:51:58.718] [Info] 背面日期码OCR模型加载成功(GPU1)
+[13:51:58.718] [Info] 正在加载背面挂钩明显错位检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\背面\明显挂钩错位\best.onnx
+[13:51:58.862] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
+[13:51:58.862] [Info] [GPU] 动态模型检测: 采用配置尺寸 960x960, 授权用户 BatchSize=2
+[13:51:58.862] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
+[13:51:58.862] [Info] [GPU] 开始显存预热 (3 次, 张量=[2, 3, 960, 960])...
+[13:51:59.006] [Info] [GPU] 模型预热完毕，硬件已就绪！
 
-[19:41:54.626] [Info] 背面挂钩明显错位检测模型加载成功(显卡0)
-[19:41:54.626] [Info] 正在加载背面挂钩轻微错位分割模型(显卡0): D:\上位机\bin\AI\Models\背面\轻微挂钩错位\best.onnx
-[19:41:54.930] [Info] 背面挂钩轻微错位分割模型加载成功(显卡0)
-[19:41:54.930] [Info] 正在加载侧面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\侧面\缺陷检测\best.onnx
-[19:41:55.088] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
-[19:41:55.088] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=2
-[19:41:55.088] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
-[19:41:55.088] [Info] [GPU] 开始显存预热 (3 次, 张量=[2, 3, 640, 640])...
-[19:41:55.143] [Info] [GPU] 模型预热完毕，硬件已就绪！
+[13:51:59.006] [Info] 背面挂钩明显错位检测模型加载成功(显卡0)
+[13:51:59.006] [Info] 正在加载背面挂钩轻微错位分割模型(显卡0): D:\上位机\bin\AI\Models\背面\轻微挂钩错位\best.onnx
+[13:51:59.270] [Info] 背面挂钩轻微错位分割模型加载成功(显卡0)
+[13:51:59.270] [Info] 正在加载侧面缺陷检测模型(Yolo, 显卡0): D:\上位机\bin\AI\Models\侧面\缺陷检测\best.onnx
+[13:51:59.334] [Info] [GPU] 模型加载成功: CUDA 硬件加速引擎启动
+[13:51:59.334] [Info] [GPU] 动态模型检测: 采用配置尺寸 640x640, 授权用户 BatchSize=2
+[13:51:59.334] [Info] [GPU] 架构路由识别: 标准YOLO (密集锚框模式)
+[13:51:59.334] [Info] [GPU] 开始显存预热 (3 次, 张量=[2, 3, 640, 640])...
+[13:51:59.413] [Info] [GPU] 模型预热完毕，硬件已就绪！
 
-[19:41:55.144] [Info] 侧面缺陷检测模型加载成功(显卡1)
-[19:41:55.144] [Info] ========== AI模型加载完成 (成功) ==========
-[19:41:55.540] [Info] ========== 系统启动 ==========
-[19:41:55.541] [Info] 正在初始化数据库...
-[19:41:55.603] [Info] SQLite数据库初始化完成
-[19:41:55.603] [Info] 正在加载检测参数...
-[19:41:55.603] [Info] 正在加载SKU数据...
-[19:41:55.603] [Info] 使用预加载的SKU数据，跳过重复加载
-[19:41:55.603] [Info] 正在初始化性能监控...
-[19:41:55.605] [Info] 正在初始化图像保存器...
-[19:41:55.607] [Info] 正在初始化硬件...
-[19:41:55.610] [Info] 正在连接运动控制卡: 192.168.0.11
-[19:41:55.620] [Info] 运动控制卡连接成功, IP=192.168.0.11
-[19:41:55.632] [Info] 轴初始化完成
-[19:41:55.638] [Info] 轴0参数已应用: 类型=65 速度=40 限位IN14/15/16
-[19:41:55.638] [Info] 轴0参数已从本地加载并应用
-[19:41:55.638] [Info] 运动控制卡初始化成功
-[19:41:55.638] [Info] [PLC] 连接成功 IP=192.168.1.101:502 耗时=0ms
-[19:41:55.638] [Info] PLC连接成功
-[19:41:55.638] [Info] 正在初始化相机SDK...
-[19:41:55.640] [Info] ========== 初始化相机（模拟模式: False） ==========
-[19:41:55.640] [Info] [Camera1] 正面左 开始初始化, SN=FC79423AAK00060
-[19:41:55.641] [Debug] [Camera1] DaHuaSDK实例已创建
-[19:41:55.641] [Debug] [Camera1] SetCameraInterface完成
-[19:41:55.642] [Debug] [Camera1] OnImage事件已订阅
-[19:41:55.955] [Debug] [Camera1] SetCameraByKey完成 SN=FC79423AAK00060
-[19:41:56.174] [Info] [ICamera] 相机打开: Name=, Key=FC79423AAK00060
-[19:41:56.209] [Info] [Camera1] 正面左 Open成功
-[19:41:56.353] [Debug] [Camera1] StopStreamGrabber完成
-[19:41:56.369] [Debug] [Camera1] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:56.381] [Debug] [Camera1] 曝光时间: 4500us
-[19:41:56.399] [Info] [Camera1] 正面左 StartStreamGrabber完成, 初始化成功
-[19:41:56.400] [Info] [Camera2] 正面右 开始初始化, SN=FC79423AAK00087
-[19:41:56.400] [Debug] [Camera2] DaHuaSDK实例已创建
-[19:41:56.400] [Debug] [Camera2] SetCameraInterface完成
-[19:41:56.400] [Debug] [Camera2] OnImage事件已订阅
-[19:41:56.613] [Debug] [Camera2] SetCameraByKey完成 SN=FC79423AAK00087
-[19:41:56.823] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=FC79423AAK00087
-[19:41:56.857] [Info] [Camera2] 正面右 Open成功
-[19:41:57.002] [Debug] [Camera2] StopStreamGrabber完成
-[19:41:57.015] [Debug] [Camera2] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:57.025] [Debug] [Camera2] 曝光时间: 4500us
-[19:41:57.043] [Info] [Camera2] 正面右 StartStreamGrabber完成, 初始化成功
-[19:41:57.043] [Info] [Camera3] 上端面 开始初始化, SN=FB12474AAK00017
-[19:41:57.043] [Debug] [Camera3] DaHuaSDK实例已创建
-[19:41:57.043] [Debug] [Camera3] SetCameraInterface完成
-[19:41:57.043] [Debug] [Camera3] OnImage事件已订阅
-[19:41:57.261] [Debug] [Camera3] SetCameraByKey完成 SN=FB12474AAK00017
-[19:41:57.545] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00017
-[19:41:57.573] [Info] [Camera3] 上端面 Open成功
-[19:41:57.726] [Debug] [Camera3] StopStreamGrabber完成
-[19:41:57.740] [Debug] [Camera3] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:57.751] [Debug] [Camera3] 曝光时间: 80us
-[19:41:57.773] [Info] [Camera3] 上端面 StartStreamGrabber完成, 初始化成功
-[19:41:57.773] [Info] [Camera4] 下端面 开始初始化, SN=FB12474AAK00006
-[19:41:57.773] [Debug] [Camera4] DaHuaSDK实例已创建
-[19:41:57.773] [Debug] [Camera4] SetCameraInterface完成
-[19:41:57.773] [Debug] [Camera4] OnImage事件已订阅
-[19:41:57.999] [Debug] [Camera4] SetCameraByKey完成 SN=FB12474AAK00006
-[19:41:58.283] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00006
-[19:41:58.310] [Info] [Camera4] 下端面 Open成功
-[19:41:58.465] [Debug] [Camera4] StopStreamGrabber完成
-[19:41:58.480] [Debug] [Camera4] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:58.490] [Debug] [Camera4] 曝光时间: 80us
-[19:41:58.511] [Info] [Camera4] 下端面 StartStreamGrabber完成, 初始化成功
-[19:41:58.511] [Info] [Camera5] 背面左 开始初始化, SN=EM57578AAK00046
-[19:41:58.511] [Debug] [Camera5] DaHuaSDK实例已创建
-[19:41:58.511] [Debug] [Camera5] SetCameraInterface完成
-[19:41:58.511] [Debug] [Camera5] OnImage事件已订阅
-[19:41:58.739] [Debug] [Camera5] SetCameraByKey完成 SN=EM57578AAK00046
-[19:41:59.014] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00046
-[19:41:59.048] [Info] [Camera5] 背面左 Open成功
-[19:41:59.188] [Debug] [Camera5] StopStreamGrabber完成
-[19:41:59.202] [Debug] [Camera5] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:59.211] [Debug] [Camera5] 曝光时间: 1500us
-[19:41:59.230] [Info] [Camera5] 背面左 StartStreamGrabber完成, 初始化成功
-[19:41:59.230] [Info] [Camera6] 背面右 开始初始化, SN=EM57578AAK00010
-[19:41:59.230] [Debug] [Camera6] DaHuaSDK实例已创建
-[19:41:59.230] [Debug] [Camera6] SetCameraInterface完成
-[19:41:59.230] [Debug] [Camera6] OnImage事件已订阅
-[19:41:59.446] [Debug] [Camera6] SetCameraByKey完成 SN=EM57578AAK00010
-[19:41:59.657] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00010
-[19:41:59.692] [Info] [Camera6] 背面右 Open成功
-[19:41:59.848] [Debug] [Camera6] StopStreamGrabber完成
-[19:41:59.862] [Debug] [Camera6] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:41:59.871] [Debug] [Camera6] 曝光时间: 1500us
-[19:41:59.890] [Info] [Camera6] 背面右 StartStreamGrabber完成, 初始化成功
-[19:41:59.890] [Info] [Camera7] 左侧面 开始初始化, SN=EK64117CAK00003
-[19:41:59.890] [Debug] [Camera7] DaHuaSDK实例已创建
-[19:41:59.890] [Debug] [Camera7] SetCameraInterface完成
-[19:41:59.890] [Debug] [Camera7] OnImage事件已订阅
-[19:42:00.109] [Debug] [Camera7] SetCameraByKey完成 SN=EK64117CAK00003
-[19:42:00.252] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00003
-[19:42:00.283] [Info] [Camera7] 左侧面 Open成功
-[19:42:00.326] [Debug] [Camera7] StopStreamGrabber完成
-[19:42:00.338] [Debug] [Camera7] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:42:00.346] [Debug] [Camera7] 曝光时间: 1000us
-[19:42:00.364] [Info] [Camera7] 左侧面 StartStreamGrabber完成, 初始化成功
-[19:42:00.364] [Info] [Camera8] 右侧面 开始初始化, SN=EK64117CAK00004
-[19:42:00.364] [Debug] [Camera8] DaHuaSDK实例已创建
-[19:42:00.364] [Debug] [Camera8] SetCameraInterface完成
-[19:42:00.364] [Debug] [Camera8] OnImage事件已订阅
-[19:42:00.586] [Debug] [Camera8] SetCameraByKey完成 SN=EK64117CAK00004
-[19:42:00.781] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00004
-[19:42:00.812] [Info] [Camera8] 右侧面 Open成功
-[19:42:00.867] [Debug] [Camera8] StopStreamGrabber完成
-[19:42:00.879] [Debug] [Camera8] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
-[19:42:00.887] [Debug] [Camera8] 曝光时间: 1000us
-[19:42:00.905] [Info] [Camera8] 右侧面 StartStreamGrabber完成, 初始化成功
-[19:42:00.905] [Info] ========== 相机初始化完成: 8/8 ==========
-[19:42:00.905] [Info] IN12边缘模式已应用: RisingLeftFallingRight, Cam7=RisingEdge, Cam8=FallingEdge
-[19:42:00.916] [Info] 相机触发管理器启动 
-[19:42:00.916] [Info] 触发管理器已启动
-[19:42:00.916] [Info] 心跳已启动 (每150ms)
-[19:42:00.916] [Info] 正在加载AI模型...
-[19:42:00.917] [Info] 使用预加载的AI模型，跳过重复加载
-[19:42:00.917] [Info] 信号监听线程启动
-[19:42:00.917] [Info] 工位开关: 正面=True, 背面=True, 端面=True, 侧面=True
-[19:42:00.917] [Info] 正在初始化工位处理器...
-[19:42:00.920] [Info] 恢复上次SKU: 61004945, P=12
-[19:42:00.921] [Info] FrontStationProcessor Started.
-[19:42:00.929] [Info] 端面工位处理器已启动
-[19:42:00.930] [Info] 背面工位已启动
-[19:42:00.931] [Info] 侧面工位配置: Axis=0 Pos=20~600 FwdSpd=400 RetSpd=600 Acc=1000/1000 限位IN14/15/16 EdgeMode=RisingLeftFallingRight Pulse=5ms
-[19:42:00.931] [Info] 侧面工位已启动
-[19:42:00.931] [Info] 正在初始化界面...
-[19:42:00.932] [Info] 初始化SKU搜索控件
-[19:42:00.937] [Debug] 更新SKU显示: 61004945
-[19:42:00.937] [Debug]   P=12, Z=1, MM=238
-[19:42:00.937] [Debug]   P号码(背卡P号)=P18371837
-[19:42:00.937] [Debug]   条形码=7509546659374
-[19:42:00.937] [Debug]   打码格式=MFG
-[19:42:00.937] [Info] 正在绑定统计控件...
-[19:42:00.937] [Info] 当前班次: 中班
-[19:42:00.939] [Info] 测试SKU: 181712303, P=8, Z=1, MM=32
-[19:42:01.068] [Info] 系统初始化完成
-[19:42:01.085] [Debug] [Camera1] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera1] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera2] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera2] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera3] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera3] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera4] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera4] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera5] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera5] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera6] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera6] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera7] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera7] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera8] 状态更新: 已连接
-[19:42:01.085] [Debug] [Camera8] 状态更新: 已连接
-[19:42:03.748] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:03.751] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:03.751] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:03.751] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:03.752] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:03.755] [Debug] 轴0移动到位置: 20
-[19:42:03.883] [Debug] 轴0移动到位置: 600
-[19:42:03.934] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:03.936] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:03.937] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:03.938] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:04.000] [Debug] [Back] 配对成功
-[19:42:04.014] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:04.017] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:04.018] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:04.018] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:04.018] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:04.018] [Debug] [Back] 步骤1: 推理...
-[19:42:04.018] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:04.023] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:04.122] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:04.163] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:04.205] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:04.240] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:04.247] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:04.297] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:04.360] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:04.421] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:04.464] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:04.475] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:04.511] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:04.560] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:04.611] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:04.656] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:04.656] [Debug] [Back] 条码: 12盒识别
-[19:42:04.809] [Info] 运行分割SDK耗时273
-[19:42:04.811] [Debug] [Back] C1分割: ret=0 rsp=1 286ms
-[19:42:04.812] [Debug] [Back] Mask: 8430x1216 nz=246282
-[19:42:04.823] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:04.835] [Debug] [Back] C1区域数: 12
-[19:42:04.849] [Info] 运行分类SDK耗时13
-[19:42:04.872] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:04.879] [Info] 运行分类SDK耗时6
-[19:42:04.879] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:04.879] [Debug] [Front] P号盒2: 识别=P81111181
-[19:42:04.906] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:04.909] [Info] 运行分类SDK耗时2
-[19:42:04.927] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:04.927] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:04.929] [Info] 运行分类SDK耗时2
-[19:42:04.955] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:04.959] [Info] 运行分类SDK耗时3
-[19:42:04.980] [Debug] [EndFace] Lower入队 ProductId=5, Upper=0/12, Lower=1/12
-[19:42:04.984] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:04.984] [Debug] [EndFace] Upper入队 ProductId=6, Upper=1/12, Lower=1/12
-[19:42:04.985] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:04.987] [Info] 运行分类SDK耗时2
-[19:42:05.012] [Debug] [EndFace] Lower入队 ProductId=7, Upper=1/12, Lower=2/12
-[19:42:05.016] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:05.018] [Debug] [EndFace] Upper入队 ProductId=8, Upper=2/12, Lower=2/12
-[19:42:05.020] [Info] 运行分类SDK耗时3
-[19:42:05.030] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:05.038] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:05.054] [Info] 运行分类SDK耗时15
-[19:42:05.064] [Debug] [EndFace] Upper入队 ProductId=9, Upper=3/12, Lower=2/12
-[19:42:05.066] [Debug] [EndFace] Lower入队 ProductId=10, Upper=3/12, Lower=3/12
-[19:42:05.071] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:05.075] [Info] 运行分类SDK耗时4
-[19:42:05.085] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:05.093] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:05.110] [Info] 运行分类SDK耗时16
-[19:42:05.112] [Debug] [EndFace] Lower入队 ProductId=11, Upper=3/12, Lower=4/12
-[19:42:05.115] [Debug] [EndFace] Upper入队 ProductId=12, Upper=4/12, Lower=4/12
-[19:42:05.125] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:05.128] [Info] 运行分类SDK耗时2
-[19:42:05.136] [Debug] [Front] P号盒7: 识别=P18325828
-[19:42:05.144] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:05.158] [Debug] [EndFace] Lower入队 ProductId=13, Upper=4/12, Lower=5/12
-[19:42:05.163] [Info] 运行分类SDK耗时19
-[19:42:05.164] [Debug] [EndFace] Upper入队 ProductId=14, Upper=5/12, Lower=5/12
-[19:42:05.179] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:05.180] [Debug] [Back] 日期码: 12盒识别
-[19:42:05.180] [Info] [Back] 步骤1完成: 推理=1162.3ms
-[19:42:05.180] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:05.180] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:05.180] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:05.183] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:05.208] [Debug] [EndFace] Lower入队 ProductId=15, Upper=5/12, Lower=6/12
-[19:42:05.210] [Debug] [EndFace] Upper入队 ProductId=16, Upper=6/12, Lower=6/12
-[19:42:05.224] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:05.259] [Debug] [EndFace] Lower入队 ProductId=17, Upper=6/12, Lower=7/12
-[19:42:05.263] [Debug] [EndFace] Upper入队 ProductId=18, Upper=7/12, Lower=7/12
-[19:42:05.307] [Debug] [EndFace] Lower入队 ProductId=19, Upper=7/12, Lower=8/12
-[19:42:05.311] [Debug] [EndFace] Upper入队 ProductId=20, Upper=8/12, Lower=8/12
-[19:42:05.361] [Debug] [EndFace] Lower入队 ProductId=21, Upper=8/12, Lower=9/12
-[19:42:05.364] [Debug] [EndFace] Upper入队 ProductId=22, Upper=9/12, Lower=9/12
-[19:42:05.387] [Info] [Back] 步骤3完成: 207.0ms 8430x3648
-[19:42:05.403] [Debug] [EndFace] Lower入队 ProductId=23, Upper=9/12, Lower=10/12
-[19:42:05.405] [Debug] [EndFace] Upper入队 ProductId=24, Upper=10/12, Lower=10/12
-[19:42:05.448] [Info] [Front] 步骤1完成: 推理=1430.0ms P号=10 破损=1
-[19:42:05.448] [Info] [Front]   盒1: OK
-[19:42:05.448] [Info] [Front]   盒2: OK
-[19:42:05.448] [Info] [Front]   盒3: OK
-[19:42:05.448] [Info] [Front]   盒4: OK
-[19:42:05.448] [Info] [Front]   盒5: OK
-[19:42:05.448] [Info] [Front]   盒6: OK
-[19:42:05.448] [Info] [Front]   盒7: OK
-[19:42:05.448] [Info] [Front]   盒8: OK
-[19:42:05.448] [Info] [Front]   盒9: 盒子破损
-[19:42:05.448] [Info] [Front]   盒10: OK
-[19:42:05.448] [Info] [Front]   盒11: OK
-[19:42:05.448] [Info] [Front]   盒12: OK
-[19:42:05.449] [Debug] [EndFace] Upper入队 ProductId=25, Upper=11/12, Lower=10/12
-[19:42:05.454] [Debug] [EndFace] Lower入队 ProductId=26, Upper=11/12, Lower=11/12
-[19:42:05.498] [Debug] [EndFace] Lower入队 ProductId=27, Upper=11/12, Lower=12/12
-[19:42:05.501] [Debug] [EndFace] Upper入队 ProductId=28, Upper=12/12, Lower=12/12
-[19:42:05.501] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:05.666] [Info] [Front] 处理完成 总耗时=1651.89ms P=12 OK=11 NG=1
-[19:42:05.713] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:05.731] [Debug] 轴0移动到位置: 20
-[19:42:05.782] [Info] [Back] 步骤4完成: 保存=395.3ms
-[19:42:05.783] [Info] [Back] ====== 完成: 总=1765.6ms 结果=NG ======
-[19:42:05.783] [Info] [Back] 完成 总耗时=1783.3ms
-[19:42:06.085] [Info] [EndFace] 批处理完成 ProductId=6 总耗时=576.13ms Crop=46.28ms Infer=329.27ms Draw=197.34ms Save=1.19ms 结果=OK
-[19:42:06.329] [Info] [Side] 完成 P=12 结果=NG
-[19:42:08.793] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:08.797] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:08.797] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:08.797] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:08.797] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:08.798] [Debug] 轴0移动到位置: 20
-[19:42:08.903] [Debug] 轴0移动到位置: 600
-[19:42:08.950] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:08.953] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:08.954] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:08.954] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:09.016] [Debug] [Back] 配对成功
-[19:42:09.020] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:09.020] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:09.020] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:09.022] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:09.022] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:09.022] [Debug] [Back] 步骤1: 推理...
-[19:42:09.022] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:09.078] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:09.128] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:09.169] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:09.210] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:09.255] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:09.289] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:09.324] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:09.329] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:09.360] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:09.392] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:09.429] [Info] 运行分割SDK耗时45
-[19:42:09.431] [Debug] [Back] C1分割: ret=0 rsp=1 58ms
-[19:42:09.432] [Debug] [Back] Mask: 8430x1216 nz=242976
-[19:42:09.454] [Debug] [Back] C1区域数: 12
-[19:42:09.460] [Info] 运行分类SDK耗时6
-[19:42:09.478] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:09.481] [Info] 运行分类SDK耗时2
-[19:42:09.508] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:09.514] [Info] 运行分类SDK耗时6
-[19:42:09.515] [Debug] [Front] P号盒12: 识别=P18325620
-[19:42:09.529] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:09.531] [Info] 运行分类SDK耗时2
-[19:42:09.546] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:09.548] [Info] 运行分类SDK耗时2
-[19:42:09.563] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:09.565] [Info] 运行分类SDK耗时2
-[19:42:09.577] [Info] [Front] 步骤1完成: 推理=555.4ms P号=9 破损=2
-[19:42:09.577] [Info] [Front]   盒1: OK
-[19:42:09.577] [Info] [Front]   盒2: OK
-[19:42:09.577] [Info] [Front]   盒3: 盒子破损
-[19:42:09.577] [Info] [Front]   盒4: OK
-[19:42:09.577] [Info] [Front]   盒5: OK
-[19:42:09.577] [Info] [Front]   盒6: OK
-[19:42:09.577] [Info] [Front]   盒7: OK
-[19:42:09.577] [Info] [Front]   盒8: OK
-[19:42:09.577] [Info] [Front]   盒9: 盒子破损
-[19:42:09.577] [Info] [Front]   盒10: OK
-[19:42:09.577] [Info] [Front]   盒11: OK
-[19:42:09.577] [Info] [Front]   盒12: OK
-[19:42:09.580] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:09.582] [Info] 运行分类SDK耗时2
-[19:42:09.599] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:09.602] [Info] 运行分类SDK耗时2
-[19:42:09.616] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:09.618] [Info] 运行分类SDK耗时2
-[19:42:09.632] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:09.634] [Info] 运行分类SDK耗时2
-[19:42:09.648] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:09.650] [Info] 运行分类SDK耗时2
-[19:42:09.664] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:09.666] [Info] 运行分类SDK耗时2
-[19:42:09.680] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:09.680] [Debug] [Back] 日期码: 12盒识别
-[19:42:09.680] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:09.719] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:09.760] [Info] [Front] 处理完成 总耗时=740.29ms P=12 OK=10 NG=2
-[19:42:09.762] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:09.802] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:09.844] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:09.889] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:09.935] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:09.968] [Debug] [EndFace] Lower入队 ProductId=33, Upper=0/12, Lower=1/12
-[19:42:09.973] [Debug] [EndFace] Upper入队 ProductId=34, Upper=1/12, Lower=1/12
-[19:42:09.980] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:10.022] [Debug] [EndFace] Lower入队 ProductId=35, Upper=1/12, Lower=2/12
-[19:42:10.040] [Debug] [EndFace] Upper入队 ProductId=36, Upper=2/12, Lower=2/12
-[19:42:10.055] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:10.064] [Debug] [EndFace] Lower入队 ProductId=37, Upper=2/12, Lower=3/12
-[19:42:10.067] [Debug] [EndFace] Upper入队 ProductId=38, Upper=3/12, Lower=3/12
-[19:42:10.105] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:10.121] [Debug] [EndFace] Lower入队 ProductId=39, Upper=3/12, Lower=4/12
-[19:42:10.124] [Debug] [EndFace] Upper入队 ProductId=40, Upper=4/12, Lower=4/12
-[19:42:10.151] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:10.165] [Debug] [EndFace] Upper入队 ProductId=41, Upper=5/12, Lower=4/12
-[19:42:10.170] [Debug] [EndFace] Lower入队 ProductId=42, Upper=5/12, Lower=5/12
-[19:42:10.207] [Debug] [EndFace] Lower入队 ProductId=43, Upper=5/12, Lower=6/12
-[19:42:10.211] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:10.214] [Debug] [EndFace] Upper入队 ProductId=44, Upper=6/12, Lower=6/12
-[19:42:10.256] [Debug] [EndFace] Upper入队 ProductId=45, Upper=7/12, Lower=6/12
-[19:42:10.260] [Debug] [EndFace] Lower入队 ProductId=46, Upper=7/12, Lower=7/12
-[19:42:10.264] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:10.264] [Debug] [Back] 条码: 12盒识别
-[19:42:10.264] [Info] [Back] 步骤1完成: 推理=1242.5ms
-[19:42:10.264] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:10.264] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:10.264] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:10.308] [Debug] [EndFace] Lower入队 ProductId=47, Upper=7/12, Lower=8/12
-[19:42:10.311] [Debug] [EndFace] Upper入队 ProductId=48, Upper=8/12, Lower=8/12
-[19:42:10.356] [Debug] [EndFace] Lower入队 ProductId=49, Upper=8/12, Lower=9/12
-[19:42:10.359] [Debug] [EndFace] Upper入队 ProductId=50, Upper=9/12, Lower=9/12
-[19:42:10.403] [Debug] [EndFace] Lower入队 ProductId=51, Upper=9/12, Lower=10/12
-[19:42:10.407] [Debug] [EndFace] Upper入队 ProductId=52, Upper=10/12, Lower=10/12
-[19:42:10.423] [Info] [Back] 步骤3完成: 159.0ms 8430x3648
-[19:42:10.453] [Debug] [EndFace] Lower入队 ProductId=53, Upper=10/12, Lower=11/12
-[19:42:10.456] [Debug] [EndFace] Upper入队 ProductId=54, Upper=11/12, Lower=11/12
-[19:42:10.507] [Debug] [EndFace] Lower入队 ProductId=55, Upper=11/12, Lower=12/12
-[19:42:10.509] [Debug] [EndFace] Upper入队 ProductId=56, Upper=12/12, Lower=12/12
-[19:42:10.509] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:10.767] [Info] [Back] 步骤4完成: 保存=343.8ms
-[19:42:10.767] [Info] [Back] ====== 完成: 总=1747.6ms 结果=NG ======
-[19:42:10.767] [Info] [Back] 完成 总耗时=1751.5ms
-[19:42:10.779] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:10.802] [Debug] 轴0移动到位置: 20
-[19:42:11.005] [Info] [EndFace] 批处理完成 ProductId=34 总耗时=494.17ms Crop=35.46ms Infer=341.97ms Draw=115.22ms Save=0.26ms 结果=OK
-[19:42:11.392] [Info] [Side] 完成 P=12 结果=NG
-[19:42:13.772] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:13.775] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:13.775] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:13.775] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:13.775] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:13.777] [Debug] 轴0移动到位置: 20
-[19:42:13.852] [Debug] 轴0移动到位置: 600
-[19:42:13.914] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:13.918] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:13.918] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:13.919] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:13.969] [Debug] [Back] 配对成功
-[19:42:13.982] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:13.982] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:13.982] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:13.982] [Debug] [Back] 步骤1: 推理...
-[19:42:13.995] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:13.995] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:13.995] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:14.182] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:14.414] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:14.487] [Info] 运行分割SDK耗时29
-[19:42:14.489] [Debug] [Back] C1分割: ret=0 rsp=1 40ms
-[19:42:14.489] [Debug] [Back] Mask: 8430x1216 nz=246843
-[19:42:14.508] [Debug] [Back] C1区域数: 12
-[19:42:14.511] [Info] 运行分类SDK耗时2
-[19:42:14.527] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:14.529] [Info] 运行分类SDK耗时2
-[19:42:14.546] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:14.548] [Info] 运行分类SDK耗时2
-[19:42:14.565] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:14.567] [Info] 运行分类SDK耗时2
-[19:42:14.587] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:14.589] [Info] 运行分类SDK耗时2
-[19:42:14.605] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:14.607] [Info] 运行分类SDK耗时2
-[19:42:14.623] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:14.625] [Info] 运行分类SDK耗时2
-[19:42:14.641] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:14.643] [Info] 运行分类SDK耗时2
-[19:42:14.659] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:14.662] [Info] 运行分类SDK耗时2
-[19:42:14.678] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:14.681] [Info] 运行分类SDK耗时2
-[19:42:14.699] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:14.701] [Info] 运行分类SDK耗时2
-[19:42:14.718] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:14.720] [Info] 运行分类SDK耗时2
-[19:42:14.738] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:14.738] [Debug] [Back] 日期码: 12盒识别
-[19:42:14.738] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:14.783] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:14.824] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:14.878] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:14.920] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:14.966] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:14.970] [Debug] [EndFace] Lower入队 ProductId=61, Upper=0/12, Lower=1/12
-[19:42:14.973] [Debug] [EndFace] Upper入队 ProductId=62, Upper=1/12, Lower=1/12
-[19:42:15.014] [Debug] [EndFace] Lower入队 ProductId=63, Upper=1/12, Lower=2/12
-[19:42:15.015] [Debug] [EndFace] Upper入队 ProductId=64, Upper=2/12, Lower=2/12
-[19:42:15.022] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:15.066] [Debug] [EndFace] Lower入队 ProductId=65, Upper=2/12, Lower=3/12
-[19:42:15.068] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:15.073] [Debug] [EndFace] Upper入队 ProductId=66, Upper=3/12, Lower=3/12
-[19:42:15.111] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:15.121] [Debug] [EndFace] Lower入队 ProductId=67, Upper=3/12, Lower=4/12
-[19:42:15.123] [Debug] [EndFace] Upper入队 ProductId=68, Upper=4/12, Lower=4/12
-[19:42:15.158] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:15.169] [Debug] [EndFace] Lower入队 ProductId=69, Upper=4/12, Lower=5/12
-[19:42:15.170] [Debug] [EndFace] Upper入队 ProductId=70, Upper=5/12, Lower=5/12
-[19:42:15.215] [Debug] [EndFace] Lower入队 ProductId=71, Upper=5/12, Lower=6/12
-[19:42:15.217] [Debug] [EndFace] Upper入队 ProductId=72, Upper=6/12, Lower=6/12
-[19:42:15.220] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:15.262] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:15.272] [Debug] [EndFace] Upper入队 ProductId=73, Upper=7/12, Lower=6/12
-[19:42:15.279] [Debug] [EndFace] Lower入队 ProductId=74, Upper=7/12, Lower=7/12
-[19:42:15.310] [Debug] [EndFace] Lower入队 ProductId=75, Upper=7/12, Lower=8/12
-[19:42:15.312] [Debug] [EndFace] Upper入队 ProductId=76, Upper=8/12, Lower=8/12
-[19:42:15.322] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:15.322] [Debug] [Back] 条码: 12盒识别
-[19:42:15.322] [Info] [Back] 步骤1完成: 推理=1339.7ms
-[19:42:15.322] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:15.322] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:15.322] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:15.355] [Debug] [EndFace] Lower入队 ProductId=77, Upper=8/12, Lower=9/12
-[19:42:15.368] [Debug] [EndFace] Upper入队 ProductId=78, Upper=9/12, Lower=9/12
-[19:42:15.403] [Debug] [EndFace] Upper入队 ProductId=79, Upper=10/12, Lower=9/12
-[19:42:15.406] [Debug] [EndFace] Lower入队 ProductId=80, Upper=10/12, Lower=10/12
-[19:42:15.455] [Debug] [EndFace] Upper入队 ProductId=81, Upper=11/12, Lower=10/12
-[19:42:15.458] [Debug] [EndFace] Lower入队 ProductId=82, Upper=11/12, Lower=11/12
-[19:42:15.483] [Info] [Back] 步骤3完成: 161.2ms 8430x3648
-[19:42:15.502] [Debug] [EndFace] Lower入队 ProductId=83, Upper=11/12, Lower=12/12
-[19:42:15.505] [Debug] [EndFace] Upper入队 ProductId=84, Upper=12/12, Lower=12/12
-[19:42:15.505] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:15.703] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:15.707] [Debug] 轴0移动到位置: 20
-[19:42:15.833] [Info] [Back] 步骤4完成: 保存=349.3ms
-[19:42:15.833] [Info] [Back] ====== 完成: 总=1850.3ms 结果=NG ======
-[19:42:15.833] [Info] [Back] 完成 总耗时=1863.1ms
-[19:42:15.873] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:15.905] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:15.932] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:15.937] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
-[19:42:15.937] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
-[19:42:15.937] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
-[19:42:15.937] [Info] │ IN4  │       12 │ Cam1 │        0 │        3 │
-[19:42:15.937] [Info] │ IN4  │       12 │ Cam2 │        0 │        3 │
-[19:42:15.937] [Info] │ IN10 │       68 │ Cam3 │        0 │       36 │
-[19:42:15.937] [Info] │ IN10 │       68 │ Cam4 │        0 │       36 │
-[19:42:15.937] [Info] │ IN4  │       12 │ Cam5 │        0 │        3 │
-[19:42:15.937] [Info] │ IN4  │       12 │ Cam6 │        0 │        3 │
-[19:42:15.937] [Info] │ IN13 │        6 │ Cam7 │        0 │        0 │
-[19:42:15.937] [Info] │ IN13 │        6 │ Cam8 │        0 │        0 │
-[19:42:15.937] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
-[19:42:15.937] [Info] [触发统计] 总脉冲=0  扫描次数=36342
-[19:42:15.965] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:15.999] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:16.025] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:16.051] [Debug] [Front] P号盒7: 识别=P18325820
-[19:42:16.077] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:16.103] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:16.175] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:16.201] [Debug] [Front] P号盒12: 识别=P8825828
-[19:42:16.258] [Info] [Front] 步骤1完成: 推理=2262.5ms P号=11 破损=3
-[19:42:16.258] [Info] [Front]   盒1: OK
-[19:42:16.258] [Info] [Front]   盒2: OK
-[19:42:16.258] [Info] [Front]   盒3: OK
-[19:42:16.258] [Info] [Front]   盒4: OK
-[19:42:16.258] [Info] [Front]   盒5: OK
-[19:42:16.258] [Info] [Front]   盒6: 盒子破损
-[19:42:16.258] [Info] [Front]   盒7: 盒子破损
-[19:42:16.258] [Info] [Front]   盒8: OK
-[19:42:16.258] [Info] [Front]   盒9: 盒子破损
-[19:42:16.258] [Info] [Front]   盒10: OK
-[19:42:16.258] [Info] [Front]   盒11: OK
-[19:42:16.258] [Info] [Front]   盒12: OK
-[19:42:16.288] [Info] [Side] 完成 P=12 结果=NG
-[19:42:16.456] [Info] [Front] 处理完成 总耗时=2461.08ms P=12 OK=9 NG=3
-[19:42:16.677] [Info] [EndFace] 批处理完成 ProductId=62 总耗时=1170.34ms Crop=44.27ms Infer=912.06ms Draw=212.55ms Save=0.24ms 结果=OK
-[19:42:18.784] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:18.787] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:18.787] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:18.787] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:18.787] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:18.788] [Debug] 轴0移动到位置: 20
-[19:42:18.862] [Debug] 轴0移动到位置: 600
-[19:42:18.922] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:18.924] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:18.929] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:18.929] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:18.968] [Debug] [Back] 配对成功
-[19:42:18.978] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:18.978] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:18.978] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:18.978] [Debug] [Back] 步骤1: 推理...
-[19:42:18.978] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:18.988] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:18.988] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:18.988] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:19.038] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:19.082] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:19.124] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:19.158] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:19.167] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:19.214] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:19.273] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:19.315] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:19.358] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:19.405] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:19.414] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:19.459] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:19.481] [Info] 运行分割SDK耗时30
-[19:42:19.483] [Debug] [Back] C1分割: ret=0 rsp=1 41ms
-[19:42:19.484] [Debug] [Back] Mask: 8430x1216 nz=246606
-[19:42:19.504] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:19.504] [Debug] [Back] C1区域数: 12
-[19:42:19.508] [Info] 运行分类SDK耗时3
-[19:42:19.525] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:19.528] [Info] 运行分类SDK耗时2
-[19:42:19.544] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:19.547] [Info] 运行分类SDK耗时2
-[19:42:19.554] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:19.554] [Debug] [Back] 条码: 12盒识别
-[19:42:19.583] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:19.586] [Info] 运行分类SDK耗时2
-[19:42:19.599] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:19.602] [Debug] 轴0移动到位置: 20
-[19:42:19.607] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:19.607] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:19.609] [Info] 运行分类SDK耗时2
-[19:42:19.646] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:19.652] [Info] 运行分类SDK耗时6
-[19:42:19.673] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:19.673] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:19.675] [Info] 运行分类SDK耗时2
-[19:42:19.712] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:19.720] [Info] 运行分类SDK耗时7
-[19:42:19.734] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:19.759] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:19.762] [Info] 运行分类SDK耗时3
-[19:42:19.784] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:19.784] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:19.786] [Info] 运行分类SDK耗时2
-[19:42:19.815] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:19.822] [Info] 运行分类SDK耗时7
-[19:42:19.833] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:19.854] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:19.857] [Info] 运行分类SDK耗时2
-[19:42:19.875] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:19.875] [Debug] [Back] 日期码: 12盒识别
-[19:42:19.875] [Info] [Back] 步骤1完成: 推理=897.0ms
-[19:42:19.875] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:19.875] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:19.875] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:19.875] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:19.904] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:19.933] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:19.967] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:19.968] [Debug] [EndFace] Lower入队 ProductId=89, Upper=0/12, Lower=1/12
-[19:42:19.976] [Debug] [EndFace] Upper入队 ProductId=90, Upper=1/12, Lower=1/12
-[19:42:20.018] [Debug] [EndFace] Lower入队 ProductId=91, Upper=1/12, Lower=2/12
-[19:42:20.022] [Debug] [EndFace] Upper入队 ProductId=92, Upper=2/12, Lower=2/12
-[19:42:20.060] [Debug] [EndFace] Lower入队 ProductId=93, Upper=2/12, Lower=3/12
-[19:42:20.064] [Debug] [EndFace] Upper入队 ProductId=94, Upper=3/12, Lower=3/12
-[19:42:20.067] [Info] [Back] 步骤3完成: 191.7ms 8430x3648
-[19:42:20.118] [Debug] [EndFace] Lower入队 ProductId=95, Upper=3/12, Lower=4/12
-[19:42:20.120] [Debug] [EndFace] Upper入队 ProductId=96, Upper=4/12, Lower=4/12
-[19:42:20.130] [Info] [Front] 步骤1完成: 推理=1142.1ms P号=9 破损=1
-[19:42:20.131] [Info] [Front]   盒1: OK
-[19:42:20.131] [Info] [Front]   盒2: OK
-[19:42:20.131] [Info] [Front]   盒3: OK
-[19:42:20.131] [Info] [Front]   盒4: OK
-[19:42:20.131] [Info] [Front]   盒5: OK
-[19:42:20.131] [Info] [Front]   盒6: OK
-[19:42:20.131] [Info] [Front]   盒7: OK
-[19:42:20.131] [Info] [Front]   盒8: OK
-[19:42:20.131] [Info] [Front]   盒9: 盒子破损
-[19:42:20.131] [Info] [Front]   盒10: OK
-[19:42:20.131] [Info] [Front]   盒11: OK
-[19:42:20.131] [Info] [Front]   盒12: OK
-[19:42:20.165] [Debug] [EndFace] Lower入队 ProductId=97, Upper=4/12, Lower=5/12
-[19:42:20.169] [Debug] [EndFace] Upper入队 ProductId=98, Upper=5/12, Lower=5/12
-[19:42:20.171] [Info] [Side] 完成 P=12 结果=NG
-[19:42:20.208] [Debug] [EndFace] Lower入队 ProductId=99, Upper=5/12, Lower=6/12
-[19:42:20.212] [Debug] [EndFace] Upper入队 ProductId=100, Upper=6/12, Lower=6/12
-[19:42:20.256] [Debug] [EndFace] Lower入队 ProductId=101, Upper=6/12, Lower=7/12
-[19:42:20.261] [Debug] [EndFace] Upper入队 ProductId=102, Upper=7/12, Lower=7/12
-[19:42:20.303] [Debug] [EndFace] Lower入队 ProductId=103, Upper=7/12, Lower=8/12
-[19:42:20.307] [Debug] [EndFace] Upper入队 ProductId=104, Upper=8/12, Lower=8/12
-[19:42:20.320] [Info] [Front] 处理完成 总耗时=1332.20ms P=12 OK=11 NG=1
-[19:42:20.351] [Debug] [EndFace] Lower入队 ProductId=105, Upper=8/12, Lower=9/12
-[19:42:20.354] [Debug] [EndFace] Upper入队 ProductId=106, Upper=9/12, Lower=9/12
-[19:42:20.405] [Debug] [EndFace] Lower入队 ProductId=107, Upper=9/12, Lower=10/12
-[19:42:20.409] [Debug] [EndFace] Upper入队 ProductId=108, Upper=10/12, Lower=10/12
-[19:42:20.448] [Debug] [EndFace] Lower入队 ProductId=109, Upper=10/12, Lower=11/12
-[19:42:20.452] [Info] [Back] 步骤4完成: 保存=385.5ms
-[19:42:20.452] [Info] [Back] ====== 完成: 总=1474.3ms 结果=NG ======
-[19:42:20.452] [Info] [Back] 完成 总耗时=1484.5ms
-[19:42:20.452] [Debug] [EndFace] Upper入队 ProductId=110, Upper=11/12, Lower=11/12
-[19:42:20.498] [Debug] [EndFace] Lower入队 ProductId=111, Upper=11/12, Lower=12/12
-[19:42:20.502] [Debug] [EndFace] Upper入队 ProductId=112, Upper=12/12, Lower=12/12
-[19:42:20.502] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:20.808] [Info] [EndFace] 批处理完成 ProductId=90 总耗时=304.89ms Crop=33.53ms Infer=152.80ms Draw=116.93ms Save=0.27ms 结果=OK
-[19:42:23.745] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:23.747] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:23.747] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:23.747] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:23.747] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:23.749] [Debug] 轴0移动到位置: 20
-[19:42:23.921] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:23.927] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:23.929] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:23.929] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:23.965] [Debug] [Back] 配对成功
-[19:42:23.979] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:23.979] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:23.979] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:23.979] [Debug] [Back] 步骤1: 推理...
-[19:42:23.979] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:23.991] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:23.991] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:23.991] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:24.030] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:24.033] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:24.078] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:24.128] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:24.181] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:24.252] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:24.262] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:24.300] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:24.343] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:24.344] [Info] 运行分割SDK耗时31
-[19:42:24.346] [Debug] [Back] C1分割: ret=0 rsp=1 43ms
-[19:42:24.347] [Debug] [Back] Mask: 8430x1216 nz=243988
-[19:42:24.367] [Debug] [Back] C1区域数: 12
-[19:42:24.370] [Info] 运行分类SDK耗时2
-[19:42:24.376] [Debug] 轴0移动到位置: 600
-[19:42:24.383] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:24.386] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:24.388] [Info] 运行分类SDK耗时2
-[19:42:24.405] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:24.407] [Info] 运行分类SDK耗时2
-[19:42:24.424] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:24.426] [Info] 运行分类SDK耗时2
-[19:42:24.442] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:24.444] [Info] 运行分类SDK耗时2
-[19:42:24.445] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:24.460] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:24.462] [Info] 运行分类SDK耗时2
-[19:42:24.480] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:24.482] [Info] 运行分类SDK耗时2
-[19:42:24.491] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:24.499] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:24.501] [Info] 运行分类SDK耗时2
-[19:42:24.518] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:24.520] [Info] 运行分类SDK耗时2
-[19:42:24.536] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:24.540] [Info] 运行分类SDK耗时2
-[19:42:24.548] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:24.558] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:24.561] [Info] 运行分类SDK耗时2
-[19:42:24.576] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:24.579] [Info] 运行分类SDK耗时2
-[19:42:24.593] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:24.593] [Debug] [Back] 日期码: 12盒识别
-[19:42:24.594] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:24.594] [Debug] [Back] 条码: 12盒识别
-[19:42:24.595] [Info] [Back] 步骤1完成: 推理=615.5ms
-[19:42:24.595] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:24.595] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:24.595] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:24.670] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:24.708] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:24.748] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:24.764] [Info] [Back] 步骤3完成: 169.4ms 8430x3648
-[19:42:24.776] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:24.806] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:24.861] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:24.896] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:24.950] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:24.965] [Debug] [EndFace] Lower入队 ProductId=117, Upper=0/12, Lower=1/12
-[19:42:24.967] [Debug] [EndFace] Upper入队 ProductId=118, Upper=1/12, Lower=1/12
-[19:42:24.977] [Debug] [Front] P号盒12: 识别=P18325620
-[19:42:25.012] [Debug] [EndFace] Lower入队 ProductId=119, Upper=1/12, Lower=2/12
-[19:42:25.016] [Debug] [EndFace] Upper入队 ProductId=120, Upper=2/12, Lower=2/12
-[19:42:25.042] [Info] [Front] 步骤1完成: 推理=1051.0ms P号=9 破损=2
-[19:42:25.042] [Info] [Front]   盒1: OK
-[19:42:25.042] [Info] [Front]   盒2: OK
-[19:42:25.042] [Info] [Front]   盒3: OK
-[19:42:25.042] [Info] [Front]   盒4: OK
-[19:42:25.042] [Info] [Front]   盒5: OK
-[19:42:25.042] [Info] [Front]   盒6: 盒子破损
-[19:42:25.042] [Info] [Front]   盒7: OK
-[19:42:25.042] [Info] [Front]   盒8: OK
-[19:42:25.042] [Info] [Front]   盒9: 盒子破损
-[19:42:25.042] [Info] [Front]   盒10: OK
-[19:42:25.042] [Info] [Front]   盒11: OK
-[19:42:25.042] [Info] [Front]   盒12: OK
-[19:42:25.063] [Debug] [EndFace] Lower入队 ProductId=121, Upper=2/12, Lower=3/12
-[19:42:25.068] [Debug] [EndFace] Upper入队 ProductId=122, Upper=3/12, Lower=3/12
-[19:42:25.118] [Debug] [EndFace] Lower入队 ProductId=123, Upper=3/12, Lower=4/12
-[19:42:25.121] [Debug] [EndFace] Upper入队 ProductId=124, Upper=4/12, Lower=4/12
-[19:42:25.121] [Info] [Back] 步骤4完成: 保存=357.1ms
-[19:42:25.122] [Info] [Back] ====== 完成: 总=1156.8ms 结果=NG ======
-[19:42:25.123] [Info] [Back] 完成 总耗时=1156.9ms
-[19:42:25.165] [Debug] [EndFace] Lower入队 ProductId=125, Upper=4/12, Lower=5/12
-[19:42:25.170] [Debug] [EndFace] Upper入队 ProductId=126, Upper=5/12, Lower=5/12
-[19:42:25.207] [Debug] [EndFace] Lower入队 ProductId=127, Upper=5/12, Lower=6/12
-[19:42:25.214] [Debug] [EndFace] Upper入队 ProductId=128, Upper=6/12, Lower=6/12
-[19:42:25.260] [Debug] [EndFace] Lower入队 ProductId=129, Upper=6/12, Lower=7/12
-[19:42:25.263] [Debug] [EndFace] Upper入队 ProductId=130, Upper=7/12, Lower=7/12
-[19:42:25.298] [Info] [Front] 处理完成 总耗时=1308.00ms P=12 OK=10 NG=2
-[19:42:25.305] [Debug] [EndFace] Lower入队 ProductId=131, Upper=7/12, Lower=8/12
-[19:42:25.308] [Debug] [EndFace] Upper入队 ProductId=132, Upper=8/12, Lower=8/12
-[19:42:25.353] [Debug] [EndFace] Lower入队 ProductId=133, Upper=8/12, Lower=9/12
-[19:42:25.356] [Debug] [EndFace] Upper入队 ProductId=134, Upper=9/12, Lower=9/12
-[19:42:25.409] [Debug] [EndFace] Lower入队 ProductId=135, Upper=9/12, Lower=10/12
-[19:42:25.412] [Debug] [EndFace] Upper入队 ProductId=136, Upper=10/12, Lower=10/12
-[19:42:25.459] [Debug] [EndFace] Upper入队 ProductId=137, Upper=11/12, Lower=10/12
-[19:42:25.461] [Debug] [EndFace] Lower入队 ProductId=138, Upper=11/12, Lower=11/12
-[19:42:25.497] [Debug] [EndFace] Lower入队 ProductId=139, Upper=11/12, Lower=12/12
-[19:42:25.499] [Debug] [EndFace] Upper入队 ProductId=140, Upper=12/12, Lower=12/12
-[19:42:25.499] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:25.843] [Info] [EndFace] 批处理完成 ProductId=118 总耗时=341.95ms Crop=31.34ms Infer=195.92ms Draw=113.26ms Save=0.24ms 结果=OK
-[19:42:26.250] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:26.253] [Debug] 轴0移动到位置: 20
-[19:42:26.835] [Info] [Side] 完成 P=12 结果=NG
-[19:42:28.119] [Info] [Side] IN13↑ 轴不在起点(cur=20.6, target=20.0)，预归位
-[19:42:28.121] [Debug] 轴0移动到位置: 20
-[19:42:28.768] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:28.772] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:28.772] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:28.772] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:28.772] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:28.774] [Debug] 轴0移动到位置: 20
-[19:42:28.829] [Info] [Side] 预归位完成 pos=20.0
-[19:42:28.875] [Debug] 轴0移动到位置: 600
-[19:42:28.916] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:28.919] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:28.927] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:28.927] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:28.959] [Debug] [Back] 配对成功
-[19:42:28.972] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:28.972] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:28.972] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:28.972] [Debug] [Back] 步骤1: 推理...
-[19:42:28.985] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:28.985] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:28.985] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:29.173] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:29.400] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:29.471] [Info] 运行分割SDK耗时29
-[19:42:29.473] [Debug] [Back] C1分割: ret=0 rsp=1 39ms
-[19:42:29.473] [Debug] [Back] Mask: 8430x1216 nz=243688
-[19:42:29.490] [Debug] [Back] C1区域数: 12
-[19:42:29.493] [Info] 运行分类SDK耗时2
-[19:42:29.509] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:29.511] [Info] 运行分类SDK耗时2
-[19:42:29.527] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:29.529] [Info] 运行分类SDK耗时2
-[19:42:29.547] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:29.549] [Info] 运行分类SDK耗时2
-[19:42:29.566] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:29.568] [Info] 运行分类SDK耗时2
-[19:42:29.585] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:29.587] [Info] 运行分类SDK耗时2
-[19:42:29.602] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:29.604] [Info] 运行分类SDK耗时2
-[19:42:29.620] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:29.623] [Info] 运行分类SDK耗时2
-[19:42:29.639] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:29.641] [Info] 运行分类SDK耗时2
-[19:42:29.658] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:29.660] [Info] 运行分类SDK耗时2
-[19:42:29.676] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:29.678] [Info] 运行分类SDK耗时2
-[19:42:29.694] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:29.696] [Info] 运行分类SDK耗时1
-[19:42:29.712] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:29.712] [Debug] [Back] 日期码: 12盒识别
-[19:42:29.712] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:29.762] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:29.806] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:29.849] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:29.893] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:29.940] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:29.968] [Debug] [EndFace] Lower入队 ProductId=145, Upper=0/12, Lower=1/12
-[19:42:29.972] [Debug] [EndFace] Upper入队 ProductId=146, Upper=1/12, Lower=1/12
-[19:42:30.014] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:30.019] [Debug] [EndFace] Upper入队 ProductId=147, Upper=2/12, Lower=1/12
-[19:42:30.022] [Debug] [EndFace] Lower入队 ProductId=148, Upper=2/12, Lower=2/12
-[19:42:30.063] [Debug] [EndFace] Upper入队 ProductId=149, Upper=3/12, Lower=2/12
-[19:42:30.068] [Debug] [EndFace] Lower入队 ProductId=150, Upper=3/12, Lower=3/12
-[19:42:30.074] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:30.110] [Debug] [EndFace] Lower入队 ProductId=151, Upper=3/12, Lower=4/12
-[19:42:30.113] [Debug] [EndFace] Upper入队 ProductId=152, Upper=4/12, Lower=4/12
-[19:42:30.119] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:30.163] [Debug] [EndFace] Lower入队 ProductId=153, Upper=4/12, Lower=5/12
-[19:42:30.166] [Debug] [EndFace] Upper入队 ProductId=154, Upper=5/12, Lower=5/12
-[19:42:30.168] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:30.208] [Debug] [EndFace] Lower入队 ProductId=155, Upper=5/12, Lower=6/12
-[19:42:30.212] [Debug] [EndFace] Upper入队 ProductId=156, Upper=6/12, Lower=6/12
-[19:42:30.215] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:30.258] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:30.264] [Debug] [EndFace] Lower入队 ProductId=157, Upper=6/12, Lower=7/12
-[19:42:30.266] [Debug] [EndFace] Upper入队 ProductId=158, Upper=7/12, Lower=7/12
-[19:42:30.306] [Debug] [EndFace] Lower入队 ProductId=159, Upper=7/12, Lower=8/12
-[19:42:30.309] [Debug] [EndFace] Upper入队 ProductId=160, Upper=8/12, Lower=8/12
-[19:42:30.312] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:30.312] [Debug] [Back] 条码: 12盒识别
-[19:42:30.312] [Info] [Back] 步骤1完成: 推理=1339.9ms
-[19:42:30.312] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:30.312] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:30.312] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:30.357] [Debug] [EndFace] Lower入队 ProductId=161, Upper=8/12, Lower=9/12
-[19:42:30.360] [Debug] [EndFace] Upper入队 ProductId=162, Upper=9/12, Lower=9/12
-[19:42:30.411] [Debug] [EndFace] Upper入队 ProductId=163, Upper=10/12, Lower=9/12
-[19:42:30.414] [Debug] [EndFace] Lower入队 ProductId=164, Upper=10/12, Lower=10/12
-[19:42:30.457] [Debug] [EndFace] Lower入队 ProductId=165, Upper=10/12, Lower=11/12
-[19:42:30.465] [Debug] [EndFace] Upper入队 ProductId=166, Upper=11/12, Lower=11/12
-[19:42:30.475] [Info] [Back] 步骤3完成: 162.2ms 8430x3648
-[19:42:30.510] [Debug] [EndFace] Lower入队 ProductId=167, Upper=11/12, Lower=12/12
-[19:42:30.514] [Debug] [EndFace] Upper入队 ProductId=168, Upper=12/12, Lower=12/12
-[19:42:30.514] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:30.715] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:30.719] [Debug] 轴0移动到位置: 20
-[19:42:30.813] [Info] [Back] 步骤4完成: 保存=338.8ms
-[19:42:30.813] [Info] [Back] ====== 完成: 总=1842.8ms 结果=NG ======
-[19:42:30.813] [Info] [Back] 完成 总耗时=1853.7ms
-[19:42:30.853] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:30.879] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:30.906] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:30.938] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:30.945] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
-[19:42:30.945] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
-[19:42:30.945] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
-[19:42:30.945] [Info] │ IN4  │       24 │ Cam1 │        0 │        6 │
-[19:42:30.945] [Info] │ IN4  │       24 │ Cam2 │        0 │        6 │
-[19:42:30.945] [Info] │ IN10 │      140 │ Cam3 │        0 │       72 │
-[19:42:30.945] [Info] │ IN10 │      140 │ Cam4 │        0 │       72 │
-[19:42:30.945] [Info] │ IN4  │       24 │ Cam5 │        0 │        6 │
-[19:42:30.945] [Info] │ IN4  │       24 │ Cam6 │        0 │        6 │
-[19:42:30.945] [Info] │ IN13 │       12 │ Cam7 │        0 │        0 │
-[19:42:30.945] [Info] │ IN13 │       12 │ Cam8 │        0 │        0 │
-[19:42:30.945] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
-[19:42:30.945] [Info] [触发统计] 总脉冲=0  扫描次数=74856
-[19:42:30.964] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:30.990] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:31.017] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:31.076] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:31.115] [Debug] [Front] P号盒10: 识别=P18325620
-[19:42:31.142] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:31.168] [Debug] [Front] P号盒12: 识别=P18325628
-[19:42:31.224] [Info] [Front] 步骤1完成: 推理=2239.1ms P号=11 破损=1
-[19:42:31.224] [Info] [Front]   盒1: OK
-[19:42:31.224] [Info] [Front]   盒2: OK
-[19:42:31.224] [Info] [Front]   盒3: OK
-[19:42:31.224] [Info] [Front]   盒4: OK
-[19:42:31.224] [Info] [Front]   盒5: OK
-[19:42:31.224] [Info] [Front]   盒6: OK
-[19:42:31.224] [Info] [Front]   盒7: OK
-[19:42:31.224] [Info] [Front]   盒8: OK
-[19:42:31.224] [Info] [Front]   盒9: 盒子破损
-[19:42:31.224] [Info] [Front]   盒10: OK
-[19:42:31.224] [Info] [Front]   盒11: OK
-[19:42:31.224] [Info] [Front]   盒12: OK
-[19:42:31.315] [Info] [Side] 完成 P=12 结果=NG
-[19:42:31.434] [Info] [Front] 处理完成 总耗时=2448.42ms P=12 OK=11 NG=1
-[19:42:31.691] [Info] [EndFace] 批处理完成 ProductId=146 总耗时=1175.66ms Crop=33.81ms Infer=940.77ms Draw=198.61ms Save=0.40ms 结果=OK
-[19:42:33.748] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:33.751] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:33.751] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:33.751] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:33.751] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:33.753] [Debug] 轴0移动到位置: 20
-[19:42:33.867] [Debug] 轴0移动到位置: 600
-[19:42:33.932] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:33.941] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:33.941] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:33.950] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:33.992] [Debug] [Back] 配对成功
-[19:42:34.004] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:34.004] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:34.004] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:34.004] [Debug] [Back] 步骤1: 推理...
-[19:42:34.005] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:34.018] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:34.018] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:34.018] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:34.083] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:34.098] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:34.126] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:34.147] [Info] 运行分割SDK耗时56
-[19:42:34.149] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:34.150] [Debug] [Back] C1分割: ret=0 rsp=1 71ms
-[19:42:34.151] [Debug] [Back] Mask: 8430x1216 nz=245907
-[19:42:34.170] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:34.177] [Debug] [Back] C1区域数: 12
-[19:42:34.180] [Info] 运行分类SDK耗时3
-[19:42:34.194] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:34.216] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:34.221] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:34.224] [Info] 运行分类SDK耗时2
-[19:42:34.235] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:34.247] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:34.248] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:34.250] [Info] 运行分类SDK耗时2
-[19:42:34.270] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:34.289] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:34.295] [Info] 运行分类SDK耗时5
-[19:42:34.298] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:34.335] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:34.336] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:34.339] [Info] 运行分类SDK耗时3
-[19:42:34.353] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:34.362] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:34.379] [Info] 运行分类SDK耗时16
-[19:42:34.399] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:34.401] [Info] 运行分类SDK耗时2
-[19:42:34.405] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:34.431] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:34.438] [Info] 运行分类SDK耗时6
-[19:42:34.439] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:34.466] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:34.469] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:34.475] [Info] 运行分类SDK耗时5
-[19:42:34.495] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:34.496] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:34.499] [Info] 运行分类SDK耗时3
-[19:42:34.521] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:34.521] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:34.523] [Info] 运行分类SDK耗时2
-[19:42:34.524] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:34.553] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:34.557] [Info] 运行分类SDK耗时3
-[19:42:34.573] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:34.579] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:34.579] [Debug] [Back] 日期码: 12盒识别
-[19:42:34.579] [Debug] [Front] P号盒10: 识别=P18325620
-[19:42:34.607] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:34.617] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:34.636] [Debug] [Front] P号盒12: 识别=P18325628
-[19:42:34.637] [Info] [Front] 步骤1完成: 推理=618.7ms P号=11 破损=2
-[19:42:34.637] [Info] [Front]   盒1: OK
-[19:42:34.637] [Info] [Front]   盒2: OK
-[19:42:34.637] [Info] [Front]   盒3: OK
-[19:42:34.637] [Info] [Front]   盒4: OK
-[19:42:34.637] [Info] [Front]   盒5: OK
-[19:42:34.637] [Info] [Front]   盒6: OK
-[19:42:34.637] [Info] [Front]   盒7: OK
-[19:42:34.637] [Info] [Front]   盒8: OK
-[19:42:34.637] [Info] [Front]   盒9: 盒子破损
-[19:42:34.637] [Info] [Front]   盒10: 盒子破损
-[19:42:34.637] [Info] [Front]   盒11: OK
-[19:42:34.637] [Info] [Front]   盒12: OK
-[19:42:34.663] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:34.663] [Debug] [Back] 条码: 12盒识别
-[19:42:34.663] [Info] [Back] 步骤1完成: 推理=659.0ms
-[19:42:34.663] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:34.663] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:34.663] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:34.832] [Info] [Front] 处理完成 总耗时=814.90ms P=12 OK=10 NG=2
-[19:42:34.904] [Info] [Back] 步骤3完成: 240.6ms 8430x3648
-[19:42:34.965] [Debug] [EndFace] Lower入队 ProductId=173, Upper=0/12, Lower=1/12
-[19:42:34.969] [Debug] [EndFace] Upper入队 ProductId=174, Upper=1/12, Lower=1/12
-[19:42:35.020] [Debug] [EndFace] Lower入队 ProductId=175, Upper=1/12, Lower=2/12
-[19:42:35.023] [Debug] [EndFace] Upper入队 ProductId=176, Upper=2/12, Lower=2/12
-[19:42:35.067] [Debug] [EndFace] Lower入队 ProductId=177, Upper=2/12, Lower=3/12
-[19:42:35.070] [Debug] [EndFace] Upper入队 ProductId=178, Upper=3/12, Lower=3/12
-[19:42:35.109] [Debug] [EndFace] Lower入队 ProductId=179, Upper=3/12, Lower=4/12
-[19:42:35.112] [Debug] [EndFace] Upper入队 ProductId=180, Upper=4/12, Lower=4/12
-[19:42:35.169] [Debug] [EndFace] Lower入队 ProductId=181, Upper=4/12, Lower=5/12
-[19:42:35.176] [Debug] [EndFace] Upper入队 ProductId=182, Upper=5/12, Lower=5/12
-[19:42:35.212] [Debug] [EndFace] Lower入队 ProductId=183, Upper=5/12, Lower=6/12
-[19:42:35.214] [Debug] [EndFace] Upper入队 ProductId=184, Upper=6/12, Lower=6/12
-[19:42:35.245] [Info] [Back] 步骤4完成: 保存=340.9ms
-[19:42:35.245] [Info] [Back] ====== 完成: 总=1243.1ms 结果=NG ======
-[19:42:35.245] [Info] [Back] 完成 总耗时=1252.5ms
-[19:42:35.258] [Debug] [EndFace] Lower入队 ProductId=185, Upper=6/12, Lower=7/12
-[19:42:35.261] [Debug] [EndFace] Upper入队 ProductId=186, Upper=7/12, Lower=7/12
-[19:42:35.310] [Debug] [EndFace] Upper入队 ProductId=187, Upper=8/12, Lower=7/12
-[19:42:35.312] [Debug] [EndFace] Lower入队 ProductId=188, Upper=8/12, Lower=8/12
-[19:42:35.360] [Debug] [EndFace] Upper入队 ProductId=189, Upper=9/12, Lower=8/12
-[19:42:35.363] [Debug] [EndFace] Lower入队 ProductId=190, Upper=9/12, Lower=9/12
-[19:42:35.409] [Debug] [EndFace] Lower入队 ProductId=191, Upper=9/12, Lower=10/12
-[19:42:35.412] [Debug] [EndFace] Upper入队 ProductId=192, Upper=10/12, Lower=10/12
-[19:42:35.454] [Debug] [EndFace] Lower入队 ProductId=193, Upper=10/12, Lower=11/12
-[19:42:35.457] [Debug] [EndFace] Upper入队 ProductId=194, Upper=11/12, Lower=11/12
-[19:42:35.505] [Debug] [EndFace] Upper入队 ProductId=195, Upper=12/12, Lower=11/12
-[19:42:35.507] [Debug] [EndFace] Lower入队 ProductId=196, Upper=12/12, Lower=12/12
-[19:42:35.507] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:35.734] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:35.737] [Debug] 轴0移动到位置: 20
-[19:42:35.793] [Info] [EndFace] 批处理完成 ProductId=174 总耗时=284.29ms Crop=27.34ms Infer=145.76ms Draw=109.75ms Save=0.25ms 结果=OK
-[19:42:36.303] [Info] [Side] 完成 P=12 结果=NG
-[19:42:38.744] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:38.747] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:38.747] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:38.747] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:38.747] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:38.748] [Debug] 轴0移动到位置: 20
-[19:42:38.848] [Debug] 轴0移动到位置: 600
-[19:42:38.918] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:38.923] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:38.925] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:38.930] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:38.965] [Debug] [Back] 配对成功
-[19:42:38.980] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:38.980] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:38.980] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:38.980] [Debug] [Back] 步骤1: 推理...
-[19:42:38.980] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:39.005] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:39.005] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:39.005] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:39.064] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:39.074] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:39.074] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:39.136] [Info] 运行分割SDK耗时66
-[19:42:39.137] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:39.138] [Debug] [Back] C1分割: ret=0 rsp=1 85ms
-[19:42:39.139] [Debug] [Back] Mask: 8430x1216 nz=247296
-[19:42:39.143] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:39.167] [Debug] [Back] C1区域数: 12
-[19:42:39.177] [Info] 运行分类SDK耗时9
-[19:42:39.196] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:39.197] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:39.199] [Info] 运行分类SDK耗时2
-[19:42:39.223] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:39.232] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:39.236] [Info] 运行分类SDK耗时3
-[19:42:39.244] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:39.266] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:39.269] [Info] 运行分类SDK耗时3
-[19:42:39.288] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:39.289] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:39.295] [Info] 运行分类SDK耗时5
-[19:42:39.298] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:39.326] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:39.329] [Info] 运行分类SDK耗时2
-[19:42:39.341] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:39.344] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:39.362] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:39.364] [Info] 运行分类SDK耗时2
-[19:42:39.365] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:39.383] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:39.383] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:39.385] [Info] 运行分类SDK耗时2
-[19:42:39.413] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:39.416] [Info] 运行分类SDK耗时2
-[19:42:39.421] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:39.439] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:39.445] [Info] 运行分类SDK耗时5
-[19:42:39.447] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:39.466] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:39.476] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:39.483] [Info] 运行分类SDK耗时7
-[19:42:39.494] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:39.515] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:39.517] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:39.518] [Info] 运行分类SDK耗时2
-[19:42:39.538] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:39.538] [Debug] [Back] 日期码: 12盒识别
-[19:42:39.577] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:39.604] [Debug] [Front] P号盒12: 识别=P18325821
-[19:42:39.604] [Info] [Front] 步骤1完成: 推理=599.2ms P号=10 破损=1
-[19:42:39.604] [Info] [Front]   盒1: OK
-[19:42:39.604] [Info] [Front]   盒2: OK
-[19:42:39.604] [Info] [Front]   盒3: OK
-[19:42:39.604] [Info] [Front]   盒4: OK
-[19:42:39.604] [Info] [Front]   盒5: OK
-[19:42:39.604] [Info] [Front]   盒6: OK
-[19:42:39.604] [Info] [Front]   盒7: OK
-[19:42:39.604] [Info] [Front]   盒8: OK
-[19:42:39.604] [Info] [Front]   盒9: 盒子破损
-[19:42:39.604] [Info] [Front]   盒10: OK
-[19:42:39.604] [Info] [Front]   盒11: OK
-[19:42:39.604] [Info] [Front]   盒12: OK
-[19:42:39.624] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:39.671] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:39.718] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:39.719] [Debug] [Back] 条码: 12盒识别
-[19:42:39.719] [Info] [Back] 步骤1完成: 推理=739.5ms
-[19:42:39.719] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:39.719] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:39.719] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:39.815] [Info] [Front] 处理完成 总耗时=810.28ms P=12 OK=11 NG=1
-[19:42:39.964] [Debug] [EndFace] Lower入队 ProductId=201, Upper=0/12, Lower=1/12
-[19:42:39.967] [Debug] [EndFace] Upper入队 ProductId=202, Upper=1/12, Lower=1/12
-[19:42:39.998] [Info] [Back] 步骤3完成: 279.5ms 8430x3648
-[19:42:40.018] [Debug] [EndFace] Lower入队 ProductId=203, Upper=1/12, Lower=2/12
-[19:42:40.024] [Debug] [EndFace] Upper入队 ProductId=204, Upper=2/12, Lower=2/12
-[19:42:40.071] [Debug] [EndFace] Lower入队 ProductId=205, Upper=2/12, Lower=3/12
-[19:42:40.073] [Debug] [EndFace] Upper入队 ProductId=206, Upper=3/12, Lower=3/12
-[19:42:40.118] [Debug] [EndFace] Upper入队 ProductId=207, Upper=4/12, Lower=3/12
-[19:42:40.121] [Debug] [EndFace] Lower入队 ProductId=208, Upper=4/12, Lower=4/12
-[19:42:40.165] [Debug] [EndFace] Upper入队 ProductId=209, Upper=5/12, Lower=4/12
-[19:42:40.170] [Debug] [EndFace] Lower入队 ProductId=210, Upper=5/12, Lower=5/12
-[19:42:40.208] [Debug] [EndFace] Lower入队 ProductId=211, Upper=5/12, Lower=6/12
-[19:42:40.211] [Debug] [EndFace] Upper入队 ProductId=212, Upper=6/12, Lower=6/12
-[19:42:40.261] [Debug] [EndFace] Lower入队 ProductId=213, Upper=6/12, Lower=7/12
-[19:42:40.263] [Debug] [EndFace] Upper入队 ProductId=214, Upper=7/12, Lower=7/12
-[19:42:40.308] [Debug] [EndFace] Lower入队 ProductId=215, Upper=7/12, Lower=8/12
-[19:42:40.312] [Debug] [EndFace] Upper入队 ProductId=216, Upper=8/12, Lower=8/12
-[19:42:40.358] [Info] [Back] 步骤4完成: 保存=359.7ms
-[19:42:40.358] [Info] [Back] ====== 完成: 总=1378.9ms 结果=NG ======
-[19:42:40.359] [Info] [Back] 完成 总耗时=1393.8ms
-[19:42:40.360] [Debug] [EndFace] Upper入队 ProductId=217, Upper=9/12, Lower=8/12
-[19:42:40.364] [Debug] [EndFace] Lower入队 ProductId=218, Upper=9/12, Lower=9/12
-[19:42:40.405] [Debug] [EndFace] Lower入队 ProductId=219, Upper=9/12, Lower=10/12
-[19:42:40.408] [Debug] [EndFace] Upper入队 ProductId=220, Upper=10/12, Lower=10/12
-[19:42:40.455] [Debug] [EndFace] Lower入队 ProductId=221, Upper=10/12, Lower=11/12
-[19:42:40.458] [Debug] [EndFace] Upper入队 ProductId=222, Upper=11/12, Lower=11/12
-[19:42:40.501] [Debug] [EndFace] Upper入队 ProductId=223, Upper=12/12, Lower=11/12
-[19:42:40.503] [Debug] [EndFace] Lower入队 ProductId=224, Upper=12/12, Lower=12/12
-[19:42:40.503] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:40.722] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:40.726] [Debug] 轴0移动到位置: 20
-[19:42:40.801] [Info] [EndFace] 批处理完成 ProductId=202 总耗时=297.25ms Crop=38.62ms Infer=145.32ms Draw=111.92ms Save=0.24ms 结果=OK
-[19:42:41.292] [Info] [Side] 完成 P=12 结果=NG
-[19:42:43.753] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:43.756] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:43.756] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:43.757] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:43.757] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:43.757] [Debug] 轴0移动到位置: 20
-[19:42:43.827] [Debug] 轴0移动到位置: 600
-[19:42:43.916] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:43.920] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:43.921] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:43.921] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:43.961] [Debug] [Back] 配对成功
-[19:42:43.976] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:43.976] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:43.976] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:43.976] [Debug] [Back] 步骤1: 推理...
-[19:42:43.976] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:43.988] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:43.988] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:43.988] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:44.062] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:44.103] [Info] 运行分割SDK耗时50
-[19:42:44.105] [Debug] [Back] C1分割: ret=0 rsp=1 65ms
-[19:42:44.106] [Debug] [Back] Mask: 8430x1216 nz=245705
-[19:42:44.109] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:44.125] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:44.131] [Debug] [Back] C1区域数: 12
-[19:42:44.136] [Info] 运行分类SDK耗时4
-[19:42:44.157] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:44.157] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:44.160] [Info] 运行分类SDK耗时3
-[19:42:44.177] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:44.187] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:44.189] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:44.192] [Info] 运行分类SDK耗时2
-[19:42:44.202] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:44.209] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:44.226] [Info] 运行分类SDK耗时16
-[19:42:44.243] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:44.247] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:44.251] [Info] 运行分类SDK耗时4
-[19:42:44.261] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:44.269] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:44.285] [Info] 运行分类SDK耗时16
-[19:42:44.305] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:44.308] [Info] 运行分类SDK耗时3
-[19:42:44.314] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:44.319] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:44.329] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:44.344] [Info] 运行分类SDK耗时14
-[19:42:44.362] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:44.365] [Info] 运行分类SDK耗时3
-[19:42:44.378] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:44.384] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:44.388] [Info] 运行分类SDK耗时4
-[19:42:44.400] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:44.422] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:44.426] [Info] 运行分类SDK耗时4
-[19:42:44.433] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:44.451] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:44.452] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:44.452] [Debug] [Front] P号盒8: 识别=P18325620
-[19:42:44.452] [Debug] [Front] P号盒8: 识别=P11118
-[19:42:44.454] [Info] 运行分类SDK耗时2
-[19:42:44.478] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:44.484] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:44.484] [Debug] [Back] 日期码: 12盒识别
-[19:42:44.493] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:44.532] [Debug] [Front] P号盒10: 识别=P18325620
-[19:42:44.539] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:44.562] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:44.590] [Info] [Front] 步骤1完成: 推理=601.8ms P号=11 破损=3
-[19:42:44.590] [Info] [Front]   盒1: OK
-[19:42:44.590] [Info] [Front]   盒2: OK
-[19:42:44.590] [Info] [Front]   盒3: OK
-[19:42:44.590] [Info] [Front]   盒4: OK
-[19:42:44.590] [Info] [Front]   盒5: OK
-[19:42:44.590] [Info] [Front]   盒6: OK
-[19:42:44.590] [Info] [Front]   盒7: OK
-[19:42:44.590] [Info] [Front]   盒8: OK
-[19:42:44.590] [Info] [Front]   盒9: 盒子破损
-[19:42:44.590] [Info] [Front]   盒10: 盒子破损
-[19:42:44.590] [Info] [Front]   盒11: 盒子破损
-[19:42:44.590] [Info] [Front]   盒12: OK
-[19:42:44.594] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:44.662] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:44.732] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:44.733] [Debug] [Back] 条码: 12盒识别
-[19:42:44.733] [Info] [Back] 步骤1完成: 推理=756.5ms
-[19:42:44.733] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:44.733] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:44.733] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:44.793] [Info] [Front] 处理完成 总耗时=804.41ms P=12 OK=9 NG=3
-[19:42:44.968] [Debug] [EndFace] Upper入队 ProductId=229, Upper=1/12, Lower=0/12
-[19:42:44.975] [Debug] [EndFace] Lower入队 ProductId=230, Upper=1/12, Lower=1/12
-[19:42:44.985] [Info] [Back] 步骤3完成: 252.3ms 8430x3648
-[19:42:45.016] [Debug] [EndFace] Lower入队 ProductId=231, Upper=1/12, Lower=2/12
-[19:42:45.020] [Debug] [EndFace] Upper入队 ProductId=232, Upper=2/12, Lower=2/12
-[19:42:45.071] [Debug] [EndFace] Lower入队 ProductId=233, Upper=2/12, Lower=3/12
-[19:42:45.074] [Debug] [EndFace] Upper入队 ProductId=234, Upper=3/12, Lower=3/12
-[19:42:45.119] [Debug] [EndFace] Lower入队 ProductId=235, Upper=3/12, Lower=4/12
-[19:42:45.121] [Debug] [EndFace] Upper入队 ProductId=236, Upper=4/12, Lower=4/12
-[19:42:45.160] [Debug] [EndFace] Lower入队 ProductId=237, Upper=4/12, Lower=5/12
-[19:42:45.166] [Debug] [EndFace] Upper入队 ProductId=238, Upper=5/12, Lower=5/12
-[19:42:45.207] [Debug] [EndFace] Lower入队 ProductId=239, Upper=5/12, Lower=6/12
-[19:42:45.215] [Debug] [EndFace] Upper入队 ProductId=240, Upper=6/12, Lower=6/12
-[19:42:45.259] [Debug] [EndFace] Lower入队 ProductId=241, Upper=6/12, Lower=7/12
-[19:42:45.263] [Debug] [EndFace] Upper入队 ProductId=242, Upper=7/12, Lower=7/12
-[19:42:45.310] [Debug] [EndFace] Lower入队 ProductId=243, Upper=7/12, Lower=8/12
-[19:42:45.313] [Debug] [EndFace] Upper入队 ProductId=244, Upper=8/12, Lower=8/12
-[19:42:45.342] [Info] [Back] 步骤4完成: 保存=356.9ms
-[19:42:45.342] [Info] [Back] ====== 完成: 总=1369.0ms 结果=NG ======
-[19:42:45.342] [Info] [Back] 完成 总耗时=1380.7ms
-[19:42:45.353] [Debug] [EndFace] Lower入队 ProductId=245, Upper=8/12, Lower=9/12
-[19:42:45.356] [Debug] [EndFace] Upper入队 ProductId=246, Upper=9/12, Lower=9/12
-[19:42:45.405] [Debug] [EndFace] Lower入队 ProductId=247, Upper=9/12, Lower=10/12
-[19:42:45.409] [Debug] [EndFace] Upper入队 ProductId=248, Upper=10/12, Lower=10/12
-[19:42:45.457] [Debug] [EndFace] Lower入队 ProductId=249, Upper=10/12, Lower=11/12
-[19:42:45.461] [Debug] [EndFace] Upper入队 ProductId=250, Upper=11/12, Lower=11/12
-[19:42:45.505] [Debug] [EndFace] Lower入队 ProductId=251, Upper=11/12, Lower=12/12
-[19:42:45.508] [Debug] [EndFace] Upper入队 ProductId=252, Upper=12/12, Lower=12/12
-[19:42:45.508] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:45.682] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:45.685] [Debug] 轴0移动到位置: 20
-[19:42:45.800] [Info] [EndFace] 批处理完成 ProductId=229 总耗时=290.34ms Crop=27.62ms Infer=149.93ms Draw=111.36ms Save=0.26ms 结果=OK
-[19:42:45.957] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
-[19:42:45.957] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
-[19:42:45.957] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
-[19:42:45.957] [Info] │ IN4  │       36 │ Cam1 │        0 │        9 │
-[19:42:45.957] [Info] │ IN4  │       36 │ Cam2 │        0 │        9 │
-[19:42:45.957] [Info] │ IN10 │      210 │ Cam3 │        0 │      108 │
-[19:42:45.957] [Info] │ IN10 │      210 │ Cam4 │        0 │      108 │
-[19:42:45.957] [Info] │ IN4  │       36 │ Cam5 │        0 │        9 │
-[19:42:45.957] [Info] │ IN4  │       36 │ Cam6 │        0 │        9 │
-[19:42:45.957] [Info] │ IN13 │       18 │ Cam7 │        0 │        0 │
-[19:42:45.957] [Info] │ IN13 │       18 │ Cam8 │        0 │        0 │
-[19:42:45.957] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
-[19:42:45.957] [Info] [触发统计] 总脉冲=0  扫描次数=112549
-[19:42:46.250] [Info] [Side] 完成 P=12 结果=NG
-[19:42:48.765] [Info] [Side] IN13↓ 检测到工件，启动侧面运动控制
-[19:42:48.768] [Info] 限位设置: 轴0 FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:48.768] [Info] [Side] 限位已设置: FWD=IN14 REV=IN15 DATUM=IN16
-[19:42:48.769] [Info] [Side] ====== 侧面检测开始 P=12 ======
-[19:42:48.769] [Info] [Side] 运动开始: 轴0 20→600 前进速度=400 回程速度=600
-[19:42:48.770] [Debug] 轴0移动到位置: 20
-[19:42:48.840] [Debug] 轴0移动到位置: 600
-[19:42:48.912] [Debug] [Back] OnCam4(右) 5472x3648
-[19:42:48.918] [Debug] [Back] OnCam3(左) 5472x3648
-[19:42:48.920] [Debug] [Front] OnCam2 收到图像 5472x3648
-[19:42:48.923] [Debug] [Front] OnCam1 收到图像 5472x3648
-[19:42:48.959] [Debug] [Back] 配对成功
-[19:42:48.972] [Info] [Back] ====== 开始 P=12 5472x3648 ======
-[19:42:48.972] [Debug] [Back] 左图裁图: 保留440~4655 -> 4215x3648
-[19:42:48.972] [Debug] [Back] 右图裁图: 保留580~4795 -> 4215x3648
-[19:42:48.972] [Debug] [Back] 步骤1: 推理...
-[19:42:48.972] [Debug] [Back] 条码ZXing: 左4215x3648 boxW=702
-[19:42:48.994] [Debug] [Front] 左右图像配对成功，开始处理
-[19:42:48.994] [Debug] [Front] 左图裁图: 原始310~4255 -> 3945x3648
-[19:42:48.994] [Debug] [Front] 右图裁图: 原始780~4750 -> 3970x3648
-[19:42:49.048] [Debug] [Back] 条码盒1: 识=0827854016809 标=7509546659374 NG
-[19:42:49.057] [Debug] [Front] P号盒1: 识别=P18325620
-[19:42:49.094] [Debug] [Back] 条码盒2: 识=0827854016809 标=7509546659374 NG
-[19:42:49.105] [Debug] [Front] P号盒2: 识别=P18325620
-[19:42:49.136] [Debug] [Back] 条码盒3: 识=0827854016809 标=7509546659374 NG
-[19:42:49.145] [Debug] [Front] P号盒3: 识别=P18325620
-[19:42:49.176] [Debug] [Front] P号盒4: 识别=P18325620
-[19:42:49.185] [Debug] [Back] 条码盒4: 识=0827854016809 标=7509546659374 NG
-[19:42:49.217] [Debug] [Back] 挂钩批量推理: 2张
-[19:42:49.217] [Debug] [Front] P号盒5: 识别=P18325620
-[19:42:49.244] [Debug] [Back] 条码盒5: 识=0827854016809 标=7509546659374 NG
-[19:42:49.260] [Debug] [Front] P号盒6: 识别=P18325620
-[19:42:49.266] [Info] 运行分割SDK耗时215
-[19:42:49.269] [Debug] [Back] C1分割: ret=0 rsp=1 231ms
-[19:42:49.269] [Debug] [Back] Mask: 8430x1216 nz=247087
-[19:42:49.292] [Debug] [Front] P号盒7: 识别=P18325620
-[19:42:49.301] [Debug] [Back] C1区域数: 12
-[19:42:49.311] [Debug] [Back] 条码盒6: 识=0827854016809 标=7509546659374 NG
-[19:42:49.314] [Info] 运行分类SDK耗时12
-[19:42:49.333] [Debug] [Back] 日期码盒12: LOT 2026/06/02
-[19:42:49.336] [Info] 运行分类SDK耗时2
-[19:42:49.365] [Debug] [Back] 日期码盒11: LOT 2026/06/02
-[19:42:49.372] [Info] 运行分类SDK耗时6
-[19:42:49.373] [Debug] [Front] P号盒9: 识别=P18325620
-[19:42:49.376] [Debug] [Back] 条码盒7: 识=0827854016809 标=7509546659374 NG
-[19:42:49.401] [Debug] [Back] 日期码盒10: LOT 2026/06/02
-[19:42:49.404] [Info] 运行分类SDK耗时2
-[19:42:49.422] [Debug] [Back] 日期码盒9: LOT 2026/06/02
-[19:42:49.422] [Debug] [Front] P号盒10: 识别=P18325620
-[19:42:49.424] [Info] 运行分类SDK耗时2
-[19:42:49.434] [Debug] [Back] 条码盒8: 识=0827854016809 标=7509546659374 NG
-[19:42:49.460] [Debug] [Front] P号盒11: 识别=P18325620
-[19:42:49.460] [Debug] [Back] 日期码盒8: LOT 2026/06/02
-[19:42:49.478] [Info] 运行分类SDK耗时17
-[19:42:49.482] [Debug] [Back] 条码盒9: 识=0827854016809 标=7509546659374 NG
-[19:42:49.495] [Info] [Back] 挂钩结果: 明显=0 轻微=0
-[19:42:49.495] [Debug] [Back] 日期码盒4: LOT 2026/06/02
-[19:42:49.502] [Info] 运行分类SDK耗时7
-[19:42:49.503] [Debug] [Front] P号盒12: 识别=P18325628
-[19:42:49.503] [Info] [Front] 步骤1完成: 推理=509.4ms P号=11 破损=4
-[19:42:49.503] [Info] [Front]   盒1: OK
-[19:42:49.503] [Info] [Front]   盒2: OK
-[19:42:49.503] [Info] [Front]   盒3: OK
-[19:42:49.503] [Info] [Front]   盒4: OK
-[19:42:49.503] [Info] [Front]   盒5: OK
-[19:42:49.503] [Info] [Front]   盒6: 盒子破损
-[19:42:49.503] [Info] [Front]   盒7: 盒子破损
-[19:42:49.503] [Info] [Front]   盒8: OK
-[19:42:49.503] [Info] [Front]   盒9: 盒子破损
-[19:42:49.503] [Info] [Front]   盒10: 盒子破损
-[19:42:49.503] [Info] [Front]   盒11: OK
-[19:42:49.503] [Info] [Front]   盒12: OK
-[19:42:49.518] [Debug] [Back] 日期码盒6: LOT 2026/06/02
-[19:42:49.521] [Info] 运行分类SDK耗时2
-[19:42:49.539] [Debug] [Back] 日期码盒7: LOT 2026/06/02
-[19:42:49.543] [Info] 运行分类SDK耗时3
-[19:42:49.543] [Debug] [Back] 条码盒10: 识=0827854016809 标=7509546659374 NG
-[19:42:49.559] [Debug] [Back] 日期码盒3: LOT 2026/06/02
-[19:42:49.561] [Info] 运行分类SDK耗时2
-[19:42:49.577] [Debug] [Back] 日期码盒5: LOT 2026/06/02
-[19:42:49.580] [Info] 运行分类SDK耗时2
-[19:42:49.595] [Debug] [Back] 日期码盒2: LOT 2026/06/02
-[19:42:49.598] [Info] 运行分类SDK耗时2
-[19:42:49.613] [Debug] [Back] 日期码盒1: LOT 2026/06/02
-[19:42:49.613] [Debug] [Back] 日期码: 12盒识别
-[19:42:49.621] [Debug] [Back] 条码盒11: 识=0827854016809 标=7509546659374 NG
-[19:42:49.669] [Debug] [Back] 条码盒12: 识=0827854016809 标=7509546659374 NG
-[19:42:49.669] [Debug] [Back] 条码: 12盒识别
-[19:42:49.669] [Info] [Back] 步骤1完成: 推理=697.7ms
-[19:42:49.669] [Info] [Back] 步骤2汇总: 条形码=12 日期码=24 明显=0 轻微=0 总计=36
-[19:42:49.669] [Info] [Back]   盒1: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒2: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒3: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒4: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒5: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒6: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒7: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒8: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒9: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒10: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒11: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Info] [Back]   盒12: 日期码错误(LOT 2026/06/02)
-[19:42:49.669] [Debug] [Back] 步骤3: 绘制+合并...
-[19:42:49.737] [Info] [Front] 处理完成 总耗时=743.25ms P=12 OK=8 NG=4
-[19:42:49.925] [Info] [Back] 步骤3完成: 255.6ms 8430x3648
-[19:42:49.960] [Debug] [EndFace] Lower入队 ProductId=257, Upper=0/12, Lower=1/12
-[19:42:49.964] [Debug] [EndFace] Upper入队 ProductId=258, Upper=1/12, Lower=1/12
-[19:42:50.016] [Debug] [EndFace] Lower入队 ProductId=259, Upper=1/12, Lower=2/12
-[19:42:50.019] [Debug] [EndFace] Upper入队 ProductId=260, Upper=2/12, Lower=2/12
-[19:42:50.059] [Debug] [EndFace] Lower入队 ProductId=261, Upper=2/12, Lower=3/12
-[19:42:50.061] [Debug] [EndFace] Upper入队 ProductId=262, Upper=3/12, Lower=3/12
-[19:42:50.111] [Debug] [EndFace] Upper入队 ProductId=263, Upper=4/12, Lower=3/12
-[19:42:50.114] [Debug] [EndFace] Lower入队 ProductId=264, Upper=4/12, Lower=4/12
-[19:42:50.162] [Debug] [EndFace] Lower入队 ProductId=265, Upper=4/12, Lower=5/12
-[19:42:50.165] [Debug] [EndFace] Upper入队 ProductId=266, Upper=5/12, Lower=5/12
-[19:42:50.210] [Debug] [EndFace] Lower入队 ProductId=267, Upper=5/12, Lower=6/12
-[19:42:50.213] [Debug] [EndFace] Upper入队 ProductId=268, Upper=6/12, Lower=6/12
-[19:42:50.255] [Debug] [EndFace] Lower入队 ProductId=269, Upper=6/12, Lower=7/12
-[19:42:50.258] [Debug] [EndFace] Upper入队 ProductId=270, Upper=7/12, Lower=7/12
-[19:42:50.276] [Info] [Back] 步骤4完成: 保存=350.6ms
-[19:42:50.276] [Info] [Back] ====== 完成: 总=1304.0ms 结果=NG ======
-[19:42:50.276] [Info] [Back] 完成 总耗时=1317.2ms
-[19:42:50.308] [Debug] [EndFace] Lower入队 ProductId=271, Upper=7/12, Lower=8/12
-[19:42:50.310] [Debug] [EndFace] Upper入队 ProductId=272, Upper=8/12, Lower=8/12
-[19:42:50.348] [Debug] [EndFace] Lower入队 ProductId=273, Upper=8/12, Lower=9/12
-[19:42:50.353] [Debug] [EndFace] Upper入队 ProductId=274, Upper=9/12, Lower=9/12
-[19:42:50.401] [Debug] [EndFace] Lower入队 ProductId=275, Upper=9/12, Lower=10/12
-[19:42:50.405] [Debug] [EndFace] Upper入队 ProductId=276, Upper=10/12, Lower=10/12
-[19:42:50.454] [Debug] [EndFace] Lower入队 ProductId=277, Upper=10/12, Lower=11/12
-[19:42:50.457] [Debug] [EndFace] Upper入队 ProductId=278, Upper=11/12, Lower=11/12
-[19:42:50.500] [Debug] [EndFace] Lower入队 ProductId=279, Upper=11/12, Lower=12/12
-[19:42:50.503] [Debug] [EndFace] Upper入队 ProductId=280, Upper=12/12, Lower=12/12
-[19:42:50.503] [Info] [EndFace] 批次触发: P=12, Upper=12, Lower=12
-[19:42:50.716] [Info] [Side] 返回起始位 L=0 R=0
-[19:42:50.719] [Debug] 轴0移动到位置: 20
-[19:42:50.831] [Info] [EndFace] 批处理完成 ProductId=258 总耗时=327.31ms Crop=32.25ms Infer=162.40ms Draw=131.15ms Save=0.25ms 结果=OK
-[19:42:51.300] [Info] [Side] 完成 P=12 结果=NG
-[19:42:52.886] [Info] 应用程序正在关闭...
-[19:42:52.894] [Info] 班次统计已保存: 中班, OK=0, NG=0
-[19:42:52.897] [Info] HighSpeedImageSaver 已释放
-[19:42:52.900] [Info] 应用程序正在关闭...
-[19:42:52.903] [Info] 班次统计已保存: 中班, OK=0, NG=0
-[19:42:52.905] [Info] 触发管理器停止 总脉冲数=0
-[19:42:53.116] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=, Key=FC79423AAK00060
-[19:42:53.314] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=AH3B00CU000, Key=FC79423AAK00087
-[19:42:53.505] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=AH5207CU000, Key=FB12474AAK00017
-[19:42:53.705] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=AH5207CU000, Key=FB12474AAK00006
-[19:42:53.914] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=AH3B00CU000, Key=EM57578AAK00046
-[19:42:54.116] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=AH3B00CU000, Key=EM57578AAK00010
-[19:42:54.213] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=, Key=EK64117CAK00003
-[19:42:54.304] [Warning] >>> WARNING >>> [ICamera] 相机关闭: Name=, Key=EK64117CAK00004
-[19:42:54.304] [Info] 所有相机已释放
-[19:42:54.410] [Info] 运动控制卡已断开
-[19:42:54.410] [Info] PLC已断开
-[19:42:54.412] [Info] ========== 性能统计摘要 ==========
-[19:42:54.412] [Info] 总处理数量: 20
-[19:42:54.412] [Info] 平均裁剪耗时: 17.53ms
-[19:42:54.412] [Info] 平均推理耗时: 646.29ms
-[19:42:54.412] [Info] 平均后处理耗时: 0.00ms
-[19:42:54.412] [Info] 平均绘制耗时: 174.83ms
-[19:42:54.412] [Info] 平均存图耗时: 179.08ms
-[19:42:54.413] [Info] 平均PLC耗时: 0.00ms
-[19:42:54.413] [Info] ===================================
-[19:42:54.413] [Info] HighSpeedImageSaver 已释放
-[19:42:54.562] [Info] AI模型管理器已释放
+[13:51:59.413] [Info] 侧面缺陷检测模型加载成功(显卡1)
+[13:51:59.413] [Info] ========== AI模型加载完成 (成功) ==========
+[13:51:59.927] [Info] ========== 系统启动 ==========
+[13:51:59.928] [Info] 正在初始化数据库...
+[13:51:59.990] [Info] SQLite数据库初始化完成
+[13:51:59.990] [Info] 正在加载检测参数...
+[13:51:59.990] [Info] 正在加载SKU数据...
+[13:51:59.990] [Info] 使用预加载的SKU数据，跳过重复加载
+[13:51:59.990] [Info] 正在初始化性能监控...
+[13:51:59.992] [Info] 正在初始化图像保存器...
+[13:51:59.994] [Info] 正在初始化硬件...
+[13:51:59.997] [Info] 正在连接运动控制卡: 192.168.0.11
+[13:52:00.007] [Info] 运动控制卡连接成功, IP=192.168.0.11
+[13:52:00.021] [Info] 轴初始化完成
+[13:52:00.027] [Info] 轴0参数已应用: 类型=65 速度=40 限位IN14/15/16
+[13:52:00.027] [Info] 轴0参数已从本地加载并应用
+[13:52:00.027] [Info] 运动控制卡初始化成功
+[13:52:00.027] [Info] [PLC] 连接成功 IP=192.168.1.101:502 耗时=0ms
+[13:52:00.027] [Info] PLC连接成功
+[13:52:00.027] [Info] 正在初始化相机SDK...
+[13:52:00.029] [Info] ========== 初始化相机（模拟模式: False） ==========
+[13:52:00.030] [Info] [Camera1] 正面左 开始初始化, SN=FC79423AAK00060
+[13:52:00.031] [Debug] [Camera1] DaHuaSDK实例已创建
+[13:52:00.031] [Debug] [Camera1] SetCameraInterface完成
+[13:52:00.031] [Debug] [Camera1] OnImage事件已订阅
+[13:52:00.345] [Debug] [Camera1] SetCameraByKey完成 SN=FC79423AAK00060
+[13:52:00.565] [Info] [ICamera] 相机打开: Name=, Key=FC79423AAK00060
+[13:52:00.600] [Info] [Camera1] 正面左 Open成功
+[13:52:00.758] [Debug] [Camera1] StopStreamGrabber完成
+[13:52:00.775] [Debug] [Camera1] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:00.786] [Debug] [Camera1] 曝光时间: 4500us
+[13:52:00.805] [Info] [Camera1] 正面左 StartStreamGrabber完成, 初始化成功
+[13:52:00.805] [Info] [Camera2] 正面右 开始初始化, SN=FC79423AAK00087
+[13:52:00.805] [Debug] [Camera2] DaHuaSDK实例已创建
+[13:52:00.805] [Debug] [Camera2] SetCameraInterface完成
+[13:52:00.805] [Debug] [Camera2] OnImage事件已订阅
+[13:52:01.034] [Debug] [Camera2] SetCameraByKey完成 SN=FC79423AAK00087
+[13:52:01.257] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=FC79423AAK00087
+[13:52:01.290] [Info] [Camera2] 正面右 Open成功
+[13:52:01.437] [Debug] [Camera2] StopStreamGrabber完成
+[13:52:01.450] [Debug] [Camera2] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:01.460] [Debug] [Camera2] 曝光时间: 4500us
+[13:52:01.478] [Info] [Camera2] 正面右 StartStreamGrabber完成, 初始化成功
+[13:52:01.478] [Info] [Camera3] 上端面 开始初始化, SN=FB12474AAK00017
+[13:52:01.478] [Debug] [Camera3] DaHuaSDK实例已创建
+[13:52:01.478] [Debug] [Camera3] SetCameraInterface完成
+[13:52:01.478] [Debug] [Camera3] OnImage事件已订阅
+[13:52:01.697] [Debug] [Camera3] SetCameraByKey完成 SN=FB12474AAK00017
+[13:52:01.981] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00017
+[13:52:02.010] [Info] [Camera3] 上端面 Open成功
+[13:52:02.162] [Debug] [Camera3] StopStreamGrabber完成
+[13:52:02.176] [Debug] [Camera3] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:02.187] [Debug] [Camera3] 曝光时间: 80us
+[13:52:02.208] [Info] [Camera3] 上端面 StartStreamGrabber完成, 初始化成功
+[13:52:02.208] [Info] [Camera4] 下端面 开始初始化, SN=FB12474AAK00006
+[13:52:02.208] [Debug] [Camera4] DaHuaSDK实例已创建
+[13:52:02.208] [Debug] [Camera4] SetCameraInterface完成
+[13:52:02.208] [Debug] [Camera4] OnImage事件已订阅
+[13:52:02.435] [Debug] [Camera4] SetCameraByKey完成 SN=FB12474AAK00006
+[13:52:02.718] [Info] [ICamera] 相机打开: Name=AH5207CU000, Key=FB12474AAK00006
+[13:52:02.746] [Info] [Camera4] 下端面 Open成功
+[13:52:02.899] [Debug] [Camera4] StopStreamGrabber完成
+[13:52:02.913] [Debug] [Camera4] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:02.924] [Debug] [Camera4] 曝光时间: 80us
+[13:52:02.945] [Info] [Camera4] 下端面 StartStreamGrabber完成, 初始化成功
+[13:52:02.945] [Info] [Camera5] 背面左 开始初始化, SN=EM57578AAK00046
+[13:52:02.945] [Debug] [Camera5] DaHuaSDK实例已创建
+[13:52:02.945] [Debug] [Camera5] SetCameraInterface完成
+[13:52:02.945] [Debug] [Camera5] OnImage事件已订阅
+[13:52:03.174] [Debug] [Camera5] SetCameraByKey完成 SN=EM57578AAK00046
+[13:52:03.448] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00046
+[13:52:03.482] [Info] [Camera5] 背面左 Open成功
+[13:52:03.624] [Debug] [Camera5] StopStreamGrabber完成
+[13:52:03.638] [Debug] [Camera5] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:03.648] [Debug] [Camera5] 曝光时间: 1500us
+[13:52:03.666] [Info] [Camera5] 背面左 StartStreamGrabber完成, 初始化成功
+[13:52:03.666] [Info] [Camera6] 背面右 开始初始化, SN=EM57578AAK00010
+[13:52:03.666] [Debug] [Camera6] DaHuaSDK实例已创建
+[13:52:03.666] [Debug] [Camera6] SetCameraInterface完成
+[13:52:03.666] [Debug] [Camera6] OnImage事件已订阅
+[13:52:03.882] [Debug] [Camera6] SetCameraByKey完成 SN=EM57578AAK00010
+[13:52:04.091] [Info] [ICamera] 相机打开: Name=AH3B00CU000, Key=EM57578AAK00010
+[13:52:04.125] [Info] [Camera6] 背面右 Open成功
+[13:52:04.270] [Debug] [Camera6] StopStreamGrabber完成
+[13:52:04.284] [Debug] [Camera6] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:04.294] [Debug] [Camera6] 曝光时间: 1500us
+[13:52:04.312] [Info] [Camera6] 背面右 StartStreamGrabber完成, 初始化成功
+[13:52:04.312] [Info] [Camera7] 左侧面 开始初始化, SN=EK64117CAK00003
+[13:52:04.312] [Debug] [Camera7] DaHuaSDK实例已创建
+[13:52:04.312] [Debug] [Camera7] SetCameraInterface完成
+[13:52:04.312] [Debug] [Camera7] OnImage事件已订阅
+[13:52:04.530] [Debug] [Camera7] SetCameraByKey完成 SN=EK64117CAK00003
+[13:52:04.673] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00003
+[13:52:04.704] [Info] [Camera7] 左侧面 Open成功
+[13:52:04.747] [Debug] [Camera7] StopStreamGrabber完成
+[13:52:04.759] [Debug] [Camera7] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:04.768] [Debug] [Camera7] 曝光时间: 1000us
+[13:52:04.785] [Info] [Camera7] 左侧面 StartStreamGrabber完成, 初始化成功
+[13:52:04.785] [Info] [Camera8] 右侧面 开始初始化, SN=EK64117CAK00004
+[13:52:04.785] [Debug] [Camera8] DaHuaSDK实例已创建
+[13:52:04.785] [Debug] [Camera8] SetCameraInterface完成
+[13:52:04.785] [Debug] [Camera8] OnImage事件已订阅
+[13:52:05.006] [Debug] [Camera8] SetCameraByKey完成 SN=EK64117CAK00004
+[13:52:05.202] [Info] [ICamera] 相机打开: Name=, Key=EK64117CAK00004
+[13:52:05.233] [Info] [Camera8] 右侧面 Open成功
+[13:52:05.288] [Debug] [Camera8] StopStreamGrabber完成
+[13:52:05.299] [Debug] [Camera8] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1
+[13:52:05.308] [Debug] [Camera8] 曝光时间: 1000us
+[13:52:05.325] [Info] [Camera8] 右侧面 StartStreamGrabber完成, 初始化成功
+[13:52:05.325] [Info] ========== 相机初始化完成: 8/8 ==========
+[13:52:05.326] [Info] IN12边缘模式已应用: RisingLeftFallingRight, Cam7=RisingEdge, Cam8=FallingEdge
+[13:52:05.337] [Info] 信号监听线程启动
+[13:52:05.338] [Info] 相机触发管理器启动 
+[13:52:05.338] [Info] 触发管理器已启动
+[13:52:05.338] [Info] 心跳已启动 (每150ms)
+[13:52:05.338] [Info] 正在加载AI模型...
+[13:52:05.338] [Info] 使用预加载的AI模型，跳过重复加载
+[13:52:05.338] [Info] 工位开关: 正面=True, 背面=True, 端面=True, 侧面=True
+[13:52:05.338] [Info] 正在初始化工位处理器...
+[13:52:05.339] [Info] 恢复上次SKU: 61004945, P=12
+[13:52:05.345] [Info] [Front] 阈值从模型: Conf=0.65 Iou=0.20
+[13:52:05.345] [Info] FrontStationProcessor Started.
+[13:52:05.348] [Info] [EndFace] 阈值从模型: Conf=0.60 Iou=0.20
+[13:52:05.348] [Info] 端面工位处理器已启动
+[13:52:05.349] [Info] [Back] 阈值从模型: Conf=0.50 Iou=0.20
+[13:52:05.349] [Info] 背面工位已启动
+[13:52:05.350] [Info] 侧面工位配置: Axis=0 Pos=20~600 FwdSpd=400 RetSpd=600 Acc=1000/1000 限位IN14/15/16 EdgeMode=RisingLeftFallingRight Pulse=50ms
+[13:52:05.351] [Info] [Side] 阈值从模型加载: Conf=0.65 Iou=0.20
+[13:52:05.351] [Info] 侧面工位已启动
+[13:52:05.351] [Info] 正在初始化界面...
+[13:52:05.351] [Info] 初始化SKU搜索控件
+[13:52:05.367] [Debug] 更新SKU显示: 61004945
+[13:52:05.367] [Debug]   P=12, Z=1, MM=238
+[13:52:05.367] [Debug]   P号码(背卡P号)=P18371837
+[13:52:05.367] [Debug]   条形码=7509546659374
+[13:52:05.367] [Debug]   打码格式=MFG
+[13:52:05.375] [Info] 工位测试按钮已初始化
+[13:52:05.375] [Info] 正在绑定统计控件...
+[13:52:05.375] [Info] 当前班次: 早班
+[13:52:05.377] [Info] 测试SKU: 181712303, P=8, Z=1, MM=32
+[13:52:05.431] [Info] 系统初始化完成
+[13:52:05.477] [Debug] [Camera1] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera1] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera2] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera2] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera3] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera3] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera4] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera4] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera5] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera5] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera6] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera6] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera7] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera7] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera8] 状态更新: 已连接
+[13:52:05.477] [Debug] [Camera8] 状态更新: 已连接
+[13:52:05.478] [Info] SKU参数已从本地恢复并推送到各工位
+[13:52:05.479] [Info] 计数已从本地恢复
+[13:52:11.141] [Debug] 检测参数加载到界面完成
+[13:52:20.343] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
+[13:52:20.343] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
+[13:52:20.343] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
+[13:52:20.343] [Info] │ IN4  │        0 │ Cam1 │        0 │        0 │
+[13:52:20.343] [Info] │ IN4  │        0 │ Cam2 │        0 │        0 │
+[13:52:20.343] [Info] │ IN10 │        0 │ Cam3 │        0 │        0 │
+[13:52:20.343] [Info] │ IN10 │        0 │ Cam4 │        0 │        0 │
+[13:52:20.343] [Info] │ IN4  │        0 │ Cam5 │        0 │        0 │
+[13:52:20.343] [Info] │ IN4  │        0 │ Cam6 │        0 │        0 │
+[13:52:20.343] [Info] │ IN13 │        0 │ Cam7 │        0 │        0 │
+[13:52:20.343] [Info] │ IN13 │        0 │ Cam8 │        0 │        0 │
+[13:52:20.343] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
+[13:52:20.343] [Info] [触发统计] 总脉冲=0  扫描次数=46824
+[13:52:23.311] [Info] [Test] 正面测试开始 3945x3648 / 3970x3648
+[13:52:23.312] [Debug] [Front] OnCam1 收到图像 3945x3648
+[13:52:23.337] [Debug] [Front] OnCam2 收到图像 3970x3648
+[13:52:23.347] [Debug] [Front] 左右图像配对成功，开始处理
+[13:52:23.692] [Debug] [Front] P号盒4: 识别=P35381
+[13:52:23.976] [Info] [Front] 步骤1完成: 推理=628.7ms P号=1 破损=8
+[13:52:23.976] [Info] [Front]   1  2  3  4  5  6  7  8  9 10 11 12
+[13:52:23.976] [Info] [Front]  O  O  O  X  X  O  X  O  X  X  O  X
+[13:52:24.318] [Info] [Front] 处理完成 总耗时=971.11ms P=12 OK=6 NG=6
+[13:52:35.351] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
+[13:52:35.351] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
+[13:52:35.351] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
+[13:52:35.351] [Info] │ IN4  │        0 │ Cam1 │        0 │        0 │
+[13:52:35.351] [Info] │ IN4  │        0 │ Cam2 │        0 │        0 │
+[13:52:35.351] [Info] │ IN10 │        0 │ Cam3 │        0 │        0 │
+[13:52:35.351] [Info] │ IN10 │        0 │ Cam4 │        0 │        0 │
+[13:52:35.351] [Info] │ IN4  │        0 │ Cam5 │        0 │        0 │
+[13:52:35.351] [Info] │ IN4  │        0 │ Cam6 │        0 │        0 │
+[13:52:35.351] [Info] │ IN13 │        0 │ Cam7 │        0 │        0 │
+[13:52:35.351] [Info] │ IN13 │        0 │ Cam8 │        0 │        0 │
+[13:52:35.351] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
+[13:52:35.351] [Info] [触发统计] 总脉冲=0  扫描次数=91708
+[13:52:50.362] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
+[13:52:50.362] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
+[13:52:50.362] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
+[13:52:50.362] [Info] │ IN4  │        0 │ Cam1 │        0 │        0 │
+[13:52:50.362] [Info] │ IN4  │        0 │ Cam2 │        0 │        0 │
+[13:52:50.362] [Info] │ IN10 │        0 │ Cam3 │        0 │        0 │
+[13:52:50.362] [Info] │ IN10 │        0 │ Cam4 │        0 │        0 │
+[13:52:50.362] [Info] │ IN4  │        0 │ Cam5 │        0 │        0 │
+[13:52:50.362] [Info] │ IN4  │        0 │ Cam6 │        0 │        0 │
+[13:52:50.362] [Info] │ IN13 │        0 │ Cam7 │        0 │        0 │
+[13:52:50.362] [Info] │ IN13 │        0 │ Cam8 │        0 │        0 │
+[13:52:50.362] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
+[13:52:50.362] [Info] [触发统计] 总脉冲=0  扫描次数=138869
+[13:52:59.199] [Info] [Test] 正面测试开始 3945x3648 / 4115x3648
+[13:52:59.199] [Debug] [Front] OnCam1 收到图像 3945x3648
+[13:52:59.211] [Debug] [Front] OnCam2 收到图像 4115x3648
+[13:52:59.222] [Debug] [Front] 左右图像配对成功，开始处理
+[13:52:59.350] [Debug] [Front] P号盒1: 识别=P18377447
+[13:52:59.391] [Debug] [Front] P号盒2: 识别=P18377447
+[13:52:59.438] [Debug] [Front] P号盒3: 识别=P18377447
+[13:52:59.470] [Debug] [Front] P号盒4: 识别=P18377447
+[13:52:59.502] [Debug] [Front] P号盒5: 识别=P18377447
+[13:52:59.532] [Debug] [Front] P号盒6: 识别=P18377447
+[13:52:59.559] [Debug] [Front] P号盒7: 识别=P18377447
+[13:52:59.592] [Debug] [Front] P号盒8: 识别=P1188818181518511
+[13:52:59.592] [Debug] [Front] P号盒8: 识别=P18377447
+[13:52:59.625] [Debug] [Front] P号盒9: 识别=P18377447
+[13:52:59.659] [Debug] [Front] P号盒10: 识别=P18377447
+[13:52:59.696] [Debug] [Front] P号盒11: 识别=P18377447
+[13:52:59.724] [Debug] [Front] P号盒12: 识别=P18377447
+[13:52:59.725] [Info] [Front] 步骤1完成: 推理=502.6ms P号=13 破损=1
+[13:52:59.725] [Info] [Front]   1  2  3  4  5  6  7  8  9 10 11 12
+[13:52:59.725] [Info] [Front]  O  O  O  O  O  O  O  X  O  O  O  O
+[13:53:00.057] [Info] [Front] 处理完成 总耗时=835.37ms P=12 OK=11 NG=1
+[13:53:05.374] [Info] ┌──────┬──────────┬──────┬──────────┬──────────┐
+[13:53:05.374] [Info] │ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │
+[13:53:05.374] [Info] ├──────┼──────────┼──────┼──────────┼──────────┤
+[13:53:05.374] [Info] │ IN4  │        0 │ Cam1 │        0 │        0 │
+[13:53:05.374] [Info] │ IN4  │        0 │ Cam2 │        0 │        0 │
+[13:53:05.374] [Info] │ IN10 │        0 │ Cam3 │        0 │        0 │
+[13:53:05.374] [Info] │ IN10 │        0 │ Cam4 │        0 │        0 │
+[13:53:05.374] [Info] │ IN4  │        0 │ Cam5 │        0 │        0 │
+[13:53:05.374] [Info] │ IN4  │        0 │ Cam6 │        0 │        0 │
+[13:53:05.374] [Info] │ IN13 │        0 │ Cam7 │        0 │        0 │
+[13:53:05.374] [Info] │ IN13 │        0 │ Cam8 │        0 │        0 │
+[13:53:05.374] [Info] └──────┴──────────┴──────┴──────────┴──────────┘
+[13:53:05.374] [Info] [触发统计] 总脉冲=0  扫描次数=184040

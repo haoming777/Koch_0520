@@ -337,6 +337,7 @@ namespace Hardware
 				long totalPulses = Interlocked.Read(ref _totalPulses);
 				int loopCount = _monitorLoopCount;
 				var rows = new List<string>();
+				bool allZero = true;
 				lock (_statsLock)
 				{
 					lock (_countLock)
@@ -348,10 +349,15 @@ namespace Hardware
 							long edges = _inputEdgeCounts.GetValueOrDefault(inPort);
 							long outCount = kv.Value;
 							long imgCount = Interlocked.Read(ref ImageReceivedCount[kv.Key]);
+							if (edges > 0 || outCount > 0 || imgCount > 0) allZero = false;
 							rows.Add($"│ IN{inPort,-2} │ {edges,8} │ Cam{kv.Key} │ {outCount,8} │ {imgCount,8} │");
 						}
 					}
 				}
+				// 空闲时跳过（无触发+无图片则不输出日志）
+				if (allZero && totalPulses == 0)
+					continue;
+
 				Logger.Info("┌──────┬──────────┬──────┬──────────┬──────────┐");
 				Logger.Info("│ 端口 │ 触发边沿 │ 相机 │ OUT脉冲  │ 收到图片 │");
 				Logger.Info("├──────┼──────────┼──────┼──────────┼──────────┤");

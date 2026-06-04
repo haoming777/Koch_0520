@@ -77,26 +77,29 @@
 			this.uiPanel13 = new Sunny.UI.UIPanel();
 			this.tableLayoutPanel30 = new System.Windows.Forms.TableLayoutPanel();
 			this.tableLayoutPanel32 = new System.Windows.Forms.TableLayoutPanel();
+			this.MM_Lb = new Sunny.UI.UITextBox();
 			this.uiLabel20 = new Sunny.UI.UILabel();
-			this.MM_Lb = new Sunny.UI.UILabel();
 			this.tableLayoutPanel31 = new System.Windows.Forms.TableLayoutPanel();
+			this.Z_Lb = new Sunny.UI.UITextBox();
 			this.uiLabel18 = new Sunny.UI.UILabel();
-			this.Z_Lb = new Sunny.UI.UILabel();
 			this.tableLayoutPanel33 = new System.Windows.Forms.TableLayoutPanel();
+			this.P_Lb = new Sunny.UI.UITextBox();
 			this.uiLabel17 = new Sunny.UI.UILabel();
-			this.P_Lb = new Sunny.UI.UILabel();
 			this.panel73 = new System.Windows.Forms.Panel();
 			this.uiLabel22 = new Sunny.UI.UILabel();
 			this.panel74 = new System.Windows.Forms.Panel();
-			this.FrontPNumber_Lb = new Sunny.UI.UIPanel();
+			this.FrontPNumber_Lb = new Sunny.UI.UITextBox();
 			this.panel75 = new System.Windows.Forms.Panel();
 			this.uiLabel23 = new Sunny.UI.UILabel();
 			this.panel76 = new System.Windows.Forms.Panel();
-			this.BackBarcode_Lb = new Sunny.UI.UIPanel();
+			this.BackBarcode_Lb = new Sunny.UI.UITextBox();
 			this.panel77 = new System.Windows.Forms.Panel();
 			this.uiLabel16 = new Sunny.UI.UILabel();
 			this.panel78 = new System.Windows.Forms.Panel();
-			this.CodingFormat_Lb = new Sunny.UI.UIPanel();
+			this.CodingFormat_Lb = new Sunny.UI.UIComboBox();
+			this.panel22 = new System.Windows.Forms.Panel();
+			this.saveBtn = new Sunny.UI.UIButton();
+			this.tableLayoutPanel34 = new System.Windows.Forms.TableLayoutPanel();
 			this.tableLayoutPanel3 = new System.Windows.Forms.TableLayoutPanel();
 			this.panel4 = new System.Windows.Forms.Panel();
 			this.tableLayoutPanel4 = new System.Windows.Forms.TableLayoutPanel();
@@ -257,6 +260,7 @@
 			this.panel76.SuspendLayout();
 			this.panel77.SuspendLayout();
 			this.panel78.SuspendLayout();
+			this.panel22.SuspendLayout();
 			this.tableLayoutPanel3.SuspendLayout();
 			this.panel4.SuspendLayout();
 			this.tableLayoutPanel4.SuspendLayout();
@@ -842,10 +846,10 @@
 			this.tableLayoutPanel27.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel27.Controls.Add(this.panel80, 0, 2);
 			this.tableLayoutPanel27.Controls.Add(this.panel79, 0, 0);
-			this.tableLayoutPanel27.Controls.Add(this.panel55, 0, 18);
+			this.tableLayoutPanel27.Controls.Add(this.panel55, 0, 22);
 			this.tableLayoutPanel27.Controls.Add(this.uiLabel8, 0, 1);
-			this.tableLayoutPanel27.Controls.Add(this.panel7, 0, 20);
-			this.tableLayoutPanel27.Controls.Add(this.panel23, 0, 22);
+			this.tableLayoutPanel27.Controls.Add(this.panel7, 0, 24);
+			this.tableLayoutPanel27.Controls.Add(this.panel23, 0, 26);
 			this.tableLayoutPanel27.Controls.Add(this.panel71, 0, 4);
 			this.tableLayoutPanel27.Controls.Add(this.panel72, 0, 5);
 			this.tableLayoutPanel27.Controls.Add(this.panel73, 0, 7);
@@ -854,12 +858,14 @@
 			this.tableLayoutPanel27.Controls.Add(this.panel76, 0, 11);
 			this.tableLayoutPanel27.Controls.Add(this.panel77, 0, 13);
 			this.tableLayoutPanel27.Controls.Add(this.panel78, 0, 14);
+			this.tableLayoutPanel27.Controls.Add(this.panel22, 0, 17);
+			this.tableLayoutPanel27.Controls.Add(this.tableLayoutPanel34, 0, 19);
 			this.tableLayoutPanel27.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.tableLayoutPanel27.Location = new System.Drawing.Point(5, 50);
 			this.tableLayoutPanel27.Margin = new System.Windows.Forms.Padding(0);
 			this.tableLayoutPanel27.Name = "tableLayoutPanel27";
 			this.tableLayoutPanel27.Padding = new System.Windows.Forms.Padding(5, 0, 5, 5);
-			this.tableLayoutPanel27.RowCount = 23;
+			this.tableLayoutPanel27.RowCount = 27;
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 25F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 35F));
@@ -875,7 +881,11 @@
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 25F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 35F));
-			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 200F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 40F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 150F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 5F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 30F));
@@ -1066,15 +1076,17 @@
 			// 
 			this.uiPanel13.Controls.Add(this.tableLayoutPanel30);
 			this.uiPanel13.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.uiPanel13.FillColor = System.Drawing.Color.White;
+			this.uiPanel13.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.uiPanel13.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
 			this.uiPanel13.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
 			this.uiPanel13.Location = new System.Drawing.Point(0, 0);
 			this.uiPanel13.Margin = new System.Windows.Forms.Padding(0);
 			this.uiPanel13.MinimumSize = new System.Drawing.Size(1, 1);
 			this.uiPanel13.Name = "uiPanel13";
 			this.uiPanel13.Padding = new System.Windows.Forms.Padding(3);
-			this.uiPanel13.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
+			this.uiPanel13.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
 			this.uiPanel13.Size = new System.Drawing.Size(180, 35);
+			this.uiPanel13.Style = Sunny.UI.UIStyle.Custom;
 			this.uiPanel13.TabIndex = 0;
 			this.uiPanel13.Text = null;
 			this.uiPanel13.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
@@ -1102,8 +1114,8 @@
 			this.tableLayoutPanel32.ColumnCount = 2;
 			this.tableLayoutPanel32.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 48F));
 			this.tableLayoutPanel32.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 52F));
-			this.tableLayoutPanel32.Controls.Add(this.uiLabel20, 1, 0);
 			this.tableLayoutPanel32.Controls.Add(this.MM_Lb, 0, 0);
+			this.tableLayoutPanel32.Controls.Add(this.uiLabel20, 1, 0);
 			this.tableLayoutPanel32.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.tableLayoutPanel32.Location = new System.Drawing.Point(100, 0);
 			this.tableLayoutPanel32.Margin = new System.Windows.Forms.Padding(0);
@@ -1112,6 +1124,26 @@
 			this.tableLayoutPanel32.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel32.Size = new System.Drawing.Size(74, 29);
 			this.tableLayoutPanel32.TabIndex = 2;
+			// 
+			// MM_Lb
+			// 
+			this.MM_Lb.Cursor = System.Windows.Forms.Cursors.IBeam;
+			this.MM_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.MM_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.MM_Lb.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
+			this.MM_Lb.Location = new System.Drawing.Point(0, 0);
+			this.MM_Lb.Margin = new System.Windows.Forms.Padding(0);
+			this.MM_Lb.MinimumSize = new System.Drawing.Size(1, 16);
+			this.MM_Lb.Name = "MM_Lb";
+			this.MM_Lb.Padding = new System.Windows.Forms.Padding(5);
+			this.MM_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.MM_Lb.RectSides = System.Windows.Forms.ToolStripStatusLabelBorderSides.None;
+			this.MM_Lb.ShowText = false;
+			this.MM_Lb.Size = new System.Drawing.Size(35, 29);
+			this.MM_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.MM_Lb.TabIndex = 7;
+			this.MM_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.MM_Lb.Watermark = "";
 			// 
 			// uiLabel20
 			// 
@@ -1125,25 +1157,13 @@
 			this.uiLabel20.Text = "MM";
 			this.uiLabel20.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
 			// 
-			// MM_Lb
-			// 
-			this.MM_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.MM_Lb.Font = new System.Drawing.Font("微软雅黑", 7.5F, System.Drawing.FontStyle.Bold);
-			this.MM_Lb.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
-			this.MM_Lb.Location = new System.Drawing.Point(3, 0);
-			this.MM_Lb.Name = "MM_Lb";
-			this.MM_Lb.Size = new System.Drawing.Size(29, 29);
-			this.MM_Lb.Style = Sunny.UI.UIStyle.Custom;
-			this.MM_Lb.TabIndex = 4;
-			this.MM_Lb.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-			// 
 			// tableLayoutPanel31
 			// 
 			this.tableLayoutPanel31.ColumnCount = 2;
 			this.tableLayoutPanel31.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 65F));
 			this.tableLayoutPanel31.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 35F));
-			this.tableLayoutPanel31.Controls.Add(this.uiLabel18, 1, 0);
 			this.tableLayoutPanel31.Controls.Add(this.Z_Lb, 0, 0);
+			this.tableLayoutPanel31.Controls.Add(this.uiLabel18, 1, 0);
 			this.tableLayoutPanel31.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.tableLayoutPanel31.Location = new System.Drawing.Point(50, 0);
 			this.tableLayoutPanel31.Margin = new System.Windows.Forms.Padding(0);
@@ -1152,6 +1172,26 @@
 			this.tableLayoutPanel31.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel31.Size = new System.Drawing.Size(50, 29);
 			this.tableLayoutPanel31.TabIndex = 1;
+			// 
+			// Z_Lb
+			// 
+			this.Z_Lb.Cursor = System.Windows.Forms.Cursors.IBeam;
+			this.Z_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.Z_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.Z_Lb.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
+			this.Z_Lb.Location = new System.Drawing.Point(0, 0);
+			this.Z_Lb.Margin = new System.Windows.Forms.Padding(0);
+			this.Z_Lb.MinimumSize = new System.Drawing.Size(1, 16);
+			this.Z_Lb.Name = "Z_Lb";
+			this.Z_Lb.Padding = new System.Windows.Forms.Padding(5);
+			this.Z_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.Z_Lb.RectSides = System.Windows.Forms.ToolStripStatusLabelBorderSides.None;
+			this.Z_Lb.ShowText = false;
+			this.Z_Lb.Size = new System.Drawing.Size(32, 29);
+			this.Z_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.Z_Lb.TabIndex = 7;
+			this.Z_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.Z_Lb.Watermark = "";
 			// 
 			// uiLabel18
 			// 
@@ -1165,25 +1205,13 @@
 			this.uiLabel18.Text = "Z";
 			this.uiLabel18.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
 			// 
-			// Z_Lb
-			// 
-			this.Z_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.Z_Lb.Font = new System.Drawing.Font("微软雅黑", 7.5F, System.Drawing.FontStyle.Bold);
-			this.Z_Lb.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
-			this.Z_Lb.Location = new System.Drawing.Point(3, 0);
-			this.Z_Lb.Name = "Z_Lb";
-			this.Z_Lb.Size = new System.Drawing.Size(26, 29);
-			this.Z_Lb.Style = Sunny.UI.UIStyle.Custom;
-			this.Z_Lb.TabIndex = 4;
-			this.Z_Lb.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-			// 
 			// tableLayoutPanel33
 			// 
 			this.tableLayoutPanel33.ColumnCount = 2;
 			this.tableLayoutPanel33.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 65F));
 			this.tableLayoutPanel33.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 35F));
-			this.tableLayoutPanel33.Controls.Add(this.uiLabel17, 1, 0);
 			this.tableLayoutPanel33.Controls.Add(this.P_Lb, 0, 0);
+			this.tableLayoutPanel33.Controls.Add(this.uiLabel17, 1, 0);
 			this.tableLayoutPanel33.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.tableLayoutPanel33.Location = new System.Drawing.Point(0, 0);
 			this.tableLayoutPanel33.Margin = new System.Windows.Forms.Padding(0);
@@ -1192,6 +1220,26 @@
 			this.tableLayoutPanel33.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel33.Size = new System.Drawing.Size(50, 29);
 			this.tableLayoutPanel33.TabIndex = 0;
+			// 
+			// P_Lb
+			// 
+			this.P_Lb.Cursor = System.Windows.Forms.Cursors.IBeam;
+			this.P_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.P_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.P_Lb.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
+			this.P_Lb.Location = new System.Drawing.Point(0, 0);
+			this.P_Lb.Margin = new System.Windows.Forms.Padding(0);
+			this.P_Lb.MinimumSize = new System.Drawing.Size(1, 16);
+			this.P_Lb.Name = "P_Lb";
+			this.P_Lb.Padding = new System.Windows.Forms.Padding(5);
+			this.P_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.P_Lb.RectSides = System.Windows.Forms.ToolStripStatusLabelBorderSides.None;
+			this.P_Lb.ShowText = false;
+			this.P_Lb.Size = new System.Drawing.Size(32, 29);
+			this.P_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.P_Lb.TabIndex = 6;
+			this.P_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.P_Lb.Watermark = "";
 			// 
 			// uiLabel17
 			// 
@@ -1204,18 +1252,6 @@
 			this.uiLabel17.TabIndex = 5;
 			this.uiLabel17.Text = "P";
 			this.uiLabel17.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-			// 
-			// P_Lb
-			// 
-			this.P_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.P_Lb.Font = new System.Drawing.Font("微软雅黑", 7.5F, System.Drawing.FontStyle.Bold);
-			this.P_Lb.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
-			this.P_Lb.Location = new System.Drawing.Point(3, 0);
-			this.P_Lb.Name = "P_Lb";
-			this.P_Lb.Size = new System.Drawing.Size(26, 29);
-			this.P_Lb.Style = Sunny.UI.UIStyle.Custom;
-			this.P_Lb.TabIndex = 4;
-			this.P_Lb.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
 			// 
 			// panel73
 			// 
@@ -1251,19 +1287,32 @@
 			// 
 			// FrontPNumber_Lb
 			// 
+			this.FrontPNumber_Lb.ButtonFillColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.FrontPNumber_Lb.ButtonFillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(227)))), ((int)(((byte)(175)))), ((int)(((byte)(83)))));
+			this.FrontPNumber_Lb.ButtonFillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(176)))), ((int)(((byte)(124)))), ((int)(((byte)(32)))));
+			this.FrontPNumber_Lb.ButtonRectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.FrontPNumber_Lb.ButtonRectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(227)))), ((int)(((byte)(175)))), ((int)(((byte)(83)))));
+			this.FrontPNumber_Lb.ButtonRectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(176)))), ((int)(((byte)(124)))), ((int)(((byte)(32)))));
+			this.FrontPNumber_Lb.ButtonStyleInherited = false;
+			this.FrontPNumber_Lb.Cursor = System.Windows.Forms.Cursors.IBeam;
 			this.FrontPNumber_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.FrontPNumber_Lb.FillColor = System.Drawing.Color.White;
-			this.FrontPNumber_Lb.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			this.FrontPNumber_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.FrontPNumber_Lb.Font = new System.Drawing.Font("微软雅黑", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
 			this.FrontPNumber_Lb.Location = new System.Drawing.Point(0, 0);
-			this.FrontPNumber_Lb.Margin = new System.Windows.Forms.Padding(0);
-			this.FrontPNumber_Lb.MinimumSize = new System.Drawing.Size(1, 1);
+			this.FrontPNumber_Lb.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+			this.FrontPNumber_Lb.MinimumSize = new System.Drawing.Size(1, 16);
 			this.FrontPNumber_Lb.Name = "FrontPNumber_Lb";
-			this.FrontPNumber_Lb.Padding = new System.Windows.Forms.Padding(3);
-			this.FrontPNumber_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
+			this.FrontPNumber_Lb.Padding = new System.Windows.Forms.Padding(5);
+			this.FrontPNumber_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.FrontPNumber_Lb.RectSize = 2;
+			this.FrontPNumber_Lb.ScrollBarColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.FrontPNumber_Lb.ScrollBarStyleInherited = false;
+			this.FrontPNumber_Lb.ShowText = false;
 			this.FrontPNumber_Lb.Size = new System.Drawing.Size(180, 35);
-			this.FrontPNumber_Lb.TabIndex = 1;
-			this.FrontPNumber_Lb.Text = null;
+			this.FrontPNumber_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.FrontPNumber_Lb.TabIndex = 0;
 			this.FrontPNumber_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.FrontPNumber_Lb.Watermark = "";
 			// 
 			// panel75
 			// 
@@ -1299,19 +1348,23 @@
 			// 
 			// BackBarcode_Lb
 			// 
+			this.BackBarcode_Lb.Cursor = System.Windows.Forms.Cursors.IBeam;
 			this.BackBarcode_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.BackBarcode_Lb.FillColor = System.Drawing.Color.White;
-			this.BackBarcode_Lb.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			this.BackBarcode_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.BackBarcode_Lb.Font = new System.Drawing.Font("微软雅黑", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
 			this.BackBarcode_Lb.Location = new System.Drawing.Point(0, 0);
-			this.BackBarcode_Lb.Margin = new System.Windows.Forms.Padding(0);
-			this.BackBarcode_Lb.MinimumSize = new System.Drawing.Size(1, 1);
+			this.BackBarcode_Lb.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+			this.BackBarcode_Lb.MinimumSize = new System.Drawing.Size(1, 16);
 			this.BackBarcode_Lb.Name = "BackBarcode_Lb";
-			this.BackBarcode_Lb.Padding = new System.Windows.Forms.Padding(3);
-			this.BackBarcode_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
+			this.BackBarcode_Lb.Padding = new System.Windows.Forms.Padding(5);
+			this.BackBarcode_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.BackBarcode_Lb.RectSize = 2;
+			this.BackBarcode_Lb.ShowText = false;
 			this.BackBarcode_Lb.Size = new System.Drawing.Size(180, 35);
-			this.BackBarcode_Lb.TabIndex = 2;
-			this.BackBarcode_Lb.Text = null;
+			this.BackBarcode_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.BackBarcode_Lb.TabIndex = 1;
 			this.BackBarcode_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.BackBarcode_Lb.Watermark = "";
 			// 
 			// panel77
 			// 
@@ -1347,19 +1400,89 @@
 			// 
 			// CodingFormat_Lb
 			// 
+			this.CodingFormat_Lb.DataSource = null;
 			this.CodingFormat_Lb.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.CodingFormat_Lb.FillColor = System.Drawing.Color.White;
-			this.CodingFormat_Lb.Font = new System.Drawing.Font("宋体", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			this.CodingFormat_Lb.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.CodingFormat_Lb.Font = new System.Drawing.Font("微软雅黑", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			this.CodingFormat_Lb.ItemHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(235)))), ((int)(((byte)(212)))));
+			this.CodingFormat_Lb.ItemRectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.CodingFormat_Lb.Items.AddRange(new object[] {
+            "MFG",
+            "LOT",
+            "双排打码",
+            "不打码",
+            "内销码"});
+			this.CodingFormat_Lb.ItemSelectBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.CodingFormat_Lb.ItemSelectForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
 			this.CodingFormat_Lb.Location = new System.Drawing.Point(0, 0);
-			this.CodingFormat_Lb.Margin = new System.Windows.Forms.Padding(0);
-			this.CodingFormat_Lb.MinimumSize = new System.Drawing.Size(1, 1);
+			this.CodingFormat_Lb.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+			this.CodingFormat_Lb.MinimumSize = new System.Drawing.Size(63, 0);
 			this.CodingFormat_Lb.Name = "CodingFormat_Lb";
-			this.CodingFormat_Lb.Padding = new System.Windows.Forms.Padding(3);
-			this.CodingFormat_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(0)))));
+			this.CodingFormat_Lb.Padding = new System.Windows.Forms.Padding(0, 0, 30, 2);
+			this.CodingFormat_Lb.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.CodingFormat_Lb.RectSize = 2;
+			this.CodingFormat_Lb.ScrollBarBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(253)))), ((int)(((byte)(249)))), ((int)(((byte)(241)))));
+			this.CodingFormat_Lb.ScrollBarColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(155)))), ((int)(((byte)(40)))));
+			this.CodingFormat_Lb.ScrollBarStyleInherited = false;
 			this.CodingFormat_Lb.Size = new System.Drawing.Size(180, 35);
-			this.CodingFormat_Lb.TabIndex = 3;
-			this.CodingFormat_Lb.Text = null;
+			this.CodingFormat_Lb.Style = Sunny.UI.UIStyle.Custom;
+			this.CodingFormat_Lb.SymbolSize = 24;
+			this.CodingFormat_Lb.TabIndex = 0;
 			this.CodingFormat_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
+			this.CodingFormat_Lb.Watermark = "";
+			// 
+			// panel22
+			// 
+			this.panel22.Controls.Add(this.saveBtn);
+			this.panel22.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.panel22.Location = new System.Drawing.Point(5, 440);
+			this.panel22.Margin = new System.Windows.Forms.Padding(0);
+			this.panel22.Name = "panel22";
+			this.panel22.Size = new System.Drawing.Size(180, 40);
+			this.panel22.TabIndex = 31;
+			// 
+			// saveBtn
+			// 
+			this.saveBtn.Cursor = System.Windows.Forms.Cursors.Hand;
+			this.saveBtn.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.saveBtn.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(110)))), ((int)(((byte)(190)))), ((int)(((byte)(40)))));
+			this.saveBtn.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(110)))), ((int)(((byte)(190)))), ((int)(((byte)(40)))));
+			this.saveBtn.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(139)))), ((int)(((byte)(203)))), ((int)(((byte)(83)))));
+			this.saveBtn.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(88)))), ((int)(((byte)(152)))), ((int)(((byte)(32)))));
+			this.saveBtn.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(88)))), ((int)(((byte)(152)))), ((int)(((byte)(32)))));
+			this.saveBtn.Font = new System.Drawing.Font("微软雅黑", 12F, System.Drawing.FontStyle.Bold);
+			this.saveBtn.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(245)))), ((int)(((byte)(251)))), ((int)(((byte)(241)))));
+			this.saveBtn.Location = new System.Drawing.Point(0, 0);
+			this.saveBtn.Margin = new System.Windows.Forms.Padding(0);
+			this.saveBtn.MinimumSize = new System.Drawing.Size(1, 1);
+			this.saveBtn.Name = "saveBtn";
+			this.saveBtn.Radius = 30;
+			this.saveBtn.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(110)))), ((int)(((byte)(190)))), ((int)(((byte)(40)))));
+			this.saveBtn.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(139)))), ((int)(((byte)(203)))), ((int)(((byte)(83)))));
+			this.saveBtn.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(88)))), ((int)(((byte)(152)))), ((int)(((byte)(32)))));
+			this.saveBtn.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(88)))), ((int)(((byte)(152)))), ((int)(((byte)(32)))));
+			this.saveBtn.Size = new System.Drawing.Size(180, 40);
+			this.saveBtn.Style = Sunny.UI.UIStyle.Custom;
+			this.saveBtn.TabIndex = 4;
+			this.saveBtn.Text = "保 存";
+			this.saveBtn.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			// 
+			// tableLayoutPanel34
+			// 
+			this.tableLayoutPanel34.ColumnCount = 1;
+			this.tableLayoutPanel34.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+			this.tableLayoutPanel34.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.tableLayoutPanel34.Location = new System.Drawing.Point(5, 530);
+			this.tableLayoutPanel34.Margin = new System.Windows.Forms.Padding(0);
+			this.tableLayoutPanel34.Name = "tableLayoutPanel34";
+			this.tableLayoutPanel34.RowCount = 4;
+			this.tableLayoutPanel34.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 25F));
+			this.tableLayoutPanel34.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 25F));
+			this.tableLayoutPanel34.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 25F));
+			this.tableLayoutPanel34.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 25F));
+			this.tableLayoutPanel34.Size = new System.Drawing.Size(180, 150);
+			this.tableLayoutPanel34.TabIndex = 32;
 			// 
 			// tableLayoutPanel3
 			// 
@@ -3163,6 +3286,7 @@
 			this.panel76.ResumeLayout(false);
 			this.panel77.ResumeLayout(false);
 			this.panel78.ResumeLayout(false);
+			this.panel22.ResumeLayout(false);
 			this.tableLayoutPanel3.ResumeLayout(false);
 			this.panel4.ResumeLayout(false);
 			this.tableLayoutPanel4.ResumeLayout(false);
@@ -3305,21 +3429,16 @@
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel30;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel32;
 		private Sunny.UI.UILabel uiLabel20;
-		private Sunny.UI.UILabel MM_Lb;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel31;
 		private Sunny.UI.UILabel uiLabel18;
-		private Sunny.UI.UILabel Z_Lb;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel33;
 		private Sunny.UI.UILabel uiLabel17;
-		private Sunny.UI.UILabel P_Lb;
 		private System.Windows.Forms.Panel panel73;
 		private Sunny.UI.UILabel uiLabel22;
 		private System.Windows.Forms.Panel panel74;
-		private Sunny.UI.UIPanel FrontPNumber_Lb;
 		private System.Windows.Forms.Panel panel75;
 		private Sunny.UI.UILabel uiLabel23;
 		private System.Windows.Forms.Panel panel76;
-		private Sunny.UI.UIPanel BackBarcode_Lb;
 		private System.Windows.Forms.Panel panel77;
 		private System.Windows.Forms.Panel panel78;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel3;
@@ -3329,7 +3448,6 @@
 		private Sunny.UI.UITitlePanel uiTitlePanel1;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel5;
 		private System.Windows.Forms.Panel panel11;
-		private XL.Controls.XLPictureBox xlPictureBox1;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel6;
 		private System.Windows.Forms.Panel panel53;
 		private Sunny.UI.UIButton Clear_zheng_Btn;
@@ -3451,7 +3569,16 @@
 		private System.Windows.Forms.Panel panel86;
 		private XL.Controls.XLPictureBox xlPictureBox5;
 		private Sunny.UI.UILabel uiLabel16;
-		private Sunny.UI.UIPanel CodingFormat_Lb;
+		private XL.Controls.XLPictureBox xlPictureBox1;
+		private System.Windows.Forms.Panel panel22;
+		private Sunny.UI.UIButton saveBtn;
+		private Sunny.UI.UITextBox FrontPNumber_Lb;
+		private Sunny.UI.UITextBox BackBarcode_Lb;
+		private Sunny.UI.UIComboBox CodingFormat_Lb;
+		private Sunny.UI.UITextBox MM_Lb;
+		private Sunny.UI.UITextBox Z_Lb;
+		private Sunny.UI.UITextBox P_Lb;
+		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel34;
 		// private Sunny.UI.UITextBox Result2;
 	}
 }

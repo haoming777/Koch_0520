@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>扬州高露洁Koch机 - 程序参数与功能文档</title>
+<style>:root{--bg:#0f172a;--surface:#1e293b;--surface2:#273449;--border:#334155;--text:#e2e8f0;--text2:#94a3b8;--accent:#3b82f6;--accent2:#60a5fa;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--purple:#a855f7}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Segoe UI,Microsoft YaHei,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}.sidebar{position:fixed;left:0;top:0;bottom:0;width:280px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:24px 0;z-index:100}.sidebar h2{font-size:14px;color:var(--text2);text-transform:uppercase;letter-spacing:2px;padding:0 20px 16px;border-bottom:1px solid var(--border);margin-bottom:12px}.sidebar nav a{display:block;color:var(--text2);text-decoration:none;padding:6px 20px;font-size:13px;border-left:3px solid transparent;transition:all .15s}.sidebar nav a:hover{color:var(--text);background:rgba(59,130,246,.08)}.sidebar nav a.active{color:var(--accent2);border-left-color:var(--accent);background:rgba(59,130,246,.12)}.sidebar .sub a{padding-left:36px;font-size:12px}.main{margin-left:280px;padding:32px 48px;max-width:1100px}h1{font-size:32px;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,var(--accent2),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}.subtitle{color:var(--text2);font-size:14px;margin-bottom:40px}h2{font-size:22px;margin:48px 0 20px;padding-bottom:10px;border-bottom:2px solid var(--accent);color:var(--accent2)}h3{font-size:17px;margin:32px 0 12px;color:var(--text)}h4{font-size:14px;margin:20px 0 8px;color:var(--yellow)}.table-wrap{overflow-x:auto;margin:16px 0 24px}table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:8px;overflow:hidden;border:1px solid var(--border);font-size:13px}th{background:var(--surface2);color:var(--accent2);text-align:left;padding:10px 14px;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}td{padding:10px 14px;border-top:1px solid var(--border);vertical-align:top}tr:hover td{background:rgba(59,130,246,.04)}td code,th code{background:rgba(59,130,246,.15);padding:2px 6px;border-radius:4px;font-family:Cascadia Code,Fira Code,Consolas,monospace;font-size:12px;color:var(--accent2)}.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}.badge-green{background:rgba(34,197,94,.15);color:var(--green)}.badge-red{background:rgba(239,68,68,.15);color:var(--red)}.badge-yellow{background:rgba(234,179,8,.15);color:var(--yellow)}.badge-blue{background:rgba(59,130,246,.15);color:var(--accent2)}.badge-purple{background:rgba(168,85,247,.15);color:var(--purple)}.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin:20px 0}.card h4{margin-top:0}.card p{color:var(--text2);font-size:13px}.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}.stat-item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}.stat-item .label{font-size:11px;color:var(--text2);text-transform:uppercase}.stat-item .value{font-size:22px;font-weight:700;color:var(--accent2);margin-top:4px}@media print{.sidebar{display:none}.main{margin-left:0;padding:20px}body{background:#fff;color:#000}table{border:1px solid #ccc}th{background:#eee;color:#000}td{color:#000}}</style>
+</head>
+<body>
+<aside class="sidebar"><h2>文档导航</h2><nav><a href="#overview">项目概述</a><a href="#params">外部保存参数清单</a><div class="sub"><a href="#p-setup">setup.ini</a><a href="#p-detection">DetectionParams.json</a><a href="#p-axis">AxisParams.json</a><a href="#p-sku">sku_params.json</a><a href="#p-counts">counts.json</a><a href="#p-model">ModelParams/*.json</a><a href="#p-best">best.json</a><a href="#p-test">TestStParams.json</a></div><a href="#features">功能模块清单</a><div class="sub"><a href="#f-hardware">硬件控制</a><a href="#f-camera">相机管理</a><a href="#f-ai">AI推理引擎</a><a href="#f-front">正面工位</a><a href="#f-back">背面工位</a><a href="#f-endface">端面工位</a><a href="#f-side">侧面工位</a><a href="#f-sku">SKU管理</a><a href="#f-save">图像保存</a><a href="#f-ui">UI与统计</a><a href="#f-plc">PLC通讯</a><a href="#f-perf">性能监控</a></div></nav></aside>
+<main class="main">
+<h1>扬州高露洁Koch机</h1>
+<p class="subtitle">视觉检测系统 - 参数清单与功能文档 | 生成日期: 2026-06-03 | .NET Framework 4.7.2</p>
+<h2 id="overview">项目概述</h2>
+<div class="stat-grid">
+<div class="stat-item"><div class="label">解决方案项目数</div><div class="value">10</div></div>
+<div class="stat-item"><div class="label">相机数量</div><div class="value">8</div></div>
+<div class="stat-item"><div class="label">检测工位</div><div class="value">4</div></div>
+<div class="stat-item"><div class="label">AI模型引擎</div><div class="value">2</div></div>
+<div class="stat-item"><div class="label">运动控制轴</div><div class="value">1</div></div>
+<div class="stat-item"><div class="label">配置文件数</div><div class="value">9</div></div>
+</div>
+<div class="card"><h4>系统架构</h4><p>WinForms桌面应用,使用<strong>8台大华相机</strong>+<strong>正运动Zmotion控制卡</strong>+<strong>西门子S7-1500 PLC</strong>实现Koch包装机在线视觉检测。AI推理采用双引擎:<strong>YOLO ONNX(GPU 0)</strong>负责缺陷检测,<strong>SmartMore ViMo(GPU 1)</strong>负责字符/条码OCR识别。10个项目采用插件式架构,通过CommonLib.IFormPlugin接口加载。</p></div>
+<h2 id="params">外部保存参数清单</h2>
+<p>以下列出程序中所有持久化到外部文件的参数,按文件分类。共<strong>9类配置文件</strong>,分布在项目根目录和Config子目录。</p>
+<h3 id="p-setup">1. setup.ini <span class="badge badge-blue">主配置文件</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.setup.ini</code>(程序根目录) | 读取: IniAPI / SystemConfig | 8个Section</p></div>
+<div class="table-wrap"><table>
+<tr><th>节</th><th>键</th><th>说明</th><th>默认值</th></tr>
+<tr><td rowspan=10>[system]</td><td>imagePath</td><td>图像默认保存路径</td><td>E:Data</td></tr>
+<tr><td>curSpec / curId</td><td>当前规格/产品代号</td><td>A50 / 1</td></tr>
+<tr><td>K</td><td>系数K</td><td>0.07</td></tr>
+<tr><td>imagedays</td><td>图像保留天数</td><td>100</td></tr>
+<tr><td>saveokimage / savengimage</td><td>保存OK/NG渲染图</td><td>True</td></tr>
+<tr><td>saveokrawimage / savengrawimage</td><td>保存OK/NG原图</td><td>True</td></tr>
+<tr><td>First / Second</td><td>第一/二行打码格式</td><td>MFG... / EXP...</td></tr>
+<tr><td>Offset / Astrict</td><td>偏移/约束值</td><td>0 / 1</td></tr>
+<tr><td rowspan=8>[camera]</td><td>camera1sn~camera8sn</td><td>8台相机序列号</td><td>见下方映射表</td></tr>
+<tr><td rowspan=2>[modbus]</td><td>modbusIP / modbusPort</td><td>PLC Modbus地址</td><td>192.168.1.88:502</td></tr>
+<tr><td>[control]</td><td>ipaddr</td><td>运动控制卡IP</td><td>192.168.0.11</td></tr>
+<tr><td rowspan=9>[AI_Models]</td><td>ModelRootPath</td><td>AI模型根目录</td><td>.AIModels</td></tr>
+<tr><td>FrontBoxBreakModel</td><td>正面盒子破检测</td><td>正面盒子破检测est.onnx</td></tr>
+<tr><td>EndFaceUpperModel</td><td>上端面检测</td><td>端面上端面est.onnx</td></tr>
+<tr><td>EndFaceLowerModel</td><td>下端面检测</td><td>端面下端面est.onnx</td></tr>
+<tr><td>BackHookDamageModel</td><td>背面明显挂钩</td><td>背面明显挂钩错位est.onnx</td></tr>
+<tr><td>BackHookSlightModel</td><td>背面轻微挂钩</td><td>背面轻微挂钩错位est.onnx</td></tr>
+<tr><td>SideDefectModel</td><td>侧面缺陷检测</td><td>侧面缺陷检测est.onnx</td></tr>
+<tr><td>UseGpu</td><td>GPU推理</td><td>True</td></tr>
+<tr><td>YoloGpuDeviceId/VimoGpuDeviceId</td><td>YOLO用GPU0/ViMo用GPU1</td><td>0/1</td></tr>
+<tr><td rowspan=5>[input_port]</td><td>cam1~cam5</td><td>触发信号输入端口</td><td>IN9/10/11/12/13</td></tr>
+<tr><td rowspan=8>[output_port]</td><td>cam1~cam8</td><td>8路相机触发输出</td><td>OUT8~OUT15</td></tr>
+<tr><td>[pulse_width]</td><td>default</td><td>触发脉冲宽度(ms)</td><td>50</td></tr>
+</table></div>
+<h3 id="p-detection">2. Config/DetectionParams.json <span class="badge badge-blue">检测参数</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.ConfigDetectionParams.json</code> | 读写: DetectionParameters.cs (单例) | JSON格式, 含9个子类</p></div>
+<div class="table-wrap"><table><tr><th>分类</th><th>参数名</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+<tr><td rowspan=2>全局</td><td>Version</td><td>string</td><td>"1.0"</td><td>配置文件版本号</td></tr>
+<tr><td>上次SKU</td><td>string</td><td>""</td><td>重启时自动恢复上次SKU</td></tr>
+<tr><td rowspan=4>正面检测</td><td>置信度阈值</td><td>float</td><td>0.25</td><td>YOLO检测置信度</td></tr>
+<tr><td>IOU阈值</td><td>float</td><td>0.45</td><td>NMS的IOU阈值</td></tr>
+<tr><td>P号码OCR阈值</td><td>float</td><td>0.5</td><td>P码OCR识别阈值</td></tr>
+<tr><td>盒子破检测阈值/薄膜破检测阈值</td><td>float</td><td>0.3/0.25</td><td>各缺陷类别阈值</td></tr>
+<tr><td rowspan=3>端面检测</td><td>上/下端面置信度阈值</td><td>float</td><td>0.5</td><td>上下端面YOLO置信度</td></tr>
+<tr><td>上/下端面IOU阈值</td><td>float</td><td>0.2</td><td>上下端面IOU</td></tr>
+<tr><td>飞拍延时(ms)/曝光时间(ms)</td><td>int</td><td>10/20</td><td>飞拍图像处理延时</td></tr>
+<tr><td rowspan=5>背面检测</td><td>置信度/IOU阈值</td><td>float</td><td>0.5/0.2</td><td>挂钩检测阈值</td></tr>
+<tr><td>挂钩厚度阈值(px)</td><td>float</td><td>30</td><td>挂钩厚度判断像素数</td></tr>
+<tr><td>挂钩内圈/外圈类别ID</td><td>int</td><td>0/1</td><td>蓝圈/孔洞seg类别</td></tr>
+<tr><td>条形码/日期码识别阈值</td><td>float</td><td>0.5</td><td>条码/日期码限制</td></tr>
+<tr><td rowspan=6>侧面检测</td><td>裁剪比例(宽/高)</td><td>float</td><td>2.0</td><td>图片裁剪比例</td></tr>
+<tr><td>置信度/IOU阈值</td><td>float</td><td>0.5/0.45</td><td>侧面缺陷阈值</td></tr>
+<tr><td>缺少图片判NG</td><td>bool</td><td>true</td><td>采集不足时判NG</td></tr>
+<tr><td>连续运动模式</td><td>bool</td><td>false</td><td>连续往返采集</td></tr>
+<tr><td>触发边缘模式</td><td>string</td><td>RisingLeftFallingRight</td><td>IN12边沿触发方向</td></tr>
+<tr><td rowspan=3>相机参数</td><td>触发脉冲宽度(ms)</td><td>int</td><td>50</td><td>相机触发脉冲宽度</td></tr>
+<tr><td>相机1~8序列号/曝光时间(us)</td><td>string/double</td><td>5000</td><td>8台相机SN+曝光</td></tr>
+<tr><td>模拟模式</td><td>bool</td><td>false</td><td>无硬件模拟模式</td></tr>
+<tr><td rowspan=5>运动控制</td><td>侧面运动轴起点/终点</td><td>float</td><td>0/100</td><td>运动范围</td></tr>
+<tr><td>侧面运动速度/加速度</td><td>int</td><td>20/10000</td><td>运动参数</td></tr>
+<tr><td>运动控制卡IP</td><td>string</td><td>192.168.0.11</td><td>ZMC卡地址</td></tr>
+<tr><td>回零速度/加速度</td><td>float</td><td>20/10000</td><td>回零参数</td></tr>
+<tr><td rowspan=6>图像保存</td><td>保存OK/NG渲染图/原图</td><td>bool</td><td>true</td><td>4个开关独立控制</td></tr>
+<tr><td>JPEG压缩质量</td><td>int</td><td>85</td><td>图片质量1~100</td></tr>
+<tr><td>图片保存路径</td><td>string</td><td>.Images</td><td>图像根目录</td></tr>
+<tr><td>保留天数</td><td>int</td><td>7</td><td>自动清理天数</td></tr>
+<tr><td rowspan=8>工位参数</td><td>正面/端面/背面/侧面工位启用</td><td>bool</td><td>true</td><td>4工位独立开关</td></tr>
+<tr><td>IN4/IN10/IN11/IN12/IN13端口号</td><td>int</td><td>4/10/11/12/13</td><td>触发输入端口</td></tr>
+<tr><td>正面/背面/端面/侧面反转盒序</td><td>bool</td><td>false</td><td>左右盒序反转</td></tr>
+</table></div>
+<h3 id="p-axis">3. Config/AxisParams.json <span class="badge badge-purple">运动轴参数</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.ConfigAxisParams.json</code> | 读写: CommonLib.AxisParamConfig | PLC监控界面可实时调整</p></div>
+<div class="table-wrap"><table><tr><th>参数</th><th>类型</th><th>默认</th><th>说明</th></tr>
+<tr><td>Axis</td><td>int</td><td>0</td><td>运动轴轴号</td></tr>
+<tr><td>Atype</td><td>int</td><td>1</td><td>轴类型(伺服/步进)</td></tr>
+<tr><td>Units</td><td>float</td><td>1</td><td>单位换算系数</td></tr>
+<tr><td>Speed/Accel/Decel</td><td>float</td><td>50/5000/5000</td><td>速度/加速度/减速度</td></tr>
+<tr><td>Lspeed/Sramp/CreepSpeed</td><td>float</td><td>10/0/10</td><td>低速/S曲线/爬行速度</td></tr>
+<tr><td>MaxSpeed</td><td>int</td><td>10000</td><td>最大速度</td></tr>
+<tr><td>FwdIn/RevIn/DatumIn</td><td>int</td><td>14/15/16</td><td>正向/反向/原点限位IN端口</td></tr>
+<tr><td>StartPos/EndPos</td><td>float</td><td>0/100</td><td>起点/终点位置</td></tr>
+<tr><td>FwdSpeed/RetSpeed</td><td>float</td><td>50/100</td><td>正向/返程速度</td></tr>
+<tr><td>MaxPhotoCount</td><td>int</td><td>12</td><td>最大拍照数</td></tr>
+<tr><td>CycleDelayMs</td><td>int</td><td>500</td><td>运动周期延时(ms)</td></tr>
+<tr><td>EnableBarcodeCheck/EnableDateCodeCheck</td><td>bool</td><td>true</td><td>条码/日期码检测开关</td></tr>
+</table></div>
+<h3 id="p-sku">4. Config/sku_params.json <span class="badge badge-green">SKU参数</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.Configsku_params.json</code> | 读写: MainFrm.SaveSkuParams/LoadSkuParams | 保存按钮+启动自动恢复</p></div>
+<div class="table-wrap"><table><tr><th>参数</th><th>类型</th><th>说明</th></tr>
+<tr><td>SKU</td><td>string</td><td>SKU编号(如"181712303")</td></tr>
+<tr><td>P</td><td>int</td><td>每盒产品数量</td></tr>
+<tr><td>Z</td><td>int</td><td>每箱支数</td></tr>
+<tr><td>MM</td><td>int</td><td>产品尺寸(mm)</td></tr>
+<tr><td>FrontPNumber</td><td>string</td><td>正面P号码标准值(OCR比对用)</td></tr>
+<tr><td>BackBarcode</td><td>string</td><td>背面条形码标准值</td></tr>
+<tr><td>CodingFormat</td><td>string</td><td>日期打码格式(如MFG...EXP...)</td></tr>
+</table></div>
+<h3 id="p-counts">5. Config/counts.json <span class="badge badge-yellow">计数持久化</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.Configcounts.json</code> | 读写: MainFrm.SaveCounts/LoadCounts | 60秒定时+关机保存</p></div>
+<div class="table-wrap"><table><tr><th>参数</th><th>类型</th><th>说明</th></tr>
+<tr><td>shift</td><td>string</td><td>当前班次标识(切换班次清零)</td></tr>
+<tr><td>date</td><td>string</td><td>计数日期(yyyyMMdd)(跨天清零)</td></tr>
+<tr><td>frontOk/frontNg</td><td>long</td><td>正面工位OK/NG计数</td></tr>
+<tr><td>backOk/backNg</td><td>long</td><td>背面工位OK/NG计数</td></tr>
+<tr><td>endOk/endNg</td><td>long</td><td>端面工位OK/NG计数</td></tr>
+<tr><td>sideOk/sideNg</td><td>long</td><td>侧面工位OK/NG计数</td></tr>
+</table></div>
+<h3 id="p-model">6. Config/ModelParams/*.json <span class="badge badge-red">模型参数(独立)</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.ConfigModelParams{ModelKey}.json</code> | 读写: ModelParams.cs | 每个AI模型独立参数文件</p></div>
+<div class="table-wrap"><table><tr><th>参数</th><th>类型</th><th>默认</th><th>适用</th><th>说明</th></tr>
+<tr><td>Confidence/Iou</td><td>float</td><td>0.5/0.45</td><td>所有YOLO</td><td>置信度/IOU通用阈值</td></tr>
+<tr><td>CropRatio</td><td>float</td><td>0.33</td><td>所有</td><td>裁剪比例</td></tr>
+<tr><td>BcContrastAlpha/BcBrightnessBeta</td><td>float/int</td><td>1.0/0</td><td>条码</td><td>对比度/亮度增强</td></tr>
+<tr><td>BcEnableGaussianBlur等7项</td><td>bool</td><td>false</td><td>条码</td><td>预处理开关(高斯/中值/直方图/反色/形态学)</td></tr>
+<tr><td>BcThresholdMode</td><td>int</td><td>0</td><td>条码</td><td>二值化:0=None 1=Adaptive 2=Otsu 3=Fixed</td></tr>
+<tr><td>BcAdaptiveBlockSize/BcAdaptiveC</td><td>int/double</td><td>11/2.0</td><td>条码</td><td>自适应阈值参数</td></tr>
+<tr><td>BcFixedThreshold</td><td>int</td><td>128</td><td>条码</td><td>固定阈值</td></tr>
+<tr><td>HookThickness</td><td>float</td><td>30</td><td>挂钩</td><td>挂钩厚度阈值(px)</td></tr>
+<tr><td>HookBlueClassId/HookHoleClassId</td><td>int</td><td>0/1</td><td>挂钩</td><td>分割类别ID</td></tr>
+<tr><td>SideConf/SideIou/SideCropRatio</td><td>float</td><td>0.5/0.45/2.0</td><td>侧面</td><td>侧面专用参数</td></tr>
+<tr><td>EndFaceUpperConf/Iou / LowerConf/Iou</td><td>float</td><td>0.5/0.2</td><td>端面</td><td>上下端面专用</td></tr>
+<tr><td>DrawFontBarcode/Defect/Status/BoxNum</td><td>int</td><td>28/18/48/28</td><td>所有</td><td>绘制字号</td></tr>
+<tr><td>StartHeightRatioPCode/DateCode</td><td>double</td><td>0.667</td><td>条码/P码</td><td>识别区域起始高度比例</td></tr>
+</table></div>
+<h3 id="p-best">7. AI模型 best.json <span class="badge badge-red">训练元数据</span></h3>
+<div class="card"><p><strong>路径:</strong> 如 <code>.资料AIModels正面盒子破检测est.json</code> 等多处 | 读写: YoloInference.SaveParams (运行时双向同步)</p></div>
+<div class="table-wrap"><table><tr><th>模型</th><th>best.json路径</th><th>内容</th></tr>
+<tr><td>正面盒子破</td><td><code>资料AIModels正面盒子破检测est.json</code></td><td>conf,iou,names(类别名映射)</td></tr>
+<tr><td>上端面</td><td><code>资料AIModels端面上端面est.json</code></td><td>conf,iou</td></tr>
+<tr><td>下端面</td><td><code>资料AIModels端面下端面est.json</code></td><td>conf,iou</td></tr>
+<tr><td>背面明显挂钩</td><td><code>资料AIModels背面明显挂钩错位est.json</code></td><td>conf,iou</td></tr>
+<tr><td>背面轻微挂钩</td><td><code>资料AIModels背面轻微挂钩错位est.json</code></td><td>conf,iou</td></tr>
+<tr><td>侧面缺陷</td><td><code>资料AIModels侧面缺陷检测est.json</code></td><td>conf,iou,crop</td></tr>
+<tr><td>ViMo模型(P码/日期码)</td><td><code>资料AIModels...*imo_params.json</code></td><td>ViMo内部参数</td></tr>
+</table></div>
+<h3 id="p-test">8. Config/TestStParams.json <span class="badge badge-green">测试工位参数</span></h3>
+<div class="card"><p><strong>路径:</strong> <code>.ConfigTestStParams.json</code> | 仅用于离线调试窗口 TestFrm</p></div>
+<div class="table-wrap"><table><tr><th>参数</th><th>类型</th><th>说明</th></tr>
+<tr><td>conf/iou/crop</td><td>float</td><td>置信度/IOU/裁剪比例</td></tr>
+<tr><td>pCount</td><td>int</td><td>每盒产品数</td></tr>
+<tr><td>thickness</td><td>float</td><td>挂钩厚度阈值</td></tr>
+<tr><td>blueId/holeId</td><td>int</td><td>蓝圈/孔洞类别ID</td></tr>
+<tr><td>rev/pnum/bc/dc</td><td>bool</td><td>反转/P码/条码/日期码开关</td></tr>
+</table></div>
+<h2 id="features">功能模块清单</h2>
+<h3 id="f-hardware">1. 硬件控制层</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>运动控制卡连接</td><td><code>Hardware/MotionControlManager.cs</code></td><td>Zmotion ZMC卡Ethernet连接,轴InitAxes/MoveAbs/WaitForMoveComplete,回零,限位读取,ApplyAxisParams</td></tr><tr><td>相机触发管理</td><td><code>Hardware/CameraTriggerManager.cs</code></td><td>ZMC卡IN端口检测触发信号-输出OUT脉冲触发相机,每150ms轮询,ImageReceivedCount统计</td></tr><tr><td>PLC通讯</td><td><code>Hardware/PlcCommunication.cs</code></td><td>西门子S7-1500 Modbus TCP,HslCommunication库,Connect/Disconnect/SendResult</td></tr><tr><td>运动轴参数配置UI</td><td><code>PLC监控/ControlFrm.cs</code></td><td>独立调试界面,SaveParamsFromUI-AxisParamConfig.Save</td></tr></table></div>
+<h3 id="f-camera">2. 相机管理</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>8相机初始化</td><td><code>MainFrm.InitCameras()</code> (行315-419)</td><td>DaHuaSDK-SetCameraInterface(this)-StopStreamGrabber-SetAcquisitionMode(0)单帧-SetTriggerMode(1)触发-曝光-StartStreamGrabber</td></tr><tr><td>ICamera回调</td><td><code>MainFrm : ICamera</code> (行38,651-674)</td><td>OnCameraOpen/Close/ConnectLoss,按序列号匹配相机ID-UpdateCameraState</td></tr><tr><td>OnImage分发</td><td><code>MainFrm.OnCamera1~8Image()</code> (行678-780)</td><td>8个独立事件处理器,按ID分发-OnCam1~8,ProductId分配</td></tr><tr><td>状态灯更新</td><td><code>MainFrm.UpdateCameraState()</code> (行785-803)</td><td>BeginInvoke异步UI更新,各相机独立检查camera1State~camera8State</td></tr><tr><td>曝光时间设置</td><td><code>MainFrm.SetCameraExposure()</code> (行454-477)</td><td>每台相机独立曝光(us),从DetectionParams.Camera读取</td></tr><tr><td>相机资源释放</td><td><code>MainFrm.DisposeAllCameras()</code> (行1540-1550)</td><td>关闭时StopStreamGrabber-Close 8台SDK</td></tr></table></div>
+<h3 id="f-ai">3. AI推理引擎</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>模型管理器</td><td><code>AI/AiModelManager.cs</code></td><td>LoadAllModels加载ONNX+ViMo,PreloadedModels静态属性避免重复加载</td></tr><tr><td>YOLO ONNX推理</td><td><code>AI/YoloInference.cs</code></td><td>ONNX Runtime GPU(CUDA),BlobFromImages+Marshal.Copy,letterbox/standard双模式</td></tr><tr><td>YOLO分割推理</td><td><code>AI/YoloOnnxSegmentation.cs</code></td><td>实例分割ONNX推理</td></tr><tr><td>ViMo推理</td><td><code>AI/Vimo.cs</code>+<code>AIsdk/</code></td><td>SmartMore ViMo SDK,GPU 1,P号码OCR,分类模型检测日期码重影(Score>0.8)</td></tr><tr><td>模型参数同步</td><td><code>YoloInference.SaveParams()</code></td><td>InitFromMeta从best.json加载-运行时修改-SaveParams反向同步</td></tr><tr><td>GPU预热</td><td><code>YoloInference.Warmup()</code></td><td>Random(42)随机数据预热GPU,避免首帧冷启动延迟</td></tr><tr><td>ONNX优化</td><td><code>YoloInference.InitSession()</code></td><td>ORT_SEQUENTIAL+EnableMemoryPattern+cudnn_conv_use_max_workspace</td></tr></table></div>
+<h3 id="f-front">4. 正面工位 <span class="badge badge-green">相机1+2</span></h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>工位入口</td><td><code>Stations/FrontStationProcessor.cs</code></td><td>OnCam1/OnCam2接收图像,配对处理,ProductResult输出</td></tr><tr><td>盒子破损检测</td><td><code>Detection/FrontDamageInspection.cs</code></td><td>YOLO推理盒子破/薄膜破缺陷</td></tr><tr><td>P号码OCR</td><td><code>AI/Vimo.cs</code></td><td>ViMo识别P号码,与SKU标准值比对</td></tr><tr><td>缺陷绘制</td><td><code>Utils/ResultDrawer.cs</code></td><td>检测框和标签绘制</td></tr><tr><td>盒序反转</td><td><code>ReverseBoxOrder</code></td><td>支持左右盒序反转</td></tr><tr><td>阈值初始化</td><td><code>InitThresholdsFromModel()</code></td><td>从best.json加载conf/iou</td></tr></table></div>
+<h3 id="f-back">5. 背面工位 <span class="badge badge-green">相机5+6</span></h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>工位入口</td><td><code>Stations/BackStationProcessor.cs</code></td><td>OnCam3/OnCam4接收,配对,ProductResult输出</td></tr><tr><td>挂钩错位检测</td><td><code>Detection/HookDamageDetector.cs</code></td><td>YOLO分割-蓝圈与孔洞距离-明显/轻微错位判定</td></tr><tr><td>条形码识别</td><td><code>BackStationProcessor</code></td><td>条码解码+与SKU标准值比对</td></tr><tr><td>日期码识别</td><td><code>AI/Vimo.cs</code></td><td>ViMo分类+分割识别日期码,重影检测Score>0.8</td></tr><tr><td>打码格式验证</td><td><code>BackStationProcessor</code></td><td>日期码格式与SKU.CodingFormat比对</td></tr></table></div>
+<h3 id="f-endface">6. 端面工位 <span class="badge badge-green">相机3+4</span></h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>工位入口</td><td><code>Stations/EndFaceStationProcessor.cs</code></td><td>OnCam5/OnCam6接收,按P值批次检测</td></tr><tr><td>飞拍批次管理</td><td><code>EndFaceStationProcessor</code></td><td>P个产品为一批,批次完成后统一输出</td></tr><tr><td>上/下端面检测</td><td>YOLO推理 best.onnx</td><td>上下端面独立检测</td></tr><tr><td>轮播图管理</td><td><code>GetCurrentUpperImage/LowerImage</code></td><td>独立上下端面索引,CurrentIndex跟踪</td></tr><tr><td>结果汇总</td><td><code>ProductResult.EndFaceRenderImage</code></td><td>合并渲染图输出</td></tr></table></div>
+<h3 id="f-side">7. 侧面工位 <span class="badge badge-green">相机7+8</span></h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>工位入口+运动控制</td><td><code>Stations/SideStationProcessor.cs</code></td><td>最复杂工位,流程最长</td></tr><tr><td>IN13到位检测</td><td><code>MainFrm.OnCameraTriggered()</code></td><td>上升沿-预归位,下降沿-启动侧面运动</td></tr><tr><td>IN12运动触发</td><td><code>CameraTriggerConfig.SideSensorEdgeMode</code></td><td>可配置上升触发左/下降触发右</td></tr><tr><td>运动控制流程</td><td><code>StartDetection()</code></td><td>StartPos-EndPos运动,触发拍照,完成后返回</td></tr><tr><td>图像采集处理</td><td><code>ProcessStream()</code></td><td>左右分别处理,YOLO推理,BuildDisplayImages</td></tr><tr><td>GDI+旋转显示</td><td><code>RenderSideImage()</code></td><td>Graphics.RotateTransform旋转图像+文字</td></tr><tr><td>实时预览</td><td><code>OnRealTimeDisplay</code></td><td>采集过程实时推送到xlPictureBox5/6</td></tr><tr><td>连续运动模式</td><td><code>UseContinuousMode</code></td><td>往返连续采集</td></tr><tr><td>缺图判NG</td><td><code>MissingAsNg</code></td><td>采集照片不足时判定NG</td></tr></table></div>
+<h3 id="f-sku">8. SKU/产品管理</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>SKU数据库</td><td><code>Utils/SkuDatabase.cs</code></td><td>SQLite加载/P/Z/MM/P号码/条码/打码格式</td></tr><tr><td>SKU搜索</td><td><code>MainFrm.SetupSkuSearch()</code> (行1051-1168)</td><td>ComboBox+防抖300ms+fuzzy搜索+下拉建议+回车确认</td></tr><tr><td>SKU切换</td><td><code>_skuSearchCombo.SelectedIndexChanged</code></td><td>更新4工位+UI+保存到sku_params.json和DetectionParams</td></tr><tr><td>SKU显示</td><td><code>UpdateSkuDisplay()</code> (行1185-1234)</td><td>P_Lb/Z_Lb/MM_Lb等标签刷新</td></tr><tr><td>SKU持久化</td><td><code>SaveSkuParams/LoadSkuParams</code> (行974-1035)</td><td>启动从JSON恢复_currentSku,推送所有工位</td></tr><tr><td>产品管理插件</td><td><code>产品管理/</code></td><td>独立Tab页增删改查</td></tr></table></div>
+<h3 id="f-save">9. 图像保存</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>高速异步保存</td><td><code>CommonLib/HighSpeedImageSaver.cs</code></td><td>4线程+500队列异步存图,200ms队列积压告警</td></tr><tr><td>OK/NG分级保存</td><td>各Station SaveImages</td><td>OK-OK/,NG-NG/,原图/渲染图分开</td></tr><tr><td>侧面左右区分</td><td><code>SideStationProcessor.SaveImages</code></td><td>left/right子目录</td></tr><tr><td>端面批次目录</td><td><code>EndFaceStationProcessor.SaveImages</code></td><td>按ProductId分组</td></tr><tr><td>JPEG编码缓存</td><td><code>Utils/BitmapFastConverter.cs</code></td><td>static readonly JpegCodec</td></tr><tr><td>自动清理</td><td><code>HighSpeedImageSaver</code></td><td>按保留天数删除过期图片</td></tr></table></div>
+<h3 id="f-ui">10. UI与统计</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>图片显示</td><td><code>MainFrm.UpdatePictureBox()</code> (行1312-1344)</td><td>XLPictureBox显示,>1920px缩放,克隆Bitmap防参数无效</td></tr><tr><td>结果渲染</td><td><code>OnStationResult(ProductResult)</code> (行846-866)</td><td>接收4工位结果-更新6个PictureBox</td></tr><tr><td>统计面板</td><td><code>UpdateStatistics()</code> (行868-898)</td><td>OK/NG计数+良率,从各工位OkCount/NgCount读取</td></tr><tr><td>计数持久化</td><td><code>SaveCounts/LoadCounts</code> (行965-972)</td><td>60秒定时+关机保存,班次/跨天清零</td></tr><tr><td>班次管理</td><td><code>StartShiftCheckTimer()</code></td><td>60秒定时器检测班次切换,从系统时间推断</td></tr><tr><td>轮播图索引</td><td><code>InitCarouselLabels()</code> (行1235-1271)</td><td>端面/侧面1/8格式标签</td></tr><tr><td>状态灯</td><td>UILight控件</td><td>PLC/Motion/8相机连接状态</td></tr><tr><td>清空统计</td><td><code>clearBtn.Click</code></td><td>清零所有工位计数,调RestoreCounts(0,0)</td></tr><tr><td>检测参数设置</td><td><code>From/DetectionParametersForm.cs</code></td><td>独立窗口设置阈值+相机曝光,导入导出JSON</td></tr><tr><td>NG图片浏览</td><td><code>OpenNGimageBtn.Click</code></td><td>Process.Start打开NG图片目录</td></tr><tr><td>SKU保存按钮</td><td><code>saveBtn.Click</code></td><td>手动保存当前SKU参数并推送所有工位</td></tr></table></div>
+<h3 id="f-plc">11. PLC通讯与结果输出</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>Modbus TCP连接</td><td><code>PlcCommunication.cs</code></td><td>HslCommunication库,读保持寄存器/线圈</td></tr><tr><td>结果发送</td><td><code>SendResult()</code></td><td>发送OK/NG结果到PLC</td></tr><tr><td>PLC监控插件</td><td><code>PLC监控/</code></td><td>独立Tab页实时监控PLC寄存器值</td></tr></table></div>
+<h3 id="f-perf">12. 性能监控与日志</h3>
+<div class="table-wrap"><table><tr><th style="width:18%">功能</th><th style="width:28%">实现位置</th><th>说明</th></tr><tr><td>综合性能监控</td><td><code>Utils/PerformanceMonitor.cs</code></td><td>多工位avg/min/max统计,StationStats类,PrintSummary输出</td></tr><tr><td>性能日志CSV</td><td><code>Utils/PerformanceLogger.cs</code></td><td>裁剪/推理/后处理/绘制/存图/PLC/总耗时各环节</td></tr><tr><td>日志系统</td><td><code>CommonLib/Logger.cs</code></td><td>Info/Warning/Error/Debug四级,按日期自动切割文件</td></tr><tr><td>推理计时</td><td><code>YoloInference</code></td><td>Stopwatch精细计时预处理/推理/后处理</td></tr></table></div>
+<h2 id="f-mapping">相机-工位-触发 完整映射表</h2>
+<div class="table-wrap"><table><tr><th>相机</th><th>名称</th><th>工位</th><th>触发IN</th><th>触发OUT</th><th>OnImage事件</th><th>分派方法</th><th>显示控件</th></tr><tr><td>1</td><td>正面左</td><td>Front</td><td>IN4 +</td><td>OUT9</td><td>OnCamera1Image</td><td>_frontStation.OnCam1</td><td>xlPictureBox1</td></tr><tr><td>2</td><td>正面右</td><td>Front</td><td>IN4 +</td><td>OUT8</td><td>OnCamera2Image</td><td>_frontStation.OnCam2</td><td>xlPictureBox1</td></tr><tr><td>3</td><td>上端面</td><td>EndFace</td><td>IN10 +</td><td>OUT10</td><td>OnCamera3Image</td><td>_endFaceStation.OnCam5</td><td>xlPictureBox3</td></tr><tr><td>4</td><td>下端面</td><td>EndFace</td><td>IN10 +</td><td>OUT11</td><td>OnCamera4Image</td><td>_endFaceStation.OnCam6</td><td>xlPictureBox4</td></tr><tr><td>5</td><td>背面左</td><td>Back</td><td>IN4 +</td><td>OUT12</td><td>OnCamera5Image</td><td>_backStation.OnCam3</td><td>xlPictureBox2</td></tr><tr><td>6</td><td>背面右</td><td>Back</td><td>IN4 +</td><td>OUT13</td><td>OnCamera6Image</td><td>_backStation.OnCam4</td><td>xlPictureBox2</td></tr><tr><td>7</td><td>左侧面</td><td>Side</td><td>IN13 +</td><td>OUT14</td><td>OnCamera7Image</td><td>_sideStation.OnCam7</td><td>xlPictureBox5</td></tr><tr><td>8</td><td>右侧面</td><td>Side</td><td>IN13 -</td><td>OUT15</td><td>OnCamera8Image</td><td>_sideStation.OnCam8</td><td>xlPictureBox6</td></tr></table></div>
+<h2>配置文件汇总表</h2>
+<div class="table-wrap"><table><tr><th>#</th><th>文件</th><th>路径</th><th>管理类</th><th>用途</th></tr><tr><td>1</td><td>setup.ini</td><td><code>.\setup.ini</code></td><td>IniAPI/SystemConfig</td><td>主配置:硬件地址+相机SN+AI路径+打码格式</td></tr><tr><td>2</td><td>DetectionParams.json</td><td><code>.\Config\</code></td><td>DetectionParameters.cs</td><td>检测阈值+相机参数+保存策略+工位开关</td></tr><tr><td>3</td><td>AxisParams.json</td><td><code>.\Config\</code></td><td>AxisParamConfig</td><td>运动轴参数:速度/加速度/限位/行程</td></tr><tr><td>4</td><td>sku_params.json</td><td><code>.\Config\</code></td><td>MainFrm</td><td>当前SKU参数(P/Z/MM/条码/打码)</td></tr><tr><td>5</td><td>counts.json</td><td><code>.\Config\</code></td><td>MainFrm</td><td>4工位OK/NG计数+班次+日期</td></tr><tr><td>6</td><td>ModelParams/*.json</td><td><code>.\Config\ModelParams\</code></td><td>ModelParams.cs</td><td>每个AI模型独立参数(阈值/预处理/字体)</td></tr><tr><td>7</td><td>TestStParams.json</td><td><code>.\Config\</code></td><td>TestFrm</td><td>调试窗口工位参数</td></tr><tr><td>8</td><td>best.json(多文件)</td><td><code>.\资料\AI\Models\*\</code></td><td>YoloInference</td><td>YOLO训练元数据(运行时双向同步)</td></tr><tr><td>9</td><td>vimo_params.json</td><td><code>.\资料\AI\Models\*\</code></td><td>ViMo SDK</td><td>ViMo模型内部参数</td></tr></table></div>
+<p style="text-align:center;color:var(--text2);margin-top:60px;padding:30px 0;border-top:1px solid var(--border);font-size:12px;">文档生成时间: 2026-06-03 | 扬州高露洁 Koch 包装机视觉检测系统 | 版本 1.0<br>可直接在浏览器中打印为PDF,或全选复制到Word中保持格式</p>
+</main>
+<script>var s=document.querySelectorAll("h2[id],h3[id]"),n=document.querySelectorAll(".sidebar nav a");window.addEventListener("scroll",function(){var c="";s.forEach(function(e){if(window.scrollY>=e.offsetTop-100)c=e.id});n.forEach(function(e){e.classList.toggle("active",e.getAttribute("href")==="#"+c)})});</script>
+</body>
+</html>

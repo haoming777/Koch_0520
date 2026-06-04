@@ -44,7 +44,13 @@ namespace Stations
 		private readonly List<Mat> _currentDisplayImages = new List<Mat>();
 		private readonly List<Mat> _upperDisplayImages = new List<Mat>();
 		private readonly List<Mat> _lowerDisplayImages = new List<Mat>();
+		// Bitmap缓存：DrawDefectOnImage返回Bitmap，直接缓存避免Mat→Bitmap往返转换
+		private readonly List<Bitmap> _currentDisplayBitmaps = new List<Bitmap>();
+		private readonly List<Bitmap> _upperDisplayBitmaps = new List<Bitmap>();
+		private readonly List<Bitmap> _lowerDisplayBitmaps = new List<Bitmap>();
 		private int _currentDisplayIndex = 0;
+		private int _upperDisplayIndex = 0;  // 上端面独立索引
+		private int _lowerDisplayIndex = 0;  // 下端面独立索引
 		private readonly object _resultLock = new object();
 
 		private long _totalCount = 0;
@@ -64,6 +70,8 @@ namespace Stations
 		public float ConfThreshold { get; set; } = 0.5f;
 		public float IouThreshold { get; set; } = 0.2f;
 		public bool ReverseBoxOrder = false;
+		public bool SkipCrop = false;
+		public bool EnableUpperDefectCheck = true;
 		public int ExposureMs { get; set; } = 20;
 
 		public long TotalCount => _totalCount;
@@ -82,6 +90,7 @@ namespace Stations
 			_pCount = pCount;
 			_imageSaver = imageSaver;
 			_perfMonitor = perfMonitor;
+				EnableUpperDefectCheck = DetectionParameters.Instance.EndFace.EnableUpperDefectCheck;
 			_displayParams = Config.ModelParams.Load("endface_upper");
 			_batchQueue = new BlockingCollection<(List<ImageContext>, List<ImageContext>)>(50);
 			_cts = new CancellationTokenSource();
@@ -89,6 +98,31 @@ namespace Stations
 
 		public void UpdatePCount(int pCount) => _pCount = pCount;
 		public void UpdateSku(SkuData sku) { _sku = sku; }
+
+		/// <summary>重新加载ModelParams，无需重启软件</summary>
+		public void ReloadModelParams()
+		{
+			_displayParams = Config.ModelParams.Load("endface_upper");
+			var euParams = Config.ModelParams.Load("endface_upper");
+			if (euParams.EndFaceUpperConf > 0) ConfThreshold = euParams.EndFaceUpperConf;
+			if (euParams.EndFaceUpperIou > 0) IouThreshold = euParams.EndFaceUpperIou;
+			EnableUpperDefectCheck = DetectionParameters.Instance.EndFace.EnableUpperDefectCheck;
+			Logger.Info($"[EndFace] ModelParams已重新加载 Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+		}
+
+		/// <summary>测试用：直接传入上/下端面图片对进行推理（跳过裁图）</summary>
+		public void TestProcessPair(Bitmap upperBmp, Bitmap lowerBmp)
+		{
+			long pid = DateTime.Now.Ticks;
+			var uCtx = new Models.ImageContext { ProductId = pid, OriginalBitmap = upperBmp, ReceiveTime = DateTime.Now };
+			var lCtx = new Models.ImageContext { ProductId = pid, OriginalBitmap = lowerBmp, ReceiveTime = DateTime.Now };
+			Task.Run(() => {
+				bool savedSkip = SkipCrop;
+				SkipCrop = true;
+				try { ProcessBatch(new List<Models.ImageContext> { uCtx }, new List<Models.ImageContext> { lCtx }); }
+				finally { SkipCrop = savedSkip; }
+			});
+		}
 		public void OnCam5(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgUpperCount); EnqueueImage(_upperQueue, ref _upperCount, bitmap, productId, "Upper"); }
 		public void OnCam6(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgLowerCount); EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower"); }
 
@@ -131,6 +165,13 @@ namespace Stations
 				count--;
 			}
 			return list;
+		}
+
+		// 从模型best.json加载阈值
+		public void InitThresholdsFromModel() {
+			// 上端面模型阈值优先
+			if (_models.EndFaceUpperModel != null) { ConfThreshold = _models.EndFaceUpperModel.DefaultConfThres; IouThreshold = _models.EndFaceUpperModel.DefaultIouThres; }
+			Logger.Info($"[EndFace] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 		}
 
 		public void Start()
@@ -210,7 +251,7 @@ namespace Stations
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
 				using (var inferScope = new StopwatchScope(t => inferenceTime = t))
 				{
-					var upperTask = Task.Run(() => RunInference(upperMats, _models.EndFaceUpperModel));
+					var upperTask = Task.Run(() => EnableUpperDefectCheck ? RunInference(upperMats, _models.EndFaceUpperModel) : new List<YoloInference.YoloResult>());
 					var lowerTask = Task.Run(() => RunInference(lowerMats, _models.EndFaceLowerModel));
 					Task.WaitAll(upperTask, lowerTask);
 					upperResults = upperTask.Result;
@@ -242,9 +283,15 @@ namespace Stations
 					EndFaceDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList()
 				};
 
-				Interlocked.Increment(ref _totalCount);
-				if (isOk) Interlocked.Increment(ref _okCount);
-				else Interlocked.Increment(ref _ngCount);
+				int boxOk = mergedStatus.Count(s => s == "OK");
+				Logger.Info("[EndFace]    " + string.Join(" ", Enumerable.Range(1,upperStatus.Count).Select(i => i.ToString().PadLeft(3))));
+				// alignment done
+				Logger.Info("[EndFace]上 " + string.Join(" ", upperStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
+				Logger.Info("[EndFace]下 " + string.Join(" ", lowerStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
+				Logger.Info("[EndFace]总 " + string.Join(" ", mergedStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
+				Interlocked.Add(ref _totalCount, mergedStatus.Count);
+				Interlocked.Add(ref _okCount, boxOk);
+				Interlocked.Add(ref _ngCount, mergedStatus.Count - boxOk);
 
 				double drawTime = 0;
 				using (var drawScope = new StopwatchScope(t => drawTime = t))
@@ -259,16 +306,17 @@ namespace Stations
 				{
 					int upperIdx = FindFirstNgInList(upperStatus, _upperDisplayImages.Count);
 					int lowerIdx = FindFirstNgInList(lowerStatus, _lowerDisplayImages.Count);
-					if (upperIdx < _upperDisplayImages.Count && _upperDisplayImages[upperIdx] != null)
-						result.EndFaceRenderImage = _upperDisplayImages[upperIdx].ToBitmap();
-					if (lowerIdx < _lowerDisplayImages.Count && _lowerDisplayImages[lowerIdx] != null)
-						result.EndFaceLowerRenderImage = _lowerDisplayImages[lowerIdx].ToBitmap();
+					// 直接从Bitmap缓存取，省掉Mat→Bitmap转换
+					if (upperIdx < _upperDisplayBitmaps.Count && _upperDisplayBitmaps[upperIdx] != null)
+						result.EndFaceRenderImage = (Bitmap)_upperDisplayBitmaps[upperIdx].Clone();
+					if (lowerIdx < _lowerDisplayBitmaps.Count && _lowerDisplayBitmaps[lowerIdx] != null)
+						result.EndFaceLowerRenderImage = (Bitmap)_lowerDisplayBitmaps[lowerIdx].Clone();
 				}
 
 				double saveTime = 0;
 				using (var saveScope = new StopwatchScope(t => saveTime = t))
 				{
-					SaveImagesBatch(upperImages, lowerImages, mergedStatus, firstProductId, isOk);
+					SaveImagesBatch(upperImages, lowerImages, upperMats, lowerMats, mergedStatus, firstProductId, isOk);
 				}
 
 				double totalTime = sw.Elapsed.TotalMilliseconds;
@@ -289,7 +337,13 @@ namespace Stations
 
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, actualP);
-				Logger.Info($"[EndFace] 批处理完成 ProductId={firstProductId} 总耗时={totalTime:F2}ms Crop={cropTime:F2}ms Infer={inferenceTime:F2}ms Draw={drawTime:F2}ms Save={saveTime:F2}ms 结果={(isOk ? "OK" : "NG")}");
+				var upStats = new Dictionary<string, int>(); foreach (var s in upperStatus) { if (s != "OK") { if (upStats.ContainsKey(s)) upStats[s]++; else upStats[s] = 1; } }
+				var loStats = new Dictionary<string, int>(); foreach (var s in lowerStatus) { if (s != "OK") { if (loStats.ContainsKey(s)) loStats[s]++; else loStats[s] = 1; } }
+				string defStr = "";
+				if (upStats.Count > 0) defStr += " 上端面:" + string.Join(" ", upStats.Select(kv => kv.Key + kv.Value));
+				if (loStats.Count > 0) defStr += " 下端面:" + string.Join(" ", loStats.Select(kv => kv.Key + kv.Value));
+				if (defStr.Length > 0) defStr = " |" + defStr;
+				Logger.Info($"[EndFace] 完成 P={actualP} OK={boxOk} NG={mergedStatus.Count - boxOk}{defStr} | 耗时={totalTime:F0}ms");
 			}
 			catch (Exception ex)
 			{
@@ -309,7 +363,7 @@ namespace Stations
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
 				// 水平裁图（上端面裁右边，下端面裁左边）
-				if (cropPx > 0)
+				if (cropPx > 0 && !SkipCrop)
 				{
 					Mat croppedH;
 					if (cropRight)
@@ -391,6 +445,8 @@ namespace Stations
 					int dfFont = (_displayParams != null && _displayParams.DrawFontDefect > 0) ? _displayParams.DrawFontDefect : 18; using (var font = new Font("微软雅黑", dfFont, FontStyle.Bold))
 					{
 						string label = defect.DefectType;
+						if (defect.Score > 0 && defect.Score < 1.0f)
+							label = label + " " + defect.Score.ToString("F2");
 						var labelSize = g.MeasureString(label, font);
 						int lx = x1, ly = y1 - (int)labelSize.Height - 4;
 						if (ly < 4) ly = y1 + 4;
@@ -430,15 +486,24 @@ namespace Stations
 		{
 			lock (_resultLock)
 			{
+				// 释放旧Bitmap，避免内存泄漏
+				foreach (var b in _currentDisplayBitmaps) b?.Dispose();
+				foreach (var b in _upperDisplayBitmaps) b?.Dispose();
+				foreach (var b in _lowerDisplayBitmaps) b?.Dispose();
 				_currentDisplayImages.Clear();
+				_currentDisplayBitmaps.Clear();
 				_upperDisplayImages.Clear();
+				_upperDisplayBitmaps.Clear();
 				_lowerDisplayImages.Clear();
+				_lowerDisplayBitmaps.Clear();
 				for (int i = 0; i < upperMats.Count; i++)
 				{
 					var upperBmp = DrawDefectOnImage(upperMats[i], upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(), upperStatus[i], i, upperMats.Count);
-					_upperDisplayImages.Add(BitmapConverter.ToMat(upperBmp)); upperBmp.Dispose();
+					_upperDisplayBitmaps.Add(upperBmp);  // 缓存Bitmap，由_displayBitmaps管理生命周期
+					_upperDisplayImages.Add(BitmapConverter.ToMat(upperBmp));
 					var lowerBmp = DrawDefectOnImage(lowerMats[i], lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), lowerStatus[i], i, lowerMats.Count);
-					_lowerDisplayImages.Add(BitmapConverter.ToMat(lowerBmp)); lowerBmp.Dispose();
+					_lowerDisplayBitmaps.Add(lowerBmp);
+					_lowerDisplayImages.Add(BitmapConverter.ToMat(lowerBmp));
 
 					int w = upperMats[i].Width;
 					int h = upperMats[i].Height + lowerMats[i].Height;
@@ -449,10 +514,13 @@ namespace Stations
 						lowerMats[i].CopyTo(lowerRoi);
 					var combinedBmp = DrawDefectOnCombined(combined, upperDefects.ContainsKey(i) ? upperDefects[i] : new List<BoxDefect>(),
 						lowerDefects.ContainsKey(i) ? lowerDefects[i] : new List<BoxDefect>(), upperStatus[i], lowerStatus[i]);
+					_currentDisplayBitmaps.Add(combinedBmp);  // 缓存Bitmap
 					_currentDisplayImages.Add(BitmapConverter.ToMat(combinedBmp));
-					combinedBmp.Dispose(); combined.Dispose();
+					combined.Dispose();
 				}
 				_currentDisplayIndex = FindFirstNgIndex(upperStatus, lowerStatus);
+				_upperDisplayIndex = FindFirstNgInList(upperStatus, _upperDisplayImages.Count);
+				_lowerDisplayIndex = FindFirstNgInList(lowerStatus, _lowerDisplayImages.Count);
 			}
 		}
 
@@ -517,9 +585,9 @@ namespace Stations
 		private int FindFirstNgIndex(List<string> upperStatus, List<string> lowerStatus)
 		{
 			for (int i = 0; i < _upperDisplayImages.Count; i++)
-				if (upperStatus[i] != "OK" || lowerStatus[i] != "OK")
+				if (i < upperStatus.Count && upperStatus[i] != "OK" || i < lowerStatus.Count && lowerStatus[i] != "OK")
 					return i;
-			return 0;
+			return Math.Max(0, _upperDisplayImages.Count - 1);  // 全OK显示最后一张
 		}
 
 		/// <summary>在单侧状态列表中找第一个NG，全OK返回最后一张</summary>
@@ -545,8 +613,8 @@ namespace Stations
 		{
 			lock (_resultLock)
 			{
-				if (_upperDisplayImages.Count > 0 && _currentDisplayIndex >= 0 && _currentDisplayIndex < _upperDisplayImages.Count)
-					return _upperDisplayImages[_currentDisplayIndex].Clone();
+				if (_upperDisplayImages.Count > 0 && _upperDisplayIndex >= 0 && _upperDisplayIndex < _upperDisplayImages.Count)
+					return _upperDisplayImages[_upperDisplayIndex].Clone();  // 上端面独立索引
 				return null;
 			}
 		}
@@ -555,8 +623,8 @@ namespace Stations
 		{
 			lock (_resultLock)
 			{
-				if (_lowerDisplayImages.Count > 0 && _currentDisplayIndex >= 0 && _currentDisplayIndex < _lowerDisplayImages.Count)
-					return _lowerDisplayImages[_currentDisplayIndex].Clone();
+				if (_lowerDisplayImages.Count > 0 && _lowerDisplayIndex >= 0 && _lowerDisplayIndex < _lowerDisplayImages.Count)
+					return _lowerDisplayImages[_lowerDisplayIndex].Clone();  // 下端面独立索引
 				return null;
 			}
 		}
@@ -589,9 +657,10 @@ namespace Stations
 			}
 		}
 
-		private void SaveImagesBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages, List<string> mergedStatus, long productId, bool isOk)
+		private void SaveImagesBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages, List<Mat> upperMats, List<Mat> lowerMats, List<string> mergedStatus, long productId, bool isOk)
 		{
 			bool saveOkImage = _Config.IsSaveOkImage;
+			string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 			bool saveNgImage = _Config.IsSaveNgImage;
 			bool saveOkRawImage = _Config.IsSaveOkRawImage;
 			bool saveNgRawImage = _Config.IsSaveNgRawImage;
@@ -606,42 +675,44 @@ namespace Stations
 
 			if ((isOk && saveOkImage) || (!isOk && saveNgImage))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
-				Directory.CreateDirectory(dir);
+				string upperDir = Path.Combine(_savePath, dateDir, shift, "端面工位", "上端面", resultDir);
+				string lowerDir = Path.Combine(_savePath, dateDir, shift, "端面工位", "下端面", resultDir);
+				Directory.CreateDirectory(upperDir);
+				Directory.CreateDirectory(lowerDir);
 				for (int i = 0; i < upperImages.Count; i++)
 				{
 					if (upperImages[i].RenderBitmap != null)
 					{
-							string fileName = $"{productId}_{i + 1}_上端面_{ngTypes}.jpg";
-						string filePath = Path.Combine(dir, fileName);
+						string fileName = $"{ts}_{i + 1}_上端面_渲染_{ngTypes}.jpg";
+						string filePath = Path.Combine(upperDir, fileName);
 						var jpegData = upperImages[i].RenderBitmap.ToJpegBytesFast(85);
 						_imageSaver.AddSaveTask(filePath, jpegData, true, 85);
 					}
-						if (lowerImages[i].RenderBitmap != null)
-						{
-							string lfn = productId + "_" + (i + 1) + "_下端面_" + ngTypes + ".jpg";
-							string lfp = Path.Combine(dir, lfn);
-							var ljd = lowerImages[i].RenderBitmap.ToJpegBytesFast(85);
-							_imageSaver.AddSaveTask(lfp, ljd, true, 85);
-						}
+					if (lowerImages[i].RenderBitmap != null)
+					{
+						string lfn = ts + "_" + (i + 1) + "_下端面_渲染_" + ngTypes + ".jpg";
+						string lfp = Path.Combine(lowerDir, lfn);
+						var ljd = lowerImages[i].RenderBitmap.ToJpegBytesFast(85);
+						_imageSaver.AddSaveTask(lfp, ljd, true, 85);
+					}
 				}
 			}
 
 			if ((isOk && saveOkRawImage) || (!isOk && saveNgRawImage))
 			{
-				string dir = Path.Combine(_savePath, dateDir, shift, "端面工位", resultDir);
-				Directory.CreateDirectory(dir);
+				string upperDir = Path.Combine(_savePath, dateDir, shift, "端面工位", "上端面", resultDir);
+				string lowerDir = Path.Combine(_savePath, dateDir, shift, "端面工位", "下端面", resultDir);
+				Directory.CreateDirectory(upperDir);
+				Directory.CreateDirectory(lowerDir);
 				for (int i = 0; i < upperImages.Count; i++)
 				{
-					string fileName = $"{productId}_{i + 1}_upper_{ngTypes}.jpg";
-					string filePath = Path.Combine(dir, fileName);
-					var upperData = upperImages[i].OriginalBitmap.ToJpegBytesFast(85);
-					_imageSaver.AddSaveTask(filePath, upperData, false);
+					string fileName = $"{ts}_{i + 1}_上端面_原图_{ngTypes}.jpg";
+					string filePath = Path.Combine(upperDir, fileName);
+					var upperBmp = upperMats[i].ToBitmap(); if (upperBmp != null) { _imageSaver.AddSaveTask(filePath, upperBmp.ToJpegBytesFast(85), false); upperBmp.Dispose(); }
 
-					fileName = $"{productId}_{i + 1}_lower_{ngTypes}.jpg";
-					filePath = Path.Combine(dir, fileName);
-					var lowerData = lowerImages[i].OriginalBitmap.ToJpegBytesFast(85);
-					_imageSaver.AddSaveTask(filePath, lowerData, false);
+					fileName = $"{ts}_{i + 1}_下端面_原图_{ngTypes}.jpg";
+					filePath = Path.Combine(lowerDir, fileName);
+					var lowerBmp = lowerMats[i].ToBitmap(); if (lowerBmp != null) { _imageSaver.AddSaveTask(filePath, lowerBmp.ToJpegBytesFast(85), false); lowerBmp.Dispose(); }
 				}
 			}
 		}
@@ -667,6 +738,7 @@ namespace Stations
 			return classMap.ContainsKey(classId) ? classMap[classId] : $"缺陷{classId}";
 		}
 
+		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
 		public void ClearCounters()
 		{
 			Interlocked.Exchange(ref _totalCount, 0);
@@ -674,6 +746,7 @@ namespace Stations
 			Interlocked.Exchange(ref _ngCount, 0);
 		}
 
+		private void CleanupDisplayBitmaps() { lock (_resultLock) { foreach (var b in _currentDisplayBitmaps) b?.Dispose(); foreach (var b in _upperDisplayBitmaps) b?.Dispose(); foreach (var b in _lowerDisplayBitmaps) b?.Dispose(); } }
 		public void Dispose()
 		{
 			if (_disposed) return;
@@ -682,6 +755,7 @@ namespace Stations
 			_processThread?.Join(3000);
 			_cts.Dispose();
 			_batchQueue.Dispose();
+			CleanupDisplayBitmaps();  // 释放缓存的Bitmap
 		}
 	}
 }

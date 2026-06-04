@@ -40,7 +40,11 @@ namespace CommonLib
 		public int MaxPhotoCount = 12;
 		public int CycleDelayMs = 500;
 		public bool EnableBarcodeCheck = true;
-			public bool EnableDateCodeCheck = true;
+		public bool EnableDateCodeCheck = true;
+		// 安全锁: IN8=关门(1=安全) / 开门(0=不安全)
+		public int SafetyLockPort = 8;
+		public bool SafetyLockActiveHigh = true;
+		public int SafetyLockRecovery = 0;  // 0=继续执行, 1=返回起始位
 
 		private static string _jsonPath => System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "AxisParams.json");
 

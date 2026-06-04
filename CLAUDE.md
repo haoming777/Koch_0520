@@ -8,10 +8,10 @@ WinForms (.NET Framework 4.7.2) industrial machine vision inspection system for 
 
 ## Build & Run
 
-- **Solution:** `VisionMeasure\VisionMeasure.sln` (Visual Studio 2022, 10 projects)
-- **Build:** Open in VS2022, build with Debug|x64 or Release|x64 configuration. All projects output to `bin\` at repo root.
-- **Run:** Execute `bin\VisionMeasure.exe`. Requires connected hardware (cameras, PLC, motion card) or simulate mode (`DetectionParameters.Camera.GetSimulateMode()`).
-- **NuGet:** Uses `packages.config` (not PackageReference). Restore via VS or `nuget restore`. Packages stored in `VisionMeasure\packages\`.
+- **Solution:** VisionMeasure/VisionMeasure.sln (Visual Studio 2022, 10 projects)
+- **Build:** Open in VS2022, build with Debug|x64 or Release|x64 configuration
+- **Run:** Execute bin/VisionMeasure.exe. Requires connected hardware or simulate mode.
+- **NuGet:** Uses packages.config. Restore via VS or nuget restore.
 - **No tests exist** in this project.
 
 ## Architecture
@@ -20,79 +20,82 @@ WinForms (.NET Framework 4.7.2) industrial machine vision inspection system for 
 
 | Project | Role |
 |---|---|
-| **VisionMeasure** (`视觉模板.csproj`) | Main WinForms EXE — entry point, main window, hardware, detection, stations |
-| **CommonLib** | Shared library — global state, interfaces, VisionPro tooling, motion control, SQLite |
-| **选项卡** | Tab host shell — plugin container |
-| **AIsdk** | SmartMore ViMo inference wrapper |
-| **产品管理** | Product/SKU management plugin |
-| **用户管理** | User management plugin |
-| **系统设置** | System settings plugin |
-| **相机设置** | Camera settings plugin |
-| **算法调试** | Algorithm debugging plugin |
-| **PLC监控** | PLC monitoring plugin |
+| VisionMeasure (视觉模板.csproj) | Main WinForms EXE |
+| CommonLib | Shared library (global state, interfaces, SQLite) |
+| 选项卡 | Tab host shell (plugin container) |
+| AIsdk | SmartMore ViMo inference wrapper |
+| 产品管理 | Product/SKU management plugin |
+| 用户管理 | User management plugin |
+| 系统设置 | System settings plugin |
+| 相机设置 | Camera settings plugin |
+| 算法调试 | Algorithm debugging plugin |
+| PLC监控 | PLC monitoring plugin |
 
-All plugin projects implement `CommonLib.IFormPlugin` (`GetForm()`, `SetParams()`, `setMainListener()`). The main form loads them as tab pages.
+### Startup Sequence
 
-### Startup Sequence (VisionMeasure/Program.cs)
-
-1. Load `DetectionParameters` (JSON config)
-2. Load SKU database from SQLite via `SkuDatabase`
-3. Load all AI models via `AiModelManager` (YOLO ONNX + ViMo `.vimosln`)
-4. Connect to Zmc motion controller (`MotionControlManager`)
-5. Connect to Siemens PLC via Modbus TCP (`PlcCommunication`)
-6. Initialize 8 DaHua cameras in parallel (`CameraManager`)
-7. Show `MainFrm`
+1. Load DetectionParameters (JSON config)
+2. Load SKU database (SQLite via SkuDatabase)
+3. Load AI models (YOLO ONNX + ViMo .vimosln)
+4. Connect to Zmc motion controller
+5. Connect to Siemens PLC (Modbus TCP)
+6. Initialize 8 DaHua cameras
+7. Show MainFrm
 
 ### Key Subsystems
 
-**Hardware layer** (`VisionMeasure/Hardware/`):
-- `CameraManager.cs` — 8 DaHua cameras, parallel init, start/stop
-- `CameraTriggerManager.cs` — synchronized trigger via motion card
-- `MotionControlManager.cs` — Zmc motion card (flying photography)
-- `PlcCommunication.cs` — Siemens S7-1500 via Modbus TCP (HslCommunication)
+**Hardware:** CameraManager.cs, CameraTriggerManager.cs, MotionControlManager.cs, PlcCommunication.cs
 
-**Stations** (`VisionMeasure/Stations/`): Each handles 2 cameras. `FrontStationProcessor`, `BackStationProcessor`, `EndFaceStationProcessor`, `SideStationProcessor`.
+**Stations:** FrontStationProcessor, BackStationProcessor, EndFaceStationProcessor, SideStationProcessor (each handles 2 cameras)
 
-**Detection** (`VisionMeasure/Detection/`): `DefectDetectionService` orchestrates per-station AI inference. Station-specific: `FrontDamageInspection`, `HookDamageDetector`, `SideDefectProcessor`.
+**Detection:** DefectDetectionService, FrontDamageInspection, HookDamageDetector, SideDefectProcessor
 
-**AI** (`VisionMeasure/AI/`): `Vimo.cs` (SmartMore ViMo), `YoloOnnxSegmentation.cs` (YOLO ONNX), `ModelOutputs.cs`.
+**AI:** Vimo.cs (ViMo), YoloOnnxSegmentation.cs (YOLO ONNX), ModelOutputs.cs
 
-**Utils** (`VisionMeasure/Utils/`): `SkuDatabase`, `SQLiteHelper`, `ImageBufferPool`, `ImageCropper`, `ResultDrawer`, `BitmapFastConverter`, `PerformanceMonitor`.
-
-### Global State (CommonLib/GlobalVar.cs)
-
-Static globals for PLC connection (`ModBus`), camera SDK handles (`CameraSdk1`-`CameraSdk8`), and thresholds. Used across all projects — thread safety is not guaranteed.
+**Utils:** SkuDatabase, SQLiteHelper, ImageBufferPool, ImageCropper, ResultDrawer, BitmapFastConverter, PerformanceMonitor
 
 ### Configuration
 
-- **`setup.ini`** (repo root) — Runtime config: camera serial numbers, AI model paths, PLC/motion IPs, I/O port mappings, production counts. Read via `IniAPI`.
-- **`SystemConfig`** (CommonLib) — Singleton loaded from `setup.ini` + app config.
-- **`DetectionParameters`** (VisionMeasure/Config) — JSON-based detection parameters (thresholds, ROI, etc.).
-- **`ModelPathConfig`** (VisionMeasure/Config) — AI model file paths, read from `setup.ini [AI_Models]` section.
+- **setup.ini** (repo root) — Runtime config: camera SNs, AI model paths, PLC/motion IPs, I/O ports, production counts
+- **SystemConfig** (CommonLib) — Singleton from setup.ini + app config
+- **DetectionParameters** (VisionMeasure/Config) — JSON detection params (thresholds, ROI, etc.)
+- **ModelPathConfig** (VisionMeasure/Config) — AI model file paths from setup.ini [AI_Models]
+
+### Camera Trigger I/O Mapping
+
+| Camera | Station | Input Port | Output Port |
+|---|---|---|---|
+| 1 (正面左) | Front | IN4 | OUT9 |
+| 2 (正面右) | Front | IN4 | OUT8 |
+| 3 (上端面) | EndFace | IN10 | OUT10 |
+| 4 (下端面) | EndFace | IN10 | OUT11 |
+| 5 (背面左) | Back | IN4 | OUT12 |
+| 6 (背面右) | Back | IN4 | OUT13 |
+| 7 (左侧面) | Side | IN13 | OUT14 |
+| 8 (右侧面) | Side | IN13 | OUT15 |
+
+Side station uses IN12 for motion axis sensor with configurable edge mode.
 
 ### AI Models
 
-Two inference engines used simultaneously:
-- **YOLO ONNX** (`Microsoft.ML.OnnxRuntime`) — defect detection models: box break, film break, hook damage, side defects. Uses GPU 0.
-- **SmartMore ViMo** (`.vimosln` files) — OCR models: P-code recognition, date code recognition. Uses GPU 1.
+Two inference engines:
+- **YOLO ONNX** (Microsoft.ML.OnnxRuntime, GPU 0) — box break, film break, hook damage, side defects
+- **ViMo** (.vimosln files, GPU 1) — P-code OCR, date code OCR
 
-Model paths configured in `setup.ini` under `[AI_Models]`, relative to `ModelRootPath`.
+Model paths in setup.ini [AI_Models], relative to ModelRootPath.
 
 ### Hardware Dependencies
 
-Most of the app requires physical hardware. A simulate mode exists (`GetSimulateMode()`) but its coverage varies. Key external DLLs (not in repo) are referenced from absolute paths:
-- Cognex VisionPro 59.2 (`E:\Vision_Pro\...`)
-- HslCommunication, MT.Camera.SDK, XL.Tool, CLIDelegate
+Requires physical hardware for full operation. External DLLs:
+- Cognex VisionPro 59.2, HslCommunication, MT.Camera.SDK, XL.Tool, CLIDelegate
 - USB dongle (XL.UsbDog) for licensing
 
 ### Simulate Mode
 
-Controlled by `DetectionParameters.Camera.GetSimulateMode()`. When active, `CameraManager` returns dummy images instead of live camera feed, `PlcCommunication` skips actual PLC connection, and `MotionControlManager` simulates motion triggers. Not all code paths may handle simulate mode correctly — verify before assuming.
+Controlled by DetectionParameters.Camera.GetSimulateMode(). When active, CameraManager returns dummy images, PlcCommunication skips actual connection, MotionControlManager simulates triggers.
 
 ## Key Patterns
 
-- `.csproj` files use Chinese names: `视觉模板.csproj` = VisionMeasure, `产品管理.csproj` = Product Management, etc.
-- The solution file and all project `.csproj` files use Chinese names internally; solution GUIDs are stable.
-- WinForms Designer files (`*.Designer.cs`) are auto-generated — never manually edit.
-- `GlobalVar` static class is the de-facto service locator for hardware handles; new code should prefer dependency injection where practical.
-- Image data flows as `OpenCvSharp.Mat` through the pipeline; `BitmapFastConverter` bridges to `System.Drawing.Bitmap` for WinForms display.
+- .csproj files use Chinese names
+- WinForms Designer files (.Designer.cs) are auto-generated - never edit
+- Image data flows as OpenCvSharp.Mat; BitmapFastConverter bridges to System.Drawing.Bitmap
+- GlobalVar static class is the de-facto service locator

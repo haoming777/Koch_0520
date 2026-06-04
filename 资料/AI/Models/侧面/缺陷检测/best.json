@@ -1,0 +1,11 @@
+{
+    "dynamic_axes": true,
+    "train_imgsz": [
+        640,
+        640
+    ],
+    "conf_thres": 0.5,
+    "iou_thres": 0.2,
+    "task": "detect",
+    "base_model": "yolov8"
+}

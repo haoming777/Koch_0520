@@ -12,7 +12,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Diagnostics;
 using System.Threading;
+using Newtonsoft.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using VisionMeasure.Utils;
@@ -60,7 +62,7 @@ namespace VisionMeasure
 		private EndFaceStationProcessor _endFaceStation;
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
-	private volatile bool _sideTriggerPending;
+		private volatile bool _sideTriggerPending;
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -238,10 +240,20 @@ namespace VisionMeasure
 				UpdateLoadingProgress(100, "系统初始化完成，准备启动...");
 				Logger.Info("系统初始化完成");
 
+				xlPictureBox5.ISRealTimeDisplay = true;
+				xlPictureBox6.ISRealTimeDisplay = true;
+
 				// 添加手动测试按钮
-				var btnTest = new Sunny.UI.UIButton { Text = "手动测试", Size = new System.Drawing.Size(100, 36),
-					Location = new System.Drawing.Point(800, 10), Anchor = AnchorStyles.Top | AnchorStyles.Right,
-					FillColor = System.Drawing.Color.FromArgb(0, 122, 204), Radius = 6, Font = new System.Drawing.Font("微软雅黑", 9F) };
+				var btnTest = new Sunny.UI.UIButton
+				{
+					Text = "手动测试",
+					Size = new System.Drawing.Size(100, 36),
+					Location = new System.Drawing.Point(800, 10),
+					Anchor = AnchorStyles.Top | AnchorStyles.Right,
+					FillColor = System.Drawing.Color.FromArgb(0, 122, 204),
+					Radius = 6,
+					Font = new System.Drawing.Font("微软雅黑", 9F)
+				};
 				btnTest.Click += BtnManualTest_Click;
 				this.Controls.Add(btnTest);
 				btnTest.BringToFront();
@@ -471,25 +483,55 @@ namespace VisionMeasure
 		private void OnCameraTriggered(int cameraId)
 		{
 			// 侧面工位：
-			// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
-			if (cameraId == 7 && SideEnabled && _sideStation != null && _motionMgr != null && _motionMgr.IsConnected)
-			{
-				float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
-				float startPos = _sideStation.StartPosition;
-				if (Math.Abs(curPos - startPos) > 0.5f)
+				// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
+				if (cameraId == 7 && SideEnabled && _sideStation != null && _sideStation.MotionEnabled && _motionMgr != null && _motionMgr.IsConnected)
 				{
-					Logger.Info($"[Side] IN13↑ 轴不在起点(cur={curPos:F1}, target={startPos:F1})，预归位");
-					Task.Run(() =>
+					float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
+					float startPos = _sideStation.StartPosition;
+					if (Math.Abs(curPos - startPos) > 0.5f)
 					{
-						_motionMgr.SetSpeed(_sideStation.SideAxis, _sideStation.ReturnSpeed);
-						_motionMgr.MoveAbs(_sideStation.SideAxis, startPos);
-						_motionMgr.WaitForMoveComplete(_sideStation.SideAxis, 15000);
-						Logger.Info($"[Side] 预归位完成 pos={_motionMgr.GetPosition(_sideStation.SideAxis):F1}");
-					});
+						Logger.Info($"[Side] IN13↑ 轴不在起点(cur={curPos:F1}, target={startPos:F1})，预归位");
+						int axis = _sideStation.SideAxis;
+						int lockPort = _sideStation.SafetyLockPort;
+						bool lockHigh = _sideStation.SafetyLockActiveHigh;
+						bool returnToStart = _sideStation.RecoveryMode == SideStationProcessor.SafetyRecovery.ReturnToStart;
+						Task.Run(() =>
+						{
+							// 安全锁检查
+							if (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
+							{
+								Logger.Info($"[Side] 预归位等待安全锁 IN{lockPort}=0...");
+								while (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
+									Thread.Sleep(10);
+								Logger.Info($"[Side] 安全锁释放，开始预归位");
+							}
+							_motionMgr.SetSpeed(axis, _sideStation.ReturnSpeed);
+							_motionMgr.MoveAbs(axis, startPos);
+							// 运动中监控安全锁
+							bool stopped = false;
+							var sw = System.Diagnostics.Stopwatch.StartNew();
+							while (sw.ElapsedMilliseconds < 15000)
+							{
+								if (!_motionMgr.IsMoving(axis)) break;
+								if (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
+								{
+									if (!stopped) { Logger.Warning("[Side] 预归位中安全锁触发! 急停"); _motionMgr.EmergencyStop(axis); stopped = true; }
+									Thread.Sleep(10); continue;
+								}
+								if (stopped)
+								{
+									stopped = false;
+									Logger.Info("[Side] 安全锁恢复，继续预归位");
+									_motionMgr.MoveAbs(axis, startPos);
+								}
+								Thread.Sleep(10);
+							}
+							Logger.Info($"[Side] 预归位完成 pos={_motionMgr.GetPosition(axis):F1}");
+						});
+					}
 				}
-			}
 			// IN13下降沿(Camera8) → 启动检测（此时轴已在起点）
-			if (cameraId == 8 && SideEnabled && _sideStation != null)
+			if (cameraId == 8 && SideEnabled && _sideStation != null && _sideStation.MotionEnabled)
 			{
 				if (!_sideStation.IsMoving)
 				{
@@ -505,7 +547,7 @@ namespace VisionMeasure
 					{
 						while (_sideTriggerPending && _sideStation != null)
 						{
-							Thread.Sleep(50);
+							Thread.Sleep(10);
 							if (!_sideStation.IsMoving)
 							{
 								Logger.Info("[Side] 待触发IN13↓ 上一批已完成，启动新的侧面运动控制");
@@ -549,6 +591,8 @@ namespace VisionMeasure
 			_frontStation.OnResultReady += OnStationResult;
 			_frontStation.ReverseBoxOrder = _detectionParams.Station.FrontReverseBox;
 			_frontStation.UpdateSku(_currentSku);
+			_frontStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
+			_frontStation.EnableBoxBreakCheck = _detectionParams.Front.EnableBoxBreakCheck;
 			_frontStation.Start();
 
 			_endFaceStation = new EndFaceStationProcessor(_aiModels, imgPath, _currentSku.P, _imageSaver, _perfMonitor);
@@ -556,12 +600,16 @@ namespace VisionMeasure
 			_endFaceStation.ReverseBoxOrder = _detectionParams.Station.EndFaceReverseBox;
 			_endFaceStation.OnStatusUpdate += OnEndFaceStatusUpdate;
 			_endFaceStation.UpdateSku(_currentSku);
+			_endFaceStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
+			_endFaceStation.EnableUpperDefectCheck = _detectionParams.EndFace.EnableUpperDefectCheck;
 			_endFaceStation.Start();
 
 			_backStation = new BackStationProcessor(_aiModels, imgPath, _currentSku, _imageSaver, _perfMonitor);
 			_backStation.ReverseBoxOrder = _detectionParams.Station.BackReverseBox;
-			_backStation.EnableDateCodeCheck = true;
 			_backStation.OnResultReady += OnStationResult;
+			_backStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
+			_backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck;
+			_backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck;
 			_backStation.Start();
 
 			_sideStation = new SideStationProcessor(_aiModels, imgPath, _currentSku, _motionMgr, _imageSaver, _perfMonitor);
@@ -601,8 +649,14 @@ namespace VisionMeasure
 			_sideStation.MissingAsNg = _detectionParams.Side.MissingAsNg;
 			int sidePw = _detectionParams.Camera.PulseWidthMs;
 			if (sidePw > 0) _sideStation.TriggerPulseMs = sidePw;
-			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode} Pulse={_sideStation.TriggerPulseMs}ms");
+			_sideStation.MotionEnabled = _detectionParams.Side.MotionEnabled;
+			_sideStation.EnableSideDefectCheck = _detectionParams.Side.EnableSideDefectCheck;
+			_sideStation.SafetyLockPort = _detectionParams.Side.SafetyLockPort;
+			_sideStation.SafetyLockActiveHigh = _detectionParams.Side.SafetyLockActiveHigh;
+			_sideStation.RecoveryMode = (SideStationProcessor.SafetyRecovery)_detectionParams.Side.SafetyLockRecovery;
+			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode} Pulse={_sideStation.TriggerPulseMs}ms 安全锁IN={(_sideStation.SafetyLockPort > 0 ? _sideStation.SafetyLockPort.ToString() : "禁用")} 恢复模式={(_sideStation.RecoveryMode == SideStationProcessor.SafetyRecovery.ReturnToStart ? "返回起始位" : "继续执行")}");
 
+			_sideStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
 			_sideStation.Start();
 		}
 
@@ -665,7 +719,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[1]);
 				if (FrontEnabled) _frontStation?.OnCam1(bitmap, pid);
 			}
@@ -678,7 +732,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[2]);
 				if (FrontEnabled) _frontStation?.OnCam2(bitmap, pid);
 			}
@@ -691,7 +745,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[3]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam5(bitmap, pid);
 			}
@@ -704,7 +758,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[4]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam6(bitmap, pid);
 			}
@@ -717,7 +771,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[5]);
 				if (BackEnabled) _backStation?.OnCam3(bitmap, pid);
 			}
@@ -730,7 +784,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[6]);
 				if (BackEnabled) _backStation?.OnCam4(bitmap, pid);
 			}
@@ -743,7 +797,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[7]);
 				if (SideEnabled) _sideStation?.OnCam7(bitmap, pid);
 			}
@@ -756,7 +810,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-//				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				//				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[8]);
 				if (SideEnabled) _sideStation?.OnCam8(bitmap, pid);
 			}
@@ -822,6 +876,10 @@ namespace VisionMeasure
 			}
 			// 正面工位合并结果显示在 xlPictureBox1
 			UpdatePictureBox(xlPictureBox1, mergedImage);
+		if (OK_zheng_Lb != null) OK_zheng_Lb.Text = okCount.ToString();
+		if (NG_zheng_Lb != null) NG_zheng_Lb.Text = ngCount.ToString();
+		long ft2 = okCount + ngCount;
+		if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = ft2 > 0 ? (okCount * 100.0 / ft2).ToString("F1") + "%" : "0%";
 		}
 		private void OnStationResult(ProductResult result)
 		{
@@ -841,60 +899,40 @@ namespace VisionMeasure
 				if (result.SideRightRenderImage != null)
 					UpdatePictureBox(xlPictureBox6, result.SideRightRenderImage);
 
-				if (result.IsComplete)
-					UpdateStatistics(result);
+				UpdateStatistics(result);  // 每次工位结果到达即更新计数
 			}));
 		}
 
 		private void UpdateStatistics(ProductResult result)
 		{
 			// 更新正面统计
-			if (result.FrontResult == true && OK_zheng_Lb != null)
-			{
-				int ok = int.Parse(OK_zheng_Lb.Text);
-				OK_zheng_Lb.Text = (ok + 1).ToString();
-			}
-			else if (result.FrontResult == false && NG_zheng_Lb != null)
-			{
-				int ng = int.Parse(NG_zheng_Lb.Text);
-				NG_zheng_Lb.Text = (ng + 1).ToString();
-			}
-
-			// 更新反面统计
-			if (result.BackResult == true && OK_fan_Lb != null)
-			{
-				int ok = int.Parse(OK_fan_Lb.Text);
-				OK_fan_Lb.Text = (ok + 1).ToString();
-			}
-			else if (result.BackResult == false && NG_fan_Lb != null)
-			{
-				int ng = int.Parse(NG_fan_Lb.Text);
-				NG_fan_Lb.Text = (ng + 1).ToString();
-			}
-
-			// 更新端面统计
-			if (result.EndFaceResult == true && OK_duanmian_Lb != null)
-			{
-				int ok = int.Parse(OK_duanmian_Lb.Text);
-				OK_duanmian_Lb.Text = (ok + 1).ToString();
-			}
-			else if (result.EndFaceResult == false && NG_duanmian_Lb != null)
-			{
-				int ng = int.Parse(NG_duanmian_Lb.Text);
-				NG_duanmian_Lb.Text = (ng + 1).ToString();
-			}
-
-			// 更新侧面统计
-			if (result.SideResult == true && OK_cemian_Lb != null)
-			{
-				int ok = int.Parse(OK_cemian_Lb.Text);
-				OK_cemian_Lb.Text = (ok + 1).ToString();
-			}
-			else if (result.SideResult == false && NG_cemian_Lb != null)
-			{
-				int ng = int.Parse(NG_cemian_Lb.Text);
-				NG_cemian_Lb.Text = (ng + 1).ToString();
-			}
+			// 使用各工位累计计数，按支计算
+			this.BeginInvoke(new Action(() => {
+				if (_frontStation != null) {
+					if (OK_zheng_Lb != null) OK_zheng_Lb.Text = _frontStation.OkCount.ToString();
+					if (NG_zheng_Lb != null) NG_zheng_Lb.Text = _frontStation.NgCount.ToString();
+					long ft = _frontStation.OkCount + _frontStation.NgCount;
+					if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = (ft > 0 ? (_frontStation.OkCount * 100.0 / ft).ToString("F1") + "%" : "0%");
+				}
+				if (_backStation != null) {
+					if (OK_fan_Lb != null) OK_fan_Lb.Text = _backStation.OkCount.ToString();
+					if (NG_fan_Lb != null) NG_fan_Lb.Text = _backStation.NgCount.ToString();
+					long bt = _backStation.OkCount + _backStation.NgCount;
+					if (Yield_fan_Lb != null) Yield_fan_Lb.Text = (bt > 0 ? (_backStation.OkCount * 100.0 / bt).ToString("F1") + "%" : "0%");
+				}
+				if (_endFaceStation != null) {
+					if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = _endFaceStation.OkCount.ToString();
+					if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = _endFaceStation.NgCount.ToString();
+					long et = _endFaceStation.OkCount + _endFaceStation.NgCount;
+					if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = (et > 0 ? (_endFaceStation.OkCount * 100.0 / et).ToString("F1") + "%" : "0%");
+				}
+				if (_sideStation != null) {
+					if (OK_cemian_Lb != null) OK_cemian_Lb.Text = _sideStation.OkCount.ToString();
+					if (NG_cemian_Lb != null) NG_cemian_Lb.Text = _sideStation.NgCount.ToString();
+					long st2 = _sideStation.OkCount + _sideStation.NgCount;
+					if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = (st2 > 0 ? (_sideStation.OkCount * 100.0 / st2).ToString("F1") + "%" : "0%");
+				}
+			}));
 		}
 
 		private void OnEndFaceStatusUpdate(List<string> upperStatus, List<string> lowerStatus, List<string> mergedStatus, int p)
@@ -953,22 +991,207 @@ namespace VisionMeasure
 		private void InitUI()
 		{
 			SetupSkuSearch();
-			// InitCarouselLabels();
+			LoadSkuParams();
+			if (OpenNGimageBtn != null) OpenNGimageBtn.Click += (s2,e2) => { string d = Path.Combine(_detectionParams.Save.ImageSavePath, DateTime.Now.ToString("yyMMdd")); if (!Directory.Exists(d)) d = _detectionParams.Save.ImageSavePath; if (Directory.Exists(d)) Process.Start("explorer.exe", d); };
 			BindButtonEvents();
+			LoadCounts();
 			UpdateSkuDisplay();
+			InitTestButtons();
+		}
+
+		private void InitTestButtons()
+		{
+			if (tableLayoutPanel34 == null) return;
+			tableLayoutPanel34.SuspendLayout();
+			tableLayoutPanel34.Controls.Clear();
+			tableLayoutPanel34.RowCount = 4;
+			for (int i = 0; i < 4; i++)
+			{
+				string text; EventHandler handler;
+				switch (i)
+				{
+					case 0: text = "正面测试"; handler = TestFrontBtn_Click; break;
+					case 1: text = "背面测试"; handler = TestBackBtn_Click; break;
+					case 2: text = "端面测试"; handler = TestEndFaceBtn_Click; break;
+					default: text = "侧面测试"; handler = TestSideBtn_Click; break;
+				}
+				var btn = new Button
+				{
+					Text = text,
+					Dock = DockStyle.Fill,
+					FlatStyle = FlatStyle.Flat,
+					BackColor = Color.FromArgb(52, 152, 219),
+					ForeColor = Color.White,
+					Font = new Font("微软雅黑", 10F, FontStyle.Bold),
+					Margin = new Padding(2)
+				};
+				btn.Click += handler;
+				tableLayoutPanel34.Controls.Add(btn, 0, i);
+			}
+			tableLayoutPanel34.ResumeLayout();
+			Logger.Info("工位测试按钮已初始化");
+		}
+
+		private Bitmap PickImage(string title)
+		{
+			using (var dlg = new OpenFileDialog { Title = title, Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp;*.tiff" })
+			{
+				if (dlg.ShowDialog() == DialogResult.OK)
+				{
+					try { return new Bitmap(dlg.FileName); }
+					catch (Exception ex) { Logger.Error("加载图片失败: " + ex.Message); MessageBox.Show("加载图片失败: " + ex.Message); }
+				}
+			}
+			return null;
+		}
+
+		private void TestFrontBtn_Click(object sender, EventArgs e)
+		{
+			if (_frontStation == null) { MessageBox.Show("正面工位未初始化"); return; }
+			var left = PickImage("选择正面左图 (相机1)");
+			if (left == null) return;
+			var right = PickImage("选择正面右图 (相机2)");
+			if (right == null) { left.Dispose(); return; }
+			Logger.Info("[Test] 正面测试开始 " + left.Width + "x" + left.Height + " / " + right.Width + "x" + right.Height);
+			_frontStation.SkipCrop = true;
+			_frontStation.OnCam1(left, DateTime.Now.Ticks);
+			_frontStation.OnCam2(right, DateTime.Now.Ticks);
+			_frontStation.SkipCrop = false;
+		}
+
+		private void TestBackBtn_Click(object sender, EventArgs e)
+		{
+			if (_backStation == null) { MessageBox.Show("背面工位未初始化"); return; }
+			var left = PickImage("选择背面左图 (相机5)");
+			if (left == null) return;
+			var right = PickImage("选择背面右图 (相机6)");
+			if (right == null) { left.Dispose(); return; }
+			Logger.Info("[Test] 背面测试开始 " + left.Width + "x" + left.Height + " / " + right.Width + "x" + right.Height);
+			_backStation.SkipCrop = true;
+			_backStation.OnCam3(left, DateTime.Now.Ticks);
+			_backStation.OnCam4(right, DateTime.Now.Ticks);
+			_backStation.SkipCrop = false;
+		}
+
+		private void TestEndFaceBtn_Click(object sender, EventArgs e)
+		{
+			if (_endFaceStation == null) { MessageBox.Show("端面工位未初始化"); return; }
+			var upper = PickImage("选择上端面图片 (相机3)");
+			if (upper == null) return;
+			var lower = PickImage("选择下端面图片 (相机4)");
+			if (lower == null) { upper.Dispose(); return; }
+			Logger.Info("[Test] 端面测试开始 " + upper.Width + "x" + upper.Height + " / " + lower.Width + "x" + lower.Height);
+			_endFaceStation.TestProcessPair(upper, lower);
+		}
+
+		private void TestSideBtn_Click(object sender, EventArgs e)
+		{
+			if (_sideStation == null) { MessageBox.Show("侧面工位未初始化"); return; }
+			var left = PickImage("选择左侧面图片 (相机7)");
+			if (left == null) return;
+			var right = PickImage("选择右侧面图片 (相机8)");
+			if (right == null) { left.Dispose(); return; }
+			Logger.Info("[Test] 侧面测试开始 " + left.Width + "x" + left.Height + " / " + right.Width + "x" + right.Height);
+			_sideStation.TestProcessPair(left, right);
 		}
 
 
 
+		private void SaveCounts() { try { var data = new Dictionary<string,string>() { {"shift",GetCurrentShift()},{"date",DateTime.Now.ToString("yyyyMMdd")},{"frontOk",_frontStation?.OkCount.ToString()??"0"},{"frontNg",_frontStation?.NgCount.ToString()??"0"},{"backOk",_backStation?.OkCount.ToString()??"0"},{"backNg",_backStation?.NgCount.ToString()??"0"},{"endOk",_endFaceStation?.OkCount.ToString()??"0"},{"endNg",_endFaceStation?.NgCount.ToString()??"0"},{"sideOk",_sideStation?.OkCount.ToString()??"0"},{"sideNg",_sideStation?.NgCount.ToString()??"0"} }; File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"), Newtonsoft.Json.JsonConvert.SerializeObject(data)); } catch {} }
+		private void LoadCounts() { try { var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"); if(!File.Exists(path)) return; var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string,string>>(File.ReadAllText(path)); if(data==null) return; this.BeginInvoke(new Action(()=>{ string savedShift = data.ContainsKey("shift") ? data["shift"] : ""; if(!string.IsNullOrEmpty(savedShift) && savedShift != GetCurrentShift() || (data.ContainsKey("date") && data["date"] != DateTime.Now.ToString("yyyyMMdd"))) { Logger.Info("计数班次不匹配("+savedShift+"!="+GetCurrentShift()+"),从0开始"); return; } if(data.ContainsKey("frontOk")){ if(OK_zheng_Lb!=null)OK_zheng_Lb.Text=data["frontOk"]; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text=data["frontNg"]; if(OK_fan_Lb!=null)OK_fan_Lb.Text=data["backOk"]; if(NG_fan_Lb!=null)NG_fan_Lb.Text=data["backNg"]; if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text=data["endOk"]; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text=data["endNg"]; if(OK_cemian_Lb!=null)OK_cemian_Lb.Text=data["sideOk"]; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text=data["sideNg"]; } long fOk = long.Parse(data.ContainsKey("frontOk")?data["frontOk"]:"0"); long fNg = long.Parse(data.ContainsKey("frontNg")?data["frontNg"]:"0");
+					long bOk = long.Parse(data.ContainsKey("backOk")?data["backOk"]:"0"); long bNg = long.Parse(data.ContainsKey("backNg")?data["backNg"]:"0");
+					long eOk = long.Parse(data.ContainsKey("endOk")?data["endOk"]:"0"); long eNg = long.Parse(data.ContainsKey("endNg")?data["endNg"]:"0");
+					long sOk = long.Parse(data.ContainsKey("sideOk")?data["sideOk"]:"0"); long sNg = long.Parse(data.ContainsKey("sideNg")?data["sideNg"]:"0");
+					_frontStation?.RestoreCounts(fOk, fNg); _backStation?.RestoreCounts(bOk, bNg);
+					_endFaceStation?.RestoreCounts(eOk, eNg); _sideStation?.RestoreCounts(sOk, sNg);
+					Logger.Info("计数已从本地恢复"); })); } catch {} }
+
+		private void SaveSkuParams()
+		{
+			try
+			{
+				var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "sku_params.json");
+				var data = new Dictionary<string, string>();
+				foreach (var kv in new (string, Control)[] {
+					("SKU", _skuSearchCombo), ("P", P_Lb), ("Z", Z_Lb), ("MM", MM_Lb),
+					("FrontPNumber", FrontPNumber_Lb), ("BackBarcode", BackBarcode_Lb), ("CodingFormat", CodingFormat_Lb)
+				}) {
+					if (kv.Item2 == null) continue;
+					string v = kv.Item2 is ComboBox cb ? cb.Text : kv.Item2.Text;
+					if (!string.IsNullOrWhiteSpace(v)) data[kv.Item1] = v;
+				}
+				File.WriteAllText(path, Newtonsoft.Json.JsonConvert.SerializeObject(data));
+			}
+			catch (Exception ex) { Logger.Error("保存SKU参数失败: " + ex.Message); }
+		}
+
+		private void LoadSkuParams()
+		{
+			try
+			{
+				var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "sku_params.json");
+				if (!File.Exists(path)) return;
+				var json = File.ReadAllText(path);
+				var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+				if (data == null) return;
+				this.BeginInvoke(new Action(() => {
+					foreach (var kv in data)
+					{
+						Control ctrl = null;
+						switch (kv.Key) {
+							case "SKU": ctrl = _skuSearchCombo; break;
+							case "P": ctrl = P_Lb; break;
+							case "Z": ctrl = Z_Lb; break;
+							case "MM": ctrl = MM_Lb; break;
+							case "FrontPNumber": ctrl = FrontPNumber_Lb; break;
+							case "BackBarcode": ctrl = BackBarcode_Lb; break;
+							case "CodingFormat": ctrl = CodingFormat_Lb; break;
+						}
+						if (ctrl != null) {
+							if (ctrl is ComboBox cb) { int idx = cb.FindStringExact(kv.Value); if (idx >= 0) cb.SelectedIndex = idx; else cb.Text = kv.Value; }
+							else ctrl.Text = kv.Value;
+						}
+					}
+					if (_currentSku != null) {
+						if (data.TryGetValue("P", out string rp2) && int.TryParse(rp2, out int rpi) && rpi > 0) _currentSku.P = rpi;
+						if (data.TryGetValue("Z", out string rz2) && int.TryParse(rz2, out int rzi)) _currentSku.Z = rzi;
+						if (data.TryGetValue("MM", out string rm2) && int.TryParse(rm2, out int rmi)) _currentSku.MM = rmi;
+						if (data.TryGetValue("FrontPNumber", out string fp)) _currentSku.FrontPCode = fp;
+						if (data.TryGetValue("BackBarcode", out string bc)) _currentSku.BackBarcode = bc;
+						if (data.TryGetValue("CodingFormat", out string cf)) _currentSku.CodingFormat = cf;
+					}
+					_frontStation?.UpdateSku(_currentSku); _backStation?.UpdateSku(_currentSku);
+					_sideStation?.UpdateSku(_currentSku); _endFaceStation?.UpdateSku(_currentSku);
+					_endFaceStation?.UpdatePCount(_currentSku?.P ?? 12);
+					Logger.Info("SKU参数已从本地恢复并推送到各工位");
+				}));
+			}
+			catch (Exception ex) { Logger.Error("加载SKU参数失败: " + ex.Message); }
+		}
+
+		private void SaveAllModelParams()
+		{
+			try
+			{
+				_aiModels.FrontBoxBreakModel?.SaveParams(_aiModels.FrontBoxBreakModel.MetaPath);
+				_aiModels.EndFaceUpperModel?.SaveParams(_aiModels.EndFaceUpperModel.MetaPath);
+				_aiModels.EndFaceLowerModel?.SaveParams(_aiModels.EndFaceLowerModel.MetaPath);
+				_aiModels.BackHookModel?.SaveParams(_aiModels.BackHookModel.MetaPath);
+				_aiModels.SideDefectModel?.SaveParams(_aiModels.SideDefectModel.MetaPath);
+				Logger.Info("模型参数已同步保存到best.json");
+			}
+			catch (Exception ex) { Logger.Error("保存模型参数失败: " + ex.Message); }
+		}
+
 		private void SetupSkuSearch()
 		{
-			if (SKU_Txt == null || SKU_Txt.Parent == null) return;
-
+			if (SKU_Txt == null) return;
 			Logger.Info("初始化SKU搜索控件");
 
 			SKU_Txt.Visible = false;
 
-			// 创建搜索框
+			// 创建搜索框（Parent未就绪时挂到窗体）
+			var comboParent = SKU_Txt.Parent ?? (Control)this;
 			_skuSearchCombo = new ComboBox
 			{
 				Font = new Font("微软雅黑", 10F),
@@ -979,7 +1202,7 @@ namespace VisionMeasure
 				Text = ""
 			};
 
-			SKU_Txt.Parent.Controls.Add(_skuSearchCombo);
+			comboParent.Controls.Add(_skuSearchCombo);
 			_skuSearchCombo.BringToFront();
 
 			// 使用 System.Windows.Forms.Timer 防抖
@@ -1004,22 +1227,20 @@ namespace VisionMeasure
 					return;
 				}
 
-				// 在UI线程上更新
-				this.BeginInvoke(new Action(() =>
+				// 防卡顿：BeginUpdate/EndUpdate批量更新，避免每Add一次就刷新UI
+				var results = _skuDb.Search(keyword);
+				_skuSearchCombo.BeginUpdate();
+				_skuSearchCombo.Items.Clear();
+				foreach (var sku in results)
+					_skuSearchCombo.Items.Add(sku.SkuNumber);
+				_skuSearchCombo.EndUpdate();
+
+				// 选中文本保持输入内容，避免光标跳到最前面
+				if (_skuSearchCombo.Items.Count > 0)
 				{
-					var results = _skuDb.Search(keyword);
-					_skuSearchCombo.Items.Clear();
-
-					foreach (var sku in results)
-					{
-						_skuSearchCombo.Items.Add(sku.SkuNumber);
-					}
-
-					if (results.Count > 0 && _skuSearchCombo.DroppedDown == false)
-					{
-						_skuSearchCombo.DroppedDown = true;
-					}
-				}));
+					_skuSearchCombo.DroppedDown = true;
+					_skuSearchCombo.Select(keyword.Length, 0);
+				}
 			};
 
 			// 用户选择时触发
@@ -1039,6 +1260,7 @@ namespace VisionMeasure
 						// 保存到配置
 						_detectionParams.LastSkuNumber = skuNum;
 						_detectionParams.SaveToFile();
+						SaveSkuParams();
 						_sideStation?.UpdateSku(_currentSku);
 						_endFaceStation?.UpdateSku(_currentSku);
 						_endFaceStation?.UpdatePCount(_currentSku.P);
@@ -1234,13 +1456,17 @@ namespace VisionMeasure
 
 			try
 			{
-				Bitmap display = image;
+				Bitmap display;
 				int maxW = 1920;
 				if (image.Width > maxW)
 				{
 					float scale = (float)maxW / image.Width;
 					int newH = (int)(image.Height * scale);
 					display = new Bitmap(image, new DrawSize(maxW, newH));
+				}
+				else
+				{
+					display = new Bitmap(image);  // Clone独立副本，避免外部释放导致Paint时"参数无效"
 				}
 				var old = pb.Image;
 				pb.Image = display;
@@ -1254,8 +1480,69 @@ namespace VisionMeasure
 
 		private void BindButtonEvents()
 		{
-			if (clearBtn != null)
-				clearBtn.Click += (s, e) => ClearAllStatistics();
+			// 总清空
+			if (clearBtn != null) clearBtn.Click += (s, e) => ClearAllStatistics();
+			// 检测参数
+			if (SetDetectionParametersBtn != null)
+				SetDetectionParametersBtn.Click += (s, e) => {
+					var form = new DetectionParametersForm(_detectionParams);
+					form.OnParametersChanged += (s2, e2) => {
+						_frontStation?.ReloadModelParams();
+						_backStation?.ReloadModelParams();
+						_endFaceStation?.ReloadModelParams();
+						_sideStation?.ReloadModelParams();
+						if (_frontStation != null) { _frontStation.EnablePNumberCheck = _detectionParams.Front.EnablePNumberCheck; _frontStation.EnableBoxBreakCheck = _detectionParams.Front.EnableBoxBreakCheck; }
+						if (_backStation != null) { _backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck; _backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck; }
+						if (_endFaceStation != null) _endFaceStation.EnableUpperDefectCheck = _detectionParams.EndFace.EnableUpperDefectCheck;
+						if (_sideStation != null) {
+							_sideStation.MotionEnabled = _detectionParams.Side.MotionEnabled;
+							_sideStation.EnableSideDefectCheck = _detectionParams.Side.EnableSideDefectCheck;
+							_sideStation.SafetyLockPort = _detectionParams.Side.SafetyLockPort;
+							_sideStation.SafetyLockActiveHigh = _detectionParams.Side.SafetyLockActiveHigh;
+							_sideStation.RecoveryMode = (SideStationProcessor.SafetyRecovery)_detectionParams.Side.SafetyLockRecovery;
+						}
+						Logger.Info("所有工位ModelParams已重新加载，无需重启");
+					};
+					form.ShowDialog();
+				};
+			// SKU保存并立即生效（手动输入优先于CSV数据）
+			if (saveBtn != null) saveBtn.Click += (s, e) => {
+				string sku = _skuSearchCombo?.Text?.Trim() ?? "";
+				if (string.IsNullOrWhiteSpace(sku)) return;
+				_currentSku = _skuDb.GetBySkuNumber(sku) ?? new SkuData();
+				// 记录修改前值
+				int oldP = _currentSku.P, oldZ = _currentSku.Z, oldMM = _currentSku.MM;
+				string oldFP = _currentSku.FrontPCode ?? "-", oldBC = _currentSku.BackBarcode ?? "-", oldCF = _currentSku.CodingFormat ?? "-";
+				// 手动输入的值覆盖CSV
+				if (int.TryParse(P_Lb?.Text, out int pv) && pv > 0) _currentSku.P = pv;
+				if (int.TryParse(Z_Lb?.Text, out int zv)) _currentSku.Z = zv;
+				if (int.TryParse(MM_Lb?.Text, out int mv)) _currentSku.MM = mv;
+				if (FrontPNumber_Lb != null && !string.IsNullOrWhiteSpace(FrontPNumber_Lb.Text)) _currentSku.FrontPCode = FrontPNumber_Lb.Text.Trim();
+				if (BackBarcode_Lb != null && !string.IsNullOrWhiteSpace(BackBarcode_Lb.Text)) _currentSku.BackBarcode = BackBarcode_Lb.Text.Trim();
+				if (CodingFormat_Lb != null && !string.IsNullOrWhiteSpace(CodingFormat_Lb.Text)) _currentSku.CodingFormat = CodingFormat_Lb.Text.Trim();
+				if (_currentSku.P <= 0) _currentSku.P = 12;
+				UpdateSkuDisplay();
+				// 生成变更摘要
+				var changes = new List<string>();
+				if (oldP != _currentSku.P) changes.Add("P: " + oldP + " → " + _currentSku.P);
+				if (oldZ != _currentSku.Z) changes.Add("Z: " + oldZ + " → " + _currentSku.Z);
+				if (oldMM != _currentSku.MM) changes.Add("MM: " + oldMM + " → " + _currentSku.MM);
+				if (oldFP != (_currentSku.FrontPCode??"-")) changes.Add("P号: " + oldFP + " → " + _currentSku.FrontPCode);
+				if (oldBC != (_currentSku.BackBarcode??"-")) changes.Add("条码: " + oldBC + " → " + _currentSku.BackBarcode);
+				if (oldCF != (_currentSku.CodingFormat??"-")) changes.Add("格式: " + oldCF + " → " + _currentSku.CodingFormat);
+				string diff = changes.Count > 0 ? "\n\n变更:\n" + string.Join("\n", changes) : "";
+				_frontStation?.UpdateSku(_currentSku); _backStation?.UpdateSku(_currentSku);
+				_sideStation?.UpdateSku(_currentSku); _endFaceStation?.UpdateSku(_currentSku);
+				_endFaceStation?.UpdatePCount(_currentSku.P);
+				_detectionParams.LastSkuNumber = sku; _detectionParams.SaveToFile();
+				SaveSkuParams(); SaveCounts();
+				MessageBox.Show("SKU【" + sku + "】保存成功！\nP=" + _currentSku.P + " Z=" + _currentSku.Z + " MM=" + _currentSku.MM + diff, "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+		};
+		// 各工位小清空
+			if (Clear_zheng_Btn != null) Clear_zheng_Btn.Click += (ss,ee) => { _frontStation?.ClearCounters(); if(OK_zheng_Lb!=null)OK_zheng_Lb.Text="0"; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text="0"; };
+			if (Clear_fan_Btn != null) Clear_fan_Btn.Click += (ss,ee) => { _backStation?.ClearCounters(); if(OK_fan_Lb!=null)OK_fan_Lb.Text="0"; if(NG_fan_Lb!=null)NG_fan_Lb.Text="0"; };
+			if (Clear_duanmian_Btn != null) Clear_duanmian_Btn.Click += (ss,ee) => { _endFaceStation?.ClearCounters(); if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text="0"; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text="0"; };
+			if (Clear_cemian_Btn != null) Clear_cemian_Btn.Click += (ss,ee) => { _sideStation?.ClearCounters(); if(OK_cemian_Lb!=null)OK_cemian_Lb.Text="0"; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text="0"; };
 		}
 
 		private void BindStatisticsControls()
@@ -1378,6 +1665,7 @@ namespace VisionMeasure
 				Logger.Info("应用程序正在关闭...");
 				_isClosing = true;
 
+				SaveCounts();
 				SaveCurrentShiftStatistics();
 
 				_sideTriggerPending = false; // 终止待触发轮询任务
@@ -1457,20 +1745,23 @@ namespace VisionMeasure
 			return _aiModels;
 		}
 
-			private void BtnManualTest_Click(object sender, EventArgs e)
+		private void BtnManualTest_Click(object sender, EventArgs e)
+		{
+			using (var d = new OpenFileDialog { Title = "选择背面左图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
 			{
-				using (var d = new OpenFileDialog { Title = "选择背面左图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
-				{if (d.ShowDialog() != DialogResult.OK) return;
-					var left = new Bitmap(d.FileName);
-					using (var d2 = new OpenFileDialog { Title = "选择背面右图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
-					{if (d2.ShowDialog() != DialogResult.OK) return;
-						var right = new Bitmap(d2.FileName);
-							_backStation?.UpdateSku(new SkuData { SkuNumber = "MANUAL", P = _currentSku?.P ?? 12, Z = _currentSku?.Z ?? 2, MM = _currentSku?.MM ?? 42, BackBarcode = _currentSku?.BackBarcode, CodingFormat = _currentSku?.CodingFormat, FrontPCode = _currentSku?.FrontPCode });
-						_backStation?.OnCam3(left, 0);
-						_backStation?.OnCam4(right, 0);
-						UIMessageTip.ShowOk(this, "已提交测试");
-					}}
+				if (d.ShowDialog() != DialogResult.OK) return;
+				var left = new Bitmap(d.FileName);
+				using (var d2 = new OpenFileDialog { Title = "选择背面右图", Filter = "图像|*.jpg;*.jpeg;*.png;*.bmp;*.tif" })
+				{
+					if (d2.ShowDialog() != DialogResult.OK) return;
+					var right = new Bitmap(d2.FileName);
+					_backStation?.UpdateSku(new SkuData { SkuNumber = "MANUAL", P = _currentSku?.P ?? 12, Z = _currentSku?.Z ?? 2, MM = _currentSku?.MM ?? 42, BackBarcode = _currentSku?.BackBarcode, CodingFormat = _currentSku?.CodingFormat, FrontPCode = _currentSku?.FrontPCode });
+					_backStation?.OnCam3(left, 0);
+					_backStation?.OnCam4(right, 0);
+					UIMessageTip.ShowOk(this, "已提交测试");
+				}
 			}
+		}
 		#endregion
 	}
 }

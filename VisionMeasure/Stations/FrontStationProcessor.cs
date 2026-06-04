@@ -56,17 +56,40 @@ namespace VisionMeasure.Stations
 		public float IouThreshold { get; set; } = 0.45f;
 		public bool ReverseBoxOrder = false;
 		public bool EnablePNumberCheck = false;
+		public bool EnableBoxBreakCheck = true;
+		public bool SkipCrop = false;
 
 		public FrontStationProcessor(AiModelManager modelManager, DetectionParameters detectionParams)
 		{
 			_models = modelManager;
 			_detectionParams = detectionParams;
 			_pcodeParams = Config.ModelParams.Load("front_pcode");
+			EnablePNumberCheck = detectionParams.Front.EnablePNumberCheck;
+			EnableBoxBreakCheck = detectionParams.Front.EnableBoxBreakCheck;
 			_imageSaver = new HighSpeedImageSaver();
+		}
+
+		/// <summary>重新加载ModelParams，无需重启软件</summary>
+		public void ReloadModelParams()
+		{
+			_pcodeParams = Config.ModelParams.Load("front_pcode");
+			var fbParams = Config.ModelParams.Load("front_box");
+			if (fbParams.Confidence > 0) ConfThreshold = fbParams.Confidence;
+			if (fbParams.Iou > 0) IouThreshold = fbParams.Iou;
+			Logger.Info($"[Front] ModelParams已重新加载 Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+		}
+
+		// 从模型best.json加载阈值
+		public void InitThresholdsFromModel() {
+			if (_models.FrontBoxBreakModel != null) {
+				if (_models.FrontBoxBreakModel != null) { ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres; IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres; }
+				Logger.Info($"[Front] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+			}
 		}
 
 		public void Start() { ClearCounters(); Logger.Info("FrontStationProcessor Started."); }
 		public void UpdateSku(SkuData newSku) { _currentSku = newSku; }
+		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; }
 		public void ClearCounters() { _okCount = 0; _ngCount = 0; }
 
 		public void OnCam1(Bitmap leftImg, object extraArg = null)
@@ -74,7 +97,7 @@ namespace VisionMeasure.Stations
 			if (leftImg == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam1 收到图像 {leftImg.Width}x{leftImg.Height}");
-			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = leftImg.ToMat(); Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY); }
+			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = leftImg.ToMat(); if (!SkipCrop) Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY); }
 			CheckAndProcessAsync();
 		}
 
@@ -83,7 +106,7 @@ namespace VisionMeasure.Stations
 			if (rightImg == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam2 收到图像 {rightImg.Width}x{rightImg.Height}");
-			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = rightImg.ToMat(); Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY); }
+			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = rightImg.ToMat(); if (!SkipCrop) Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY); }
 			CheckAndProcessAsync();
 		}
 
@@ -111,21 +134,25 @@ namespace VisionMeasure.Stations
 
 				// 步骤0: 裁图
 				leftProc = leftToProcess; rightProc = rightToProcess;
-				if (_currentSku != null)
+				if (_currentSku != null && !SkipCrop)
 				{
-					int w = leftToProcess.Width;
-					if (_currentSku.FrontLeft_LeftPx > 0 || _currentSku.FrontLeft_RightPx > 0)
+					try
 					{
-						int rawL = _currentSku.FrontLeft_LeftPx, rawR = _currentSku.FrontLeft_RightPx;
-						leftProc = ImageHelper.CropImageHorizontallyCv2(leftToProcess, w - rawR, leftToProcess.Width - (w - rawL));
-						Logger.Debug($"[Front] 左图裁图: 原始{rawL}~{rawR} -> {leftProc.Width}x{leftProc.Height}");
+						int w = leftToProcess.Width;
+						if (_currentSku.FrontLeft_LeftPx > 0 || _currentSku.FrontLeft_RightPx > 0)
+						{
+							int rawL = _currentSku.FrontLeft_LeftPx, rawR = _currentSku.FrontLeft_RightPx;
+							leftProc = ImageHelper.CropImageHorizontallyCv2(leftToProcess, w - rawR, leftToProcess.Width - (w - rawL));
+							Logger.Debug($"[Front] 左图裁图: 原始{rawL}~{rawR} -> {leftProc.Width}x{leftProc.Height}");
+						}
+						if (_currentSku.FrontRight_LeftPx > 0 || _currentSku.FrontRight_RightPx > 0)
+						{
+							int rawL = _currentSku.FrontRight_LeftPx, rawR = _currentSku.FrontRight_RightPx;
+							rightProc = ImageHelper.CropImageHorizontallyCv2(rightToProcess, w - rawR, rightToProcess.Width - (w - rawL));
+							Logger.Debug($"[Front] 右图裁图: 原始{rawL}~{rawR} -> {rightProc.Width}x{rightProc.Height}");
+						}
 					}
-					if (_currentSku.FrontRight_LeftPx > 0 || _currentSku.FrontRight_RightPx > 0)
-					{
-						int rawL = _currentSku.FrontRight_LeftPx, rawR = _currentSku.FrontRight_RightPx;
-						rightProc = ImageHelper.CropImageHorizontallyCv2(rightToProcess, w - rawR, rightToProcess.Width - (w - rawL));
-						Logger.Debug($"[Front] 右图裁图: 原始{rawL}~{rawR} -> {rightProc.Width}x{rightProc.Height}");
-					}
+					catch (Exception ex) { Logger.Warning($"[Front] 裁图失败({ex.Message}), 使用原图"); }
 				}
 
 				Logger.Trace("[Front] ▷ 推理开始 P=" + pCount + " 并行P号+破损");
@@ -159,22 +186,20 @@ namespace VisionMeasure.Stations
 					ngArray[i] = defects.Count > 0;
 					statusList.Add(defects.Count > 0 ? string.Join(",", defects) : "OK");
 				}
-				for (int i = 0; i < statusList.Count; i++) Logger.Info($"[Front]   盒{i + 1}: {statusList[i]}");
+				Logger.Info("[Front]  " + string.Join(" ", Enumerable.Range(1,statusList.Count).Select(i => i.ToString().PadLeft(2))));
+				Logger.Info("[Front]  " + string.Join("  ", statusList.Select(s => s == "OK" ? "O" : "X")));
 
 				int currentNgCount = ngArray.Count(n => n);
 				bool isOk = (currentNgCount == 0);
 				if (isOk) _okCount += pCount; else { _okCount += (pCount - currentNgCount); _ngCount += currentNgCount; }
 				_lastIsOk = isOk;
 
-				// 步骤3: 绘制(P号码全部画框, 绿色OK/橙色NG)
-				Bitmap mergedImage = DrawAndMergeResults(leftProc, rightProc, pNumberResults, damageResults, statusList, halfP, isOk);
-
-				// 步骤4: 存图
-				SaveImages(leftProc, rightProc, mergedImage, ngArray);
-				Logger.Trace("[Front] ✓ 完成 结果=" + (isOk ? "OK" : "NG") + " 总=" + swTotal.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
-				OnResultReady?.Invoke(mergedImage, ngArray, _okCount, _ngCount);
-				OnStatusUpdate?.Invoke(statusList, pCount);
-				Logger.Info($"[Front] 处理完成 总耗时={swTotal.Elapsed.TotalMilliseconds:F2}ms P={pCount} OK={pCount - currentNgCount} NG={currentNgCount}");
+				// 缺陷统计
+				var defStats = new Dictionary<string, int>();
+				foreach (var s in statusList) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (defStats.ContainsKey(k)) defStats[k]++; else defStats[k] = 1; } } }
+				string defStr = defStats.Count > 0 ? " | " + string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value)) : "";
+				double elapsed = swTotal.Elapsed.TotalMilliseconds;
+				Logger.Info($"[Front] 完成 P={pCount} OK={pCount - currentNgCount} NG={currentNgCount}{defStr} | 耗时={elapsed:F0}ms");
 			}
 			catch (Exception ex) { Logger.Error($"[Front] 处理异常: {ex.Message}\r\n{ex.StackTrace}"); }
 			finally
@@ -270,7 +295,7 @@ namespace VisionMeasure.Stations
 		private Dictionary<int, List<BoxDefect>> DetectBoxDamage(Mat left, Mat right, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.FrontBoxBreakModel == null) return results;
+			if (!EnableBoxBreakCheck || _models.FrontBoxBreakModel == null) return results;
 			try
 			{
 				var lr = _models.FrontBoxBreakModel.Predict(left, ConfThreshold, IouThreshold);
@@ -286,14 +311,16 @@ namespace VisionMeasure.Stations
 		{
 			if (result == null || result.BoxesN == null) return;
 			int n = endIdx - startIdx; if (n <= 0) return;
-			foreach (var box in result.BoxesN)
+			for (int j = 0; j < result.BoxesN.Length; j++)
 			{
+				var box = result.BoxesN[j];
+				float score = (result.Scores != null && j < result.Scores.Length) ? result.Scores[j] : 1.0f;
 				float cx = box.X + box.Width / 2f;
 				int idx = startIdx + (int)(cx * n);
 				if (idx >= startIdx && idx < endIdx)
 				{
 					if (!results.ContainsKey(idx)) results[idx] = new List<BoxDefect>();
-					results[idx].Add(new BoxDefect(idx, defectType, new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }));
+					results[idx].Add(new BoxDefect(idx, defectType, new float[] { box.X, box.Y, box.X + box.Width, box.Y + box.Height }, score));
 				}
 			}
 		}
@@ -375,6 +402,8 @@ namespace VisionMeasure.Stations
 			using (var pn = new Pen(baseColor, 3)) g.DrawRectangle(pn, rc);
 
 			string label = defect.DefectType;
+			if (defect.Score > 0 && defect.Score < 1.0f && !label.StartsWith("P号"))
+				label = label + " " + defect.Score.ToString("F2");
 			if (label.StartsWith("P号:") || label.StartsWith("P号错误")) { /* shown as-is */ }
 			if (label.Length > 20) label = label.Substring(0, 20);
 			using (var f = new Font("微软雅黑", 14, FontStyle.Bold))
@@ -425,11 +454,12 @@ namespace VisionMeasure.Stations
 				System.IO.Directory.CreateDirectory(dir);
 
 				long pid = DateTime.Now.Ticks;
-				if (so || sn) _imageSaver.Enqueue(merged, System.IO.Path.Combine(dir, $"{pid}_渲染_{nt}.jpg"), ImageFormat.Jpeg);
+				string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+				if (so || sn) _imageSaver.Enqueue(merged, System.IO.Path.Combine(dir, $"{ts}_渲染_{nt}.jpg"), ImageFormat.Jpeg);
 				if (sor || snr)
 				{
-					_imageSaver.Enqueue(left.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_左原图_{nt}.jpg"), ImageFormat.Jpeg);
-					_imageSaver.Enqueue(right.ToBitmap(), System.IO.Path.Combine(dir, $"{pid}_右原图_{nt}.jpg"), ImageFormat.Jpeg);
+					_imageSaver.Enqueue(left.ToBitmap(), System.IO.Path.Combine(dir, $"{ts}_左原图_{nt}.jpg"), ImageFormat.Jpeg);
+					_imageSaver.Enqueue(right.ToBitmap(), System.IO.Path.Combine(dir, $"{ts}_右原图_{nt}.jpg"), ImageFormat.Jpeg);
 				}
 			}
 			catch (Exception ex) { Logger.Error($"正面工位存图异常: {ex.Message}"); }

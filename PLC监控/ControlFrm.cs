@@ -124,7 +124,7 @@ namespace PLC监控
 						var dr = MessageBox.Show("轴" + a + " 当前位置 " + dpos.ToString("F2") + "，不在起始位置 " + startPos.ToString("F2") + "\n\n是否自动返回起始位置？", "位置检查", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 						if (dr == DialogResult.Yes)
 						{
-							SetMotionParams(a, _axisCfg.RetSpeed); ZAux_Direct_Single_MoveAbs(_handle, a, startPos);
+							if (CheckAndWaitSafety()) { SetMotionParams(a, _axisCfg.RetSpeed); ZAux_Direct_Single_MoveAbs(_handle, a, startPos); }
 							UIMessageTip.ShowOk(this, "正在返回起始位置 " + startPos.ToString("F2"));
 						}
 					}
@@ -283,8 +283,8 @@ namespace PLC监控
 		// ====== 运动控制 ======
 		int SelAxis() => cbAxis.SelectedIndex >= 0 ? cbAxis.SelectedIndex : 0;
 
-		private void btnMoveAbs_Click(object sender, EventArgs e) { if (!_connected) return; float.TryParse(txtTargetPos.Text, out float t); ZAux_Direct_Single_MoveAbs(_handle, SelAxis(), t); }
-		private void btnMoveRel_Click(object sender, EventArgs e) { if (!_connected) return; float.TryParse(txtTargetPos.Text, out float t); ZAux_Direct_Single_Move(_handle, SelAxis(), t); }
+		private void btnMoveAbs_Click(object sender, EventArgs e) { if (!_connected || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); Task.Run(() => { int a = SelAxis(); ZAux_Direct_Single_MoveAbs(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
+		private void btnMoveRel_Click(object sender, EventArgs e) { if (!_connected || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); int a = SelAxis(); Task.Run(() => { ZAux_Direct_Single_Move(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
 		private void btnStop_Click(object sender, EventArgs e) { if (!_connected) return; ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); }
 
 		private void btnJogN_MouseDown(object sender, MouseEventArgs e) { JogStart(-1, false); }
@@ -293,14 +293,82 @@ namespace PLC监控
 		private void btnJogFastP_MouseDown(object sender, MouseEventArgs e) { JogStart(1, true); }
 		private void btnJog_MouseUp(object sender, MouseEventArgs e) { if (!_connected) return; ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); }
 
-		void JogStart(int dir, bool fast) { if (!_connected) return; int a = SelAxis(); float spd = fast ? _axisCfg.Speed : (_axisCfg.Speed * 0.2f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
+		void JogStart(int dir, bool fast) { if (!_connected || !CheckAndWaitSafety()) return; int a = SelAxis(); float spd = fast ? _axisCfg.Speed : (_axisCfg.Speed * 0.2f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
 
+
+		// ====== 安全锁 ======
+		/// <summary>检查安全锁，不安全则阻塞等待。返回false=连接断开</summary>
+		private bool CheckAndWaitSafety()
+		{
+			if (!_connected || _handle == IntPtr.Zero) return false;
+			int port = _axisCfg.SafetyLockPort;
+			if (port <= 0) return true;
+			bool activeHigh = _axisCfg.SafetyLockActiveHigh;
+			try
+			{
+				uint val = 0; ZAux_Direct_GetIn(_handle, port, ref val);
+				bool safe = activeHigh ? (val == 1) : (val == 0);
+				if (!safe)
+				{
+					SimUI($"安全锁触发 IN{port}=0 等待关门...");
+					while (_connected && _handle != IntPtr.Zero)
+					{
+						ZAux_Direct_GetIn(_handle, port, ref val);
+						if (activeHigh ? (val == 1) : (val == 0)) { SimUI($"安全锁释放 IN{port}=1 继续"); return true; }
+						Thread.Sleep(20);
+					}
+					return false;
+				}
+				return true;
+			}
+			catch { return false; }
+		}
+
+		/// <summary>运动中安全锁监控：不安全则急停，恢复后根据模式继续或回起点</summary>
+		private bool MonitorSafetyDuringMove(int axis, float startPos, int timeoutMs = 15000)
+		{
+			int port = _axisCfg.SafetyLockPort;
+			if (port <= 0 || !_connected) return true;
+			bool activeHigh = _axisCfg.SafetyLockActiveHigh;
+			bool returnToStart = _axisCfg.SafetyLockRecovery == 1;
+			bool stopped = false;
+			int elapsed = 0;
+			while (elapsed < timeoutMs && _connected)
+			{
+				uint val = 0;
+				try { ZAux_Direct_GetIn(_handle, port, ref val); } catch { return false; }
+				bool safe = activeHigh ? (val == 1) : (val == 0);
+				if (!safe)
+				{
+					if (!stopped) { SimUI("安全锁触发! 急停"); ZAux_Direct_Single_Cancel(_handle, axis, 0); stopped = true; }
+					Thread.Sleep(10); elapsed += 10;
+					continue;
+				}
+				if (stopped)
+				{
+					stopped = false;
+					float dpos = 0; ZAux_Direct_GetDpos(_handle, axis, ref dpos);
+					if (returnToStart) { SimUI($"安全锁恢复→回起点({startPos:F1})"); ZAux_Direct_Single_MoveAbs(_handle, axis, startPos); }
+					else { SimUI($"安全锁恢复→继续(当前位置{dpos:F1})"); }
+				}
+				if (CheckAxisStopped(axis)) return true;
+				Thread.Sleep(10); elapsed += 10;
+			}
+			return true;
+		}
+
+		private bool CheckAxisStopped(int axis)
+		{
+			int idle = 0;
+			try { ZAux_Direct_GetIfIdle(_handle, axis, ref idle); } catch { return true; }
+			return idle != 0;
+		}
 		// ====== 拍照区间 ======
 		private void btnSetStart_Click(object sender, EventArgs e) { if (!_connected) return; float pos = 0; ZAux_Direct_GetDpos(_handle, SelAxis(), ref pos); txtStartPos.Text = pos.ToString("F2"); }
 		private void btnSetEnd_Click(object sender, EventArgs e) { if (!_connected) return; float pos = 0; ZAux_Direct_GetDpos(_handle, SelAxis(), ref pos); txtEndPos.Text = pos.ToString("F2"); }
 		private void btnCam1_Click(object sender, EventArgs e) { TriggerOut(14, "OUT14→Cam7"); }
 		private void btnCam2_Click(object sender, EventArgs e) { TriggerOut(15, "OUT15→Cam8"); }
-		void TriggerOut(int port, string label) { if (!_connected) return; Task.Run(() => { ZAux_Direct_SetOp(_handle, port, 1); Thread.Sleep(100); ZAux_Direct_SetOp(_handle, port, 0); }); this.BeginInvoke(new Action(() => lblLastTrig.Text = "最近触发: " + label + " @" + DateTime.Now.ToString("HH:mm:ss.fff"))); }
+		void TriggerOut(int port, string label) { if (!_connected) return; Task.Run(() => { ZAux_Direct_SetOp(_handle, port, 1); Thread.Sleep(20); ZAux_Direct_SetOp(_handle, port, 0); }); this.BeginInvoke(new Action(() => lblLastTrig.Text = "最近触发: " + label + " @" + DateTime.Now.ToString("HH:mm:ss.fff"))); }
 		private void btnSavePhoto_Click(object sender, EventArgs e) { SaveParamsFromUI(); _axisCfg.Save(); UIMessageTip.ShowOk(this, "拍照区间已保存: " + _axisCfg.StartPos + " ~ " + _axisCfg.EndPos); }
 
 		// ====== 关闭窗口 - 先停轴再断开 ======
@@ -310,7 +378,7 @@ namespace PLC监控
 			if (_connected && _handle != IntPtr.Zero)
 			{
 				try { ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); } catch { }
-				Thread.Sleep(100);
+				Thread.Sleep(20);
 				try { ZAux_Close(_handle); } catch { }
 				_handle = IntPtr.Zero;
 			}
@@ -383,21 +451,31 @@ namespace PLC监控
 
 			// 先回到起点
 			SimUI("回起点(" + retSpd + "mm/s) → " + startPos.ToString("F1"));
+			if (!CheckAndWaitSafety()) { SimUI("安全锁-连接断开"); _simRunning = false; EnableSimBtn(); return; }
 			SetMotionParams(a, retSpd);
 			ZAux_Direct_Single_MoveAbs(_handle, a, startPos);
-			if (!WaitArriveNoPhoto(a, startPos, 120)) { SimUI("超时: 未到达起点"); _simRunning = false; EnableSimBtn(); return; }
+			if (!WaitArriveNoPhoto(a, startPos, 120, startPos)) { SimUI("超时: 未到达起点"); _simRunning = false; EnableSimBtn(); return; }
 
 			do
 			{
 				// === 前进拍照 ===
 				int thisOut14 = 0, thisOut15 = 0;
 				SimUI("前进(" + fwdSpd + "mm/s) → " + endPos.ToString("F1") + "  总计:" + totalPhoto);
+				if (!CheckAndWaitSafety()) { SimUI("安全锁-中止"); break; }
 				SetMotionParams(a, fwdSpd);
 				ZAux_Direct_Single_MoveAbs(_handle, a, endPos);
 				bool prevIn12 = false;
 				float prevDpos = startPos;
 				while (_simRunning)
 				{
+					// 运动中安全锁检查：不安全→急停→等待恢复→恢复模式处理
+					if (!PollSafety())
+					{
+						ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 前进暂停");
+						if (!WaitForSafetyRestore()) break;
+						if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); ZAux_Direct_Single_MoveAbs(_handle, a, startPos); break; }
+						SimUI("安全锁恢复→继续前进"); ZAux_Direct_Single_MoveAbs(_handle, a, endPos);
+					}
 					float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
 					bool arrived = fwd ? (dpos >= endPos - 0.1f) : (dpos <= endPos + 0.1f);
 					bool enough = thisOut14 >= maxPhoto && thisOut15 >= maxPhoto;
@@ -414,7 +492,8 @@ namespace PLC监控
 						ZAux_Direct_SetOp(_handle, outP, 1); Thread.Sleep(50); ZAux_Direct_SetOp(_handle, outP, 0);
 						string tag = curIn12 ? "↑OUT14(Cam7)" : "↓OUT15(Cam8)";
 						SimUI(tag + " C7:" + thisOut14 + "/" + maxPhoto + " C8:" + thisOut15 + "/" + maxPhoto + "  总计:" + totalPhoto);
-						this.BeginInvoke(new Action(() => {
+						this.BeginInvoke(new Action(() =>
+						{
 							lblSimCount.Text = "C7:" + thisOut14 + "/" + maxPhoto + " C8:" + thisOut15 + "/" + maxPhoto;
 							lblLastTrig.Text = tag + " @" + DateTime.Now.ToString("HH:mm:ss.fff");
 						}));
@@ -430,9 +509,10 @@ namespace PLC监控
 
 				// === 返回起点（每次前进后必定返回，不管是否循环）===
 				SimUI("返回起点(" + retSpd + "mm/s) → " + startPos.ToString("F1"));
+				if (!CheckAndWaitSafety()) { SimUI("安全锁-中止返回"); if (loopMode) continue; else break; }
 				SetMotionParams(a, retSpd);
 				ZAux_Direct_Single_MoveAbs(_handle, a, startPos);
-				if (!WaitArriveNoPhoto(a, startPos, 120)) { if (!_simRunning) break; SimUI("超时: 未回到起点"); break; }
+				if (!WaitArriveNoPhoto(a, startPos, 120, startPos)) { if (!_simRunning) break; SimUI("超时: 未回到起点"); break; }
 				if (!_simRunning) break;
 				SimUI("已回到起点  总计:" + totalPhoto + " ↑" + cntRise + "↓" + cntFall);
 
@@ -449,16 +529,31 @@ namespace PLC监控
 			EnableSimBtn();
 		}
 
-		// 回程等待：只等位置，不触发拍照
-		bool WaitArriveNoPhoto(int a, float target, int timeoutSec)
+		// 回程等待：只等位置，不触发拍照。支持安全锁暂停/恢复
+		bool WaitArriveNoPhoto(int a, float target, int timeoutSec, float startRefPos)
 		{
 			float tol = 0.5f;
-			for (int i = 0; i < timeoutSec * 20; i++)
+			int maxIter = timeoutSec * 100;  // 10ms per iteration
+			for (int i = 0; i < maxIter; i++)
 			{
 				if (!_simRunning) return false;
+				// 安全锁检查：不安全→急停→等待→恢复
+				if (!PollSafety()) { ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 暂停"); if (!WaitForSafetyRestore()) return false; if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); ZAux_Direct_Single_MoveAbs(_handle, a, startRefPos); return false; } SimUI("安全锁恢复→继续"); ZAux_Direct_Single_MoveAbs(_handle, a, target); i = 0; continue; }
 				float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
 				if (Math.Abs(dpos - target) < tol) return true;
-				Thread.Sleep(50);
+				Thread.Sleep(10);
+			}
+			return false;
+		}
+
+		bool PollSafety() { if (_axisCfg.SafetyLockPort <= 0 || !_connected) return true; uint v = 0; ZAux_Direct_GetIn(_handle, _axisCfg.SafetyLockPort, ref v); return _axisCfg.SafetyLockActiveHigh ? (v == 1) : (v == 0); }
+
+		bool WaitForSafetyRestore()
+		{
+			while (_simRunning && _connected)
+			{
+				if (PollSafety()) return true;
+				Thread.Sleep(20);
 			}
 			return false;
 		}

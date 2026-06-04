@@ -162,18 +162,23 @@ namespace Hardware
 		public bool StopAxis(int axis)
 		{
 			if (_simulateMode) return true;
-
 			if (!IsConnected) return false;
+			try { return _zmc.StopMove(_handle, axis); }
+			catch (Exception ex) { Logger.Error($"StopAxis失败 轴{axis}: {ex.Message}"); return false; }
+		}
 
+		/// <summary>紧急停止(模式0=立即停)，用于安全锁触发</summary>
+		public bool EmergencyStop(int axis)
+		{
+			if (_simulateMode) return true;
+			if (!IsConnected) return false;
 			try
 			{
-				return _zmc.StopMove(_handle, axis);
+				int ret = ZAux_Direct_Single_Cancel(_handle, axis, 0);
+				Logger.Warning($"[安全锁] 轴{axis}紧急停止 mode=0 ret={ret}");
+				return ret == 0;
 			}
-			catch (Exception ex)
-			{
-				Logger.Error($"StopAxis失败 轴{axis}: {ex.Message}");
-				return false;
-			}
+			catch (Exception ex) { Logger.Error($"EmergencyStop失败 轴{axis}: {ex.Message}"); return false; }
 		}
 
 		public void SetSpeed(int axis, float speed) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetSpeed(_handle, axis, speed); } catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); } }
@@ -340,6 +345,23 @@ namespace Hardware
 		{
 			if (_simulateMode || !IsConnected) return;
 			ZAux_Direct_SetOutMulti(_handle, (ushort)startPort, (ushort)endPort, states);
+		}
+
+			/// <summary>安全锁检查: true=安全可运动, false=不安全</summary>
+		public bool CheckSafetyLock(int port, bool activeHigh)
+		{
+			if (port <= 0 || !IsConnected) return true;
+			try
+			{
+				uint val = 0;
+				ZAux_Direct_GetIn(_handle, port, ref val);
+				return activeHigh ? (val == 1) : (val == 0);
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[安全锁] IN{port}读取失败: {ex.Message}");
+				return false;
+			}
 		}
 
 		// ── 心跳 ──

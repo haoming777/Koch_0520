@@ -62,10 +62,40 @@ namespace Stations
 		public int BlueAreaClassId = 0, HangHoleClassId = 1;
 		public bool ReverseBoxOrder = false;
 		public bool EnableDateCodeCheck = false;
+		public bool EnableBarcodeCheck = true;
+		public bool EnableHookCheck = true;
+		public bool SkipCrop = false;
 
 		public BackStationProcessor(AiModelManager models, string savePath, SkuData sku,
 			HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
-		{ _models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor; _barcodeParams = Config.ModelParams.Load("barcode"); _datecodeParams = Config.ModelParams.Load("datecode"); }
+		{
+			_models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor;
+			_barcodeParams = Config.ModelParams.Load("barcode"); _datecodeParams = Config.ModelParams.Load("datecode");
+			var hookParams = Config.ModelParams.Load("hook");
+			HookThicknessThreshold = hookParams.HookThickness;
+			BlueAreaClassId = hookParams.HookBlueClassId;
+			EnableBarcodeCheck = DetectionParameters.Instance.Back.EnableBarcodeCheck;
+			EnableHookCheck = DetectionParameters.Instance.Back.EnableHookCheck;
+			HangHoleClassId = hookParams.HookHoleClassId;
+			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
+		}
+
+		/// <summary>重新加载ModelParams，无需重启软件</summary>
+		public void ReloadModelParams()
+		{
+			_barcodeParams = Config.ModelParams.Load("barcode");
+			_datecodeParams = Config.ModelParams.Load("datecode");
+			var hookParams = Config.ModelParams.Load("hook");
+			HookThicknessThreshold = hookParams.HookThickness;
+			BlueAreaClassId = hookParams.HookBlueClassId;
+			EnableBarcodeCheck = DetectionParameters.Instance.Back.EnableBarcodeCheck;
+			EnableHookCheck = DetectionParameters.Instance.Back.EnableHookCheck;
+			HangHoleClassId = hookParams.HookHoleClassId;
+			if (hookParams.Confidence > 0) ConfThreshold = hookParams.Confidence;
+			if (hookParams.Iou > 0) IouThreshold = hookParams.Iou;
+			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
+			Logger.Info($"[Back] ModelParams已重新加载 Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+		}
 
 		/// <summary>更新当前SKU数据(含条码基准、日期码格式等)</summary>
 		public void UpdateSku(SkuData sku) { _sku = sku; }
@@ -109,6 +139,13 @@ namespace Stations
 			finally { l?.Dispose(); r?.Dispose(); }
 		}
 
+		// 从模型best.json加载阈值
+		public void InitThresholdsFromModel()
+		{
+			if (_models.BackHookModel != null) { ConfThreshold = _models.BackHookModel.DefaultConfThres; IouThreshold = _models.BackHookModel.DefaultIouThres; }
+			Logger.Info($"[Back] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+		}
+
 		public void Start() { Logger.Info("背面工位已启动"); }
 		public void Stop() { }
 
@@ -127,16 +164,20 @@ namespace Stations
 
 				// 步骤0: 裁图
 				Mat leftProc = leftMat, rightProc = rightMat;
-				if (_sku.BackLeft_LeftPx > 0 || _sku.BackLeft_RightPx > 0)
-				{
-					leftProc = ImageHelper.CropImageHorizontallyCv2(leftMat, _sku.BackLeft_LeftPx, leftMat.Width - _sku.BackLeft_RightPx);
-					Logger.Debug("[Back] 左图裁图: 保留" + _sku.BackLeft_LeftPx + "~" + _sku.BackLeft_RightPx + " -> " + leftProc.Width + "x" + leftProc.Height);
-				}
-				if (_sku.BackRight_LeftPx > 0 || _sku.BackRight_RightPx > 0)
-				{
-					rightProc = ImageHelper.CropImageHorizontallyCv2(rightMat, _sku.BackRight_LeftPx, rightMat.Width - _sku.BackRight_RightPx);
-					Logger.Debug("[Back] 右图裁图: 保留" + _sku.BackRight_LeftPx + "~" + _sku.BackRight_RightPx + " -> " + rightProc.Width + "x" + rightProc.Height);
-				}
+				if (!SkipCrop) try
+					{
+						if (_sku.BackLeft_LeftPx > 0 || _sku.BackLeft_RightPx > 0)
+						{
+							leftProc = ImageHelper.CropImageHorizontallyCv2(leftMat, _sku.BackLeft_LeftPx, leftMat.Width - _sku.BackLeft_RightPx);
+							Logger.Debug("[Back] 左图裁图: 保留" + _sku.BackLeft_LeftPx + "~" + _sku.BackLeft_RightPx + " -> " + leftProc.Width + "x" + leftProc.Height);
+						}
+						if (_sku.BackRight_LeftPx > 0 || _sku.BackRight_RightPx > 0)
+						{
+							rightProc = ImageHelper.CropImageHorizontallyCv2(rightMat, _sku.BackRight_LeftPx, rightMat.Width - _sku.BackRight_RightPx);
+							Logger.Debug("[Back] 右图裁图: 保留" + _sku.BackRight_LeftPx + "~" + _sku.BackRight_RightPx + " -> " + rightProc.Width + "x" + rightProc.Height);
+						}
+					}
+					catch (Exception ex) { Logger.Warning("[Back] 裁图失败(" + ex.Message + "), 使用原图"); }
 
 				// 步骤1: 并行推理
 				Logger.Debug("[Back] 步骤1: 推理...");
@@ -161,17 +202,21 @@ namespace Stations
 				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType == "轻微挂钩错位"); }
 				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
 				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
-				foreach (var d in all) {
+				foreach (var d in all)
+				{
 					if (d.BoxIndex < 0 || d.BoxIndex >= status.Count) continue;
 					bool isDisplayOnly = d.DefectType.StartsWith("条码:") || d.DefectType.StartsWith("日期:") || d.DefectType.StartsWith("双排:");
 					if (!isDisplayOnly) status[d.BoxIndex] = d.DefectType;
 				}
-				for (int i = 0; i < status.Count; i++) Logger.Info("[Back]   盒" + (i + 1) + ": " + status[i]);
+				Logger.Info("[Back]   " + string.Join(" ", Enumerable.Range(1, status.Count).Select(i => i.ToString().PadLeft(2))));
+				Logger.Info("[Back]   " + string.Join("  ", status.Select(s => s == "OK" ? "O" : "X")));
 				bool isOk = status.All(s => s == "OK");
 				result.BackResult = isOk;
 				result.BackDefects = status.Where(s => s != "OK").Distinct().ToList();
-				Interlocked.Increment(ref _totalCount);
-				if (isOk) Interlocked.Increment(ref _okCount); else Interlocked.Increment(ref _ngCount);
+				int boxOk = status.Count(s => s == "OK");
+				Interlocked.Add(ref _totalCount, status.Count);
+				Interlocked.Add(ref _okCount, boxOk);
+				Interlocked.Add(ref _ngCount, status.Count - boxOk);
 				_lastIsOk = isOk;
 
 				// 步骤3: 绘制+合并
@@ -194,11 +239,20 @@ namespace Stations
 				var total = sw.Elapsed.TotalMilliseconds;
 				_perfMonitor?.Record(new PerformanceMonitor.PerformanceRecord
 				{
-					Timestamp = DateTime.Now, Station = "Back", ProductId = pid,
-					InferenceTimeMs = inferMs, DrawTimeMs = drawMs, SaveTimeMs = saveMs, TotalTimeMs = total, Result = isOk
+					Timestamp = DateTime.Now,
+					Station = "Back",
+					ProductId = pid,
+					InferenceTimeMs = inferMs,
+					DrawTimeMs = drawMs,
+					SaveTimeMs = saveMs,
+					TotalTimeMs = total,
+					Result = isOk
 				});
-				Logger.Info("[Back] ====== 完成: 总=" + total.ToString("F1") + "ms 结果=" + (isOk ? "OK" : "NG") + " ======");
-				Logger.Trace("[Back] ✓ 全流程完成 结果=" + (isOk?"OK":"NG") + " 总=" + total.ToString("F0") + "ms");
+				var defStats = new Dictionary<string, int>();
+				foreach (var s in status) { if (s != "OK") { if (defStats.ContainsKey(s)) defStats[s]++; else defStats[s] = 1; } }
+				string defStr = defStats.Count > 0 ? " | " + string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value)) : "";
+				Logger.Info($"[Back] 完成 P={p} OK={boxOk} NG={status.Count - boxOk}{defStr} | 耗时={total:F0}ms");
+				Logger.Trace("[Back] ✓ 全流程完成 结果=" + (isOk ? "OK" : "NG") + " 总=" + total.ToString("F0") + "ms");
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(status, p);
 			}
@@ -214,8 +268,9 @@ namespace Stations
 		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int hp)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
+			if (!EnableBarcodeCheck) { Logger.Debug("[Back] 条码检测已停用，跳过"); return r; }
 			string refBarcode = _sku?.BackBarcode;
-// 即使无参考条码也继续解码（仅显示识别结果，不做比对）
+			// 即使无参考条码也继续解码（仅显示识别结果，不做比对）
 			try
 			{
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
@@ -394,7 +449,7 @@ namespace Stations
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			int fw = img.Width, fh = img.Height, halfW = fw / 2, boxW = fw / p;
-		int hp2 = p / 2;
+			int hp2 = p / 2;
 
 			try
 			{
@@ -446,18 +501,25 @@ namespace Stations
 						ResponseList<ClassificationResponse> clsRsp;
 						int clsRet = _models.BackDateCodeClsModel.Run(cropC2, out clsRsp);
 						bool c2Shadow = false;
+						Logger.Debug("[Back] C2 clsRet=" + clsRet + " count=" + (clsRsp?.Count ?? 0));
 						if (clsRet == 0 && clsRsp != null && clsRsp.Count > 0)
 						{
 							foreach (var ci in clsRsp)
 							{
-								if (ci.Item2.Labels.Any())
+								var labels = ci.Item2.Labels;
+								if (!labels.Any()) continue;
+								foreach (var lbl in labels)
 								{
-									var topLabel = ci.Item2.Labels.First();
-									if (topLabel.Label == "重影" || topLabel.Score > 0.8f) { c2Shadow = true; break; }
+									float s = 0;
+									try { s = Convert.ToSingle(lbl.GetType().GetProperty("Score")?.GetValue(lbl) ?? 0f); } catch { }
+									Logger.Debug("[Back] C2 Label=" + lbl.Label + " Score=" + s.ToString("F4"));
+									// 模型输出NG=重影, OK=正常
+									if (lbl.Label == "NG" || lbl.Label == "重影") c2Shadow = true;
 								}
 							}
 						}
-
+						else Logger.Debug("[Back] C2 分类失败或无结果");
+						Logger.Debug("[Back] C2最终: c2Shadow=" + c2Shadow);
 						// C3: OCR
 						using (var cropC3 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 						{
@@ -509,7 +571,7 @@ namespace Stations
 		private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int p)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.BackHookModel == null) return results;
+			if (!EnableHookCheck || _models.BackHookModel == null) return results;
 			try
 			{
 				var images = new List<Mat> { left, right };
@@ -533,10 +595,11 @@ namespace Stations
 						int gi = (int)(cxN * (p / 2.0) + offsets[i]);
 						gi = Math.Max(0, Math.Min(gi, p - 1));
 
+						float score = (detResult.Scores != null && j < detResult.Scores.Length) ? detResult.Scores[j] : 1.0f;
 						if (cls == 1)
 						{
 							AddDefect(results, gi, "挂钩明显错位",
-								new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) });
+								new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) }, score);
 						}
 						else if (cls == 0)
 						{
@@ -548,7 +611,7 @@ namespace Stations
 							using (Mat cropImg = new Mat(curImg, new CvRect(x1, y1, x2 - x1, y2 - y1)))
 							{
 								if (cropImg.Empty()) continue;
-								var segR = _models.HookSlightModel.Predict(cropImg);
+								var segR = _models.HookSlightModel.Predict(cropImg, ConfThreshold);
 								if (segR?.Masks == null) continue;
 								CvPoint[] inner = null, outer = null;
 								for (int m = 0; m < segR.ClassIds.Length; m++)
@@ -562,7 +625,7 @@ namespace Stations
 									var thick = CalcThickness(cropImg.Size(), inner, outer);
 									if (thick.Item1 > HookThicknessThreshold)
 										AddDefect(results, gi, "轻微挂钩错位",
-											new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) });
+											new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) }, score);
 								}
 							}
 						}
@@ -591,23 +654,25 @@ namespace Stations
 			}
 		}
 
-		private void AddDefect(Dictionary<int, List<BoxDefect>> dict, int idx, string type, float[] box)
+		private void AddDefect(Dictionary<int, List<BoxDefect>> dict, int idx, string type, float[] box, float score = 1.0f)
 		{
 			if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
-			dict[idx].Add(new BoxDefect(idx, type, box));
+			dict[idx].Add(new BoxDefect(idx, type, box, score));
 		}
 
 		private void MapBoxes(YoloInference.YoloResult res, Dictionary<int, List<BoxDefect>> dict, int start, int end, string type)
 		{
 			if (res == null || res.Boxes == null) return;
 			int n = end - start; if (n <= 0) return;
-			foreach (var b in res.Boxes)
+			for (int j = 0; j < res.Boxes.Length; j++)
 			{
+				var b = res.Boxes[j];
+				float score = (res.Scores != null && j < res.Scores.Length) ? res.Scores[j] : 1.0f;
 				float cx = (b.X + b.Width / 2f) / res.OrigImg.Width;
 				int idx = start + (int)(cx * n);
 				if (idx < start || idx >= end) continue;
 				if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
-				dict[idx].Add(new BoxDefect(idx, type, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }));
+				dict[idx].Add(new BoxDefect(idx, type, new float[] { b.X, b.Y, b.X + b.Width, b.Y + b.Height }, score));
 			}
 		}
 
@@ -632,7 +697,8 @@ namespace Stations
 					if (d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影")) c = Color.Orange;
 					if (d.DefectType.Contains("明显")) c = Color.DarkRed;
 					if (d.DefectType.Contains("轻微")) c = Color.OrangeRed;
-					bool borderOnly = d.DefectType.StartsWith("条码错") || d.DefectType.Contains("条码缺少") || d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影");
+					bool isBcOrDc = d.DefectType.StartsWith("条码") || d.DefectType.StartsWith("日期码");
+					bool borderOnly = isBcOrDc || d.DefectType.Contains("缺少");
 					if (!borderOnly) using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
 					using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
 					bool isBarcode = d.DefectType.StartsWith("条码") || d.DefectType.Contains("条码");
@@ -641,6 +707,9 @@ namespace Stations
 					using (var f = new Font("微软雅黑", labelFont, FontStyle.Bold))
 					{
 						string label = d.DefectType;
+						bool isDisplayOnly = label.StartsWith("条码:") || label.StartsWith("日期:") || label.StartsWith("双排:");
+						if (!isDisplayOnly && d.Score > 0 && d.Score < 1.0f)
+							label = label + " " + d.Score.ToString("F2");
 						if (label.Length > 30) label = label.Substring(0, 30);
 						var sz = g.MeasureString(label, f);
 						int ly = y1 - (int)sz.Height - 8; if (ly < 8) ly = y1 + 8;
@@ -708,12 +777,13 @@ namespace Stations
 			foreach (var ch in new char[] { ':', '/', '\\', '<', '>', '"', '|', '?', '*', '(', ')', '（', '）' }) nt = nt.Replace(ch, '_');
 			string resultDir = isOk ? "OK" : "NG";
 			string dir = Path.Combine(_savePath, dd, shift, "背面工位", resultDir); Directory.CreateDirectory(dir);
+			string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 			if ((isOk && so) || (!isOk && sn))
-				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_渲染_" + nt + ".jpg"), merged.ToJpegBytesFast(85), true, 85);
+				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_渲染_" + nt + ".jpg"), merged.ToJpegBytesFast(85), true, 85);
 			if ((isOk && sor) || (!isOk && snr))
 			{
-				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_左原图_" + nt + ".jpg"), leftRaw.ToJpegBytesFast(85), false);
-				_imageSaver.AddSaveTask(Path.Combine(dir, pid + "_右原图_" + nt + ".jpg"), rightRaw.ToJpegBytesFast(85), false);
+				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_左原图_" + nt + ".jpg"), leftRaw.ToJpegBytesFast(85), false);
+				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_右原图_" + nt + ".jpg"), rightRaw.ToJpegBytesFast(85), false);
 			}
 		}
 
@@ -725,6 +795,7 @@ namespace Stations
 			return "中班";
 		}
 
+		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
 		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
 		public void Dispose() { if (_disposed) return; _disposed = true; lock (_syncLock) { _leftBuffer?.Dispose(); _rightBuffer?.Dispose(); } }
 	}

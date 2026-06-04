@@ -65,6 +65,8 @@ namespace Config
 			[JsonProperty("P号码OCR阈值")] public float PCodeConfThreshold { get; set; } = 0.5f;
 			[JsonProperty("盒子破检测阈值")] public float BoxBreakConfThreshold { get; set; } = 0.3f;
 			[JsonProperty("薄膜破检测阈值")] public float FilmBreakConfThreshold { get; set; } = 0.25f;
+			[JsonProperty("P号码检测启用")] public bool EnablePNumberCheck { get; set; } = false;
+			[JsonProperty("盒子破检测启用")] public bool EnableBoxBreakCheck { get; set; } = true;
 			[JsonProperty("显示OK数")] public long OkCount { get; set; } = 0;
 			[JsonProperty("显示NG数")] public long NgCount { get; set; } = 0;
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
@@ -76,6 +78,7 @@ namespace Config
 			[JsonProperty("上端面IOU阈值")] public float UpperIouThreshold { get; set; } = 0.2f;
 			[JsonProperty("下端面置信度阈值")] public float LowerConfThreshold { get; set; } = 0.5f;
 			[JsonProperty("下端面IOU阈值")] public float LowerIouThreshold { get; set; } = 0.2f;
+			[JsonProperty("上端面缺陷检测启用")] public bool EnableUpperDefectCheck { get; set; } = true;
 			[JsonProperty("曝光时间(ms)")] public int ExposureMs { get; set; } = 20;
 			[JsonProperty("飞拍延时(ms)")] public int FlyDelayMs { get; set; } = 10;
 			[JsonProperty("显示OK数")] public long OkCount { get; set; } = 0;
@@ -92,6 +95,9 @@ namespace Config
 			[JsonProperty("挂钩厚度阈值(px)")] public float HookThicknessThreshold { get; set; } = 30.0f;
 			[JsonProperty("挂钩内圈类别ID")] public int HookBlueAreaClassId { get; set; } = 0;
 			[JsonProperty("挂钩外圈类别ID")] public int HookHangHoleClassId { get; set; } = 1;
+			[JsonProperty("日期码检测启用")] public bool EnableDateCodeCheck { get; set; } = true;
+			[JsonProperty("条码检测启用")] public bool EnableBarcodeCheck { get; set; } = true;
+			[JsonProperty("挂钩检测启用")] public bool EnableHookCheck { get; set; } = true;
 			[JsonProperty("显示OK数")] public long OkCount { get; set; } = 0;
 			[JsonProperty("显示NG数")] public long NgCount { get; set; } = 0;
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
@@ -104,6 +110,11 @@ namespace Config
 			[JsonProperty("IOU阈值")] public float IouThreshold { get; set; } = 0.45f;
 			[JsonProperty("缺少图片判NG")] public bool MissingAsNg { get; set; } = true;
 			[JsonProperty("连续运动模式")] public bool UseContinuousMode { get; set; } = false;
+			[JsonProperty("运动轴启用")] public bool MotionEnabled { get; set; } = true;
+			[JsonProperty("安全锁IN端口(0=禁用)")] public int SafetyLockPort { get; set; } = 8;
+			[JsonProperty("安全锁高电平有效")] public bool SafetyLockActiveHigh { get; set; } = true;
+			[JsonProperty("安全锁恢复模式(0=继续执行,1=返回起始位)")] public int SafetyLockRecovery { get; set; } = 0;
+			[JsonProperty("侧面缺陷检测启用")] public bool EnableSideDefectCheck { get; set; } = true;
 			[JsonProperty("触发边缘模式")] public string TriggerEdgeMode { get; set; } = "RisingLeftFallingRight";
 			[JsonProperty("显示OK数")] public long OkCount { get; set; } = 0;
 			[JsonProperty("显示NG数")] public long NgCount { get; set; } = 0;

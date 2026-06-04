@@ -1,0 +1,67 @@
+我们也可以通过修改当前的 C# 代码来大幅降低 CPU 负载。核心思路是抛弃 C# 侧的 unsafe 像素循环，全权交由 OpenCV 底层的 C++ 向量化实现。
+
+可以通过 Cv2.CopyMakeBorder 实现 Letterbox，并通过 CvDnn.BlobFromImages 替代手动归一化与 HWC->CHW 转换。你可以将原有的 PreprocessBatchOptimized 方法替换为如下高性能版本：
+private DenseTensor<float> PreprocessBatchOptimized(List<Mat> origImgs, float[] ratios, float[] padWs, float[] padHs)
+{
+    int batchSize = origImgs.Count;
+    List<Mat> processedImgs = new List<Mat>(batchSize);
+
+    // 1. 采用 Parallel.For 并行执行 OpenCV 原生算子，避开 C# 逐像素循环
+    Parallel.For(0, batchSize, b =>
+    {
+        Mat origImg = origImgs[b];
+        int w = origImg.Width;
+        int h = origImg.Height;
+
+        float ratio = Math.Min((float)_inputH / h, (float)_inputW / w);
+        ratios[b] = ratio;
+
+        int newW = (int)Math.Round(w * ratio);
+        int newH = (int)Math.Round(h * ratio);
+       
+        float padW = (_inputW - newW) / 2f;
+        float padH = (_inputH - newH) / 2f;
+        padWs[b] = padW;
+        padHs[b] = padH;
+
+        int padWInt = (int)Math.Round(padW - 0.1);
+        int padHInt = (int)Math.Round(padH - 0.1);
+
+        Mat resized = new Mat();
+        if (w != newW || h != newH)
+            Cv2.Resize(origImg, resized, new Size(newW, newH), 0, 0, InterpolationFlags.Linear);
+        else
+            origImg.CopyTo(resized);
+
+        // 核心优化 1：使用 C++ 底层实现的 CopyMakeBorder 直接完成 Letterbox 灰边填充
+        Mat letterboxImg = new Mat();
+        int top = padHInt;
+        int bottom = _inputH - newH - top;
+        int left = padWInt;
+        int right = _inputW - newW - left;
+       
+        Cv2.CopyMakeBorder(resized, letterboxImg, top, bottom, left, right, BorderTypes.Constant, new Scalar(114, 114, 114));
+        resized.Dispose();
+
+        lock (processedImgs)
+        {
+            processedImgs.Add(letterboxImg);
+        }
+    });
+
+    // 核心优化 2：使用 OpenCV DNN 模块一键完成 除以 255 (scaleFactor), BGR转RGB (swapRB), 及 HWC转CHW
+    // 这个底层操作由高度优化的 SIMD 指令完成，速度极快
+    Mat blob = CvDnn.BlobFromImages(processedImgs, 1.0 / 255.0, new Size(_inputW, _inputH), new Scalar(0, 0, 0), swapRB: true, crop: false);
+
+    // 3. 将 4D Blob 极速复制到 ONNX 期望的 DenseTensor 中
+    int tensorSize = batchSize * 3 * _inputH * _inputW;
+    float[] tensorData = new float[tensorSize];
+   
+    // Blob 内存是连续的，直接进行一次底层内存块拷贝，没有任何 for 循环！
+    Marshal.Copy(blob.DataPointer, tensorData, 0, tensorSize);
+
+    foreach (var img in processedImgs) img.Dispose();
+    blob.Dispose();
+
+    return new DenseTensor<float>(tensorData, new int[] { batchSize, 3, _inputH, _inputW });
+}

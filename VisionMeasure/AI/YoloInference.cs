@@ -11,6 +11,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Newtonsoft.Json; // 引入 JSON 解析库
 using System.Globalization;
+using System.Runtime.InteropServices; // Marshal.Copy
 
 namespace YoloInference
 {
@@ -78,6 +79,8 @@ namespace YoloInference
 		// 实例绑定的默认阈值（从 json 获取）
 		public float DefaultConfThres { get; private set; }
 		public float DefaultIouThres { get; private set; }
+		// best.json路径，供外部保存参数用
+		public string MetaPath { get; private set; }
 
 		/// <summary>
 		/// 构造函数
@@ -104,6 +107,7 @@ namespace YoloInference
 
 			DefaultConfThres = meta.ConfThres;
 			DefaultIouThres = meta.IouThres;
+			MetaPath = metaJsonPath;
 
 			// [新增] 诊断是否为 yolo26 架构
 			_isYolo26 = !string.IsNullOrEmpty(meta.BaseModel) && meta.BaseModel.IndexOf("26", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -158,6 +162,10 @@ namespace YoloInference
 			{
 				SessionOptions options = new SessionOptions();
 				options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+				// 单流顺序执行模式：避免多流并行开销，适合实时逐帧推理
+				options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
+				// 启用内存复用模式：ORT内部复用显存/内存缓冲区，减少每次推理分配
+				options.EnableMemoryPattern = true;
 				// 限制CPU线程：GPU推理时CPU只做预处理，单线程足够，避免5个模型×全核=CPU炸满
 				options.InterOpNumThreads = 1;
 				options.IntraOpNumThreads = 1;
@@ -168,7 +176,8 @@ namespace YoloInference
 					{ "device_id", gpuDeviceId.ToString() },
 					{ "cudnn_conv_algo_search", "HEURISTIC" },
 					{ "arena_extend_strategy", "kNextPowerOfTwo" },
-					{ "do_copy_in_default_stream", "1" }
+					{ "do_copy_in_default_stream", "1" },
+					{ "cudnn_conv_use_max_workspace", "1" }
 				});
 
 				options.AppendExecutionProvider_CUDA(cudaProviderOptions);
@@ -180,6 +189,8 @@ namespace YoloInference
 				Logger.Info($"[GPU] CUDA 初始化失败，尝试降级 CPU。原因: {ex.Message}");
 				SessionOptions options = new SessionOptions();
 				options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+				options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
+				options.EnableMemoryPattern = true;
 				options.AppendExecutionProvider_CPU(0);
 				options.InterOpNumThreads = 2;
 				options.IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2);
@@ -191,7 +202,12 @@ namespace YoloInference
 		private void Warmup(int iterations, int warmupBatchSize)
 		{
 			Logger.Info($"[GPU] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}])...");
-			float[] dummyData = new float[warmupBatchSize * 3 * _inputH * _inputW];
+			int totalSize = warmupBatchSize * 3 * _inputH * _inputW;
+			float[] dummyData = new float[totalSize];
+			// 用随机数替代全零，强制CUDA编译所有conv/kernel路径，避免首次真图推理时重编译
+			var rng = new Random(42);
+			for (int i = 0; i < totalSize; i++)
+				dummyData[i] = (float)(rng.NextDouble() * 0.5 + 0.25);  // 模拟归一化后的像素值 [0.25, 0.75]
 			var dummyTensor = new DenseTensor<float>(dummyData, new int[] { warmupBatchSize, 3, _inputH, _inputW });
 			var inputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor(_inputName, dummyTensor) };
 
@@ -204,7 +220,7 @@ namespace YoloInference
 
 		public YoloResult Predict(Mat origImg, float? confThres = null, float? iouThres = null)
 		{
-			var results = PredictBatch(new List<Mat> { origImg }, confThres, iouThres);
+			var results = PredictBatch(new List<Mat>(1) { origImg }, confThres, iouThres);
 			return results.FirstOrDefault();
 		}
 
@@ -263,73 +279,91 @@ namespace YoloInference
 			}
 		}
 
+		// 参考OpenCV高性能文档：用Cv2.CopyMakeBorder + CvDnn.BlobFromImages + Marshal.Copy
+		// 替代C# unsafe逐像素BGR→RGB÷255循环，全部交由OpenCV C++ SIMD底层处理
 		private DenseTensor<float> PreprocessBatchOptimized(List<Mat> origImgs, float[] ratios, float[] padWs, float[] padHs)
 		{
 			int batchSize = origImgs.Count;
-			int planeSize = _inputH * _inputW;
-			int singleImgTensorSize = 3 * planeSize;
-			float[] tensorData = new float[batchSize * singleImgTensorSize];
-			float padValue = 114f / 255.0f;
 
-			for (int i = 0; i < tensorData.Length; i++) tensorData[i] = padValue;
+			// Step 1: 逐张 Resize + Letterbox（C++ CopyMakeBorder），收集到 processedImgs
+			var processedImgs = new List<Mat>(batchSize);
 
-			Parallel.For(0, batchSize, b =>
+			if (batchSize <= 3)
 			{
-				Mat origImg = origImgs[b];
-				int w = origImg.Width, h = origImg.Height;
-
-				float ratio = Math.Min((float)_inputH / h, (float)_inputW / w);
-				ratios[b] = ratio;
-
-				int newW = (int)Math.Round(w * ratio);
-				int newH = (int)Math.Round(h * ratio);
-
-				float padW = (_inputW - newW) / 2f;
-				float padH = (_inputH - newH) / 2f;
-				padWs[b] = padW;
-				padHs[b] = padH;
-
-				int padWInt = (int)Math.Round(padW - 0.1);
-				int padHInt = (int)Math.Round(padH - 0.1);
-
-				using (Mat resized = new Mat())
+				for (int b = 0; b < batchSize; b++)
+					processedImgs.Add(PreprocessSingleToMat(origImgs[b], b, ratios, padWs, padHs));
+			}
+			else
+			{
+				var mats = new Mat[batchSize];
+				// 限2线程并行，防止抢占AI推理核心
+				Parallel.For(0, batchSize, new ParallelOptions { MaxDegreeOfParallelism = 2 }, b =>
 				{
-					if (w != newW || h != newH)
-						Cv2.Resize(origImg, resized, new Size(newW, newH), 0, 0, InterpolationFlags.Linear);
-					else
-						origImg.CopyTo(resized);
+					mats[b] = PreprocessSingleToMat(origImgs[b], b, ratios, padWs, padHs);
+				});
+				for (int b = 0; b < batchSize; b++)
+					processedImgs.Add(mats[b]);
+			}
 
-					int stride = (int)resized.Step();
-					int batchOffset = b * singleImgTensorSize;
+			// Step 2: BlobFromImages — OpenCV C++ SIMD 一步完成 ÷255 + BGR→RGB + HWC→CHW
+			// swapRB=true 将BGR转RGB, scaleFactor=1/255 归一化, 输出NCHW float blob
+			using (Mat blob = CvDnn.BlobFromImages(processedImgs, 1.0 / 255.0,
+				new Size(_inputW, _inputH), new Scalar(0, 0, 0), swapRB: true, crop: false))
+			{
+				// Step 3: Marshal.Copy — 单次非托管→托管内存拷贝，无比C# for循环
+				int tensorSize = batchSize * 3 * _inputH * _inputW;
+				float[] tensorData = new float[tensorSize];
+				Marshal.Copy(blob.Data, tensorData, 0, tensorSize);
 
-					unsafe
-					{
-						byte* pSrcBase = (byte*)resized.DataPointer;
-						fixed (float* pDstBase = tensorData)
-						{
-							float* pDstBatch = pDstBase + batchOffset;
-							for (int y = 0; y < newH; y++)
-							{
-								byte* row = pSrcBase + y * stride;
-								int targetY = y + padHInt;
+				// 释放中间Mat
+				foreach (var img in processedImgs) img.Dispose();
 
-								float* rDst = pDstBatch + (targetY * _inputW) + padWInt;
-								float* gDst = pDstBatch + planeSize + (targetY * _inputW) + padWInt;
-								float* bDst = pDstBatch + (2 * planeSize) + (targetY * _inputW) + padWInt;
+				return new DenseTensor<float>(tensorData, new int[] { batchSize, 3, _inputH, _inputW });
+			}
+		}
 
-								for (int x = 0; x < newW; x++)
-								{
-									rDst[x] = row[x * 3 + 2] / 255.0f;
-									gDst[x] = row[x * 3 + 1] / 255.0f;
-									bDst[x] = row[x * 3 + 0] / 255.0f;
-								}
-							}
-						}
-					}
-				}
-			});
+		/// <summary>预处理单张→返回Letterbox Mat（C++ CopyMakeBorder替代C# unsafe像素填充）</summary>
+		private Mat PreprocessSingleToMat(Mat origImg, int b, float[] ratios, float[] padWs, float[] padHs)
+		{
+			int w = origImg.Width, h = origImg.Height;
+			float ratio = Math.Min((float)_inputH / h, (float)_inputW / w);
+			ratios[b] = ratio;
 
-			return new DenseTensor<float>(tensorData, new int[] { batchSize, 3, _inputH, _inputW });
+			int newW = (int)Math.Round(w * ratio);
+			int newH = (int)Math.Round(h * ratio);
+
+			float padW = (_inputW - newW) / 2f;
+			float padH = (_inputH - newH) / 2f;
+			padWs[b] = padW;
+			padHs[b] = padH;
+
+			int padWInt = (int)Math.Round(padW - 0.1);
+			int padHInt = (int)Math.Round(padH - 0.1);
+
+			// Resize
+			Mat resized;
+			if (w != newW || h != newH)
+			{
+				resized = new Mat();
+				Cv2.Resize(origImg, resized, new Size(newW, newH), 0, 0, InterpolationFlags.Linear);
+			}
+			else
+			{
+				resized = origImg.Clone();  // Clone: 需要独立Mat给 CopyMakeBorder
+			}
+
+			// Letterbox: C++ CopyMakeBorder 替代 C# unsafe 循环填充灰边
+			int top = padHInt;
+			int bottom = _inputH - newH - top;
+			int left = padWInt;
+			int right = _inputW - newW - left;
+
+			Mat letterboxImg = new Mat();
+			Cv2.CopyMakeBorder(resized, letterboxImg, top, bottom, left, right,
+				BorderTypes.Constant, new Scalar(114, 114, 114));
+			resized.Dispose();
+
+			return letterboxImg;
 		}
 
 		// =========================================================
@@ -357,9 +391,9 @@ namespace YoloInference
 					{
 						float* pOutput = pOutputBase + b * singleBatchOutputSize;
 
-						List<Rect> boxes = new List<Rect>();
-						List<float> scores = new List<float>();
-						List<int> classIds = new List<int>();
+						List<Rect> boxes = new List<Rect>(numBoxes);
+						List<float> scores = new List<float>(numBoxes);
+						List<int> classIds = new List<int>(numBoxes);
 
 						int origW = origImgs[b].Width;
 						int origH = origImgs[b].Height;
@@ -442,9 +476,9 @@ namespace YoloInference
 					for (int b = 0; b < batchSize; b++)
 					{
 						float* pOutput = pOutputBase + b * singleBatchOutputSize;
-						List<Rect> candidates = new List<Rect>();
-						List<float> confidences = new List<float>();
-						List<int> classIds = new List<int>();
+						List<Rect> candidates = new List<Rect>(numAnchors / 10);
+						List<float> confidences = new List<float>(numAnchors / 10);
+						List<int> classIds = new List<int>(numAnchors / 10);
 
 						float* pCx = pOutput;
 						float* pCy = pOutput + numAnchors;
@@ -518,6 +552,18 @@ namespace YoloInference
 				}
 			}
 			return results;
+		}
+
+		// 保存参数到best.json
+		public void SaveParams(string metaJsonPath) {
+			try {
+				var json = File.ReadAllText(metaJsonPath);
+				var meta = JsonConvert.DeserializeObject<YoloMetadata>(json);
+				meta.ConfThres = DefaultConfThres;
+				meta.IouThres = DefaultIouThres;
+				File.WriteAllText(metaJsonPath, JsonConvert.SerializeObject(meta, Formatting.Indented));
+				Logger.Info("[GPU] 参数已保存到: " + metaJsonPath);
+			} catch (Exception ex) { Logger.Error("保存模型参数失败: " + ex.Message); }
 		}
 
 		public void Dispose()

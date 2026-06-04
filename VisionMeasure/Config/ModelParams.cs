@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
 
@@ -105,7 +106,42 @@ namespace Config
 
 		public void Save()
 		{
-			try { if (!Directory.Exists(Dir)) Directory.CreateDirectory(Dir); File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented)); }
+			try
+			{
+				if (!Directory.Exists(Dir)) Directory.CreateDirectory(Dir);
+				var newJson = JObject.FromObject(this);
+				if (File.Exists(FilePath))
+				{
+					try
+					{
+						var oldJson = JObject.Parse(File.ReadAllText(FilePath));
+						// 把 _ 开头的注释字段插到对应参数前面
+						var ordered = new JObject();
+						foreach (var prop in newJson.Properties())
+						{
+							// 查找旧文件中此参数的注释（_xxx说明, _xxx, 或 _说明_xxx）
+							foreach (var oldProp in oldJson.Properties())
+							{
+								if (oldProp.Name.StartsWith("_") && !ordered.ContainsKey(oldProp.Name))
+								{
+									bool match = oldProp.Name.EndsWith(prop.Name)      // _BcContrastAlpha
+										|| oldProp.Name == "_" + prop.Name + "说明"   // _BcContrastAlpha说明
+										|| oldProp.Name == "_说明_" + prop.Name;       // _说明_BcContrastAlpha
+									if (match) { ordered[oldProp.Name] = oldProp.Value; break; }
+								}
+							}
+							ordered[prop.Name] = prop.Value;
+						}
+						// 补上未匹配的残留注释
+						foreach (var oldProp in oldJson.Properties())
+							if (oldProp.Name.StartsWith("_") && !ordered.ContainsKey(oldProp.Name))
+								ordered[oldProp.Name] = oldProp.Value;
+						newJson = ordered;
+					}
+					catch { }
+				}
+				File.WriteAllText(FilePath, newJson.ToString(Formatting.Indented));
+			}
 			catch { }
 		}
 		public static ModelParams Load(string key)
