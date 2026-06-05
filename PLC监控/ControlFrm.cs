@@ -533,7 +533,7 @@ namespace PLC监控
 		bool WaitArriveNoPhoto(int a, float target, int timeoutSec, float startRefPos)
 		{
 			float tol = 0.5f;
-			int maxIter = timeoutSec * 100;  // 10ms per iteration
+			int maxIter = timeoutSec * 200;  // 10ms per iteration
 			for (int i = 0; i < maxIter; i++)
 			{
 				if (!_simRunning) return false;
@@ -541,7 +541,7 @@ namespace PLC监控
 				if (!PollSafety()) { ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 暂停"); if (!WaitForSafetyRestore()) return false; if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); ZAux_Direct_Single_MoveAbs(_handle, a, startRefPos); return false; } SimUI("安全锁恢复→继续"); ZAux_Direct_Single_MoveAbs(_handle, a, target); i = 0; continue; }
 				float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
 				if (Math.Abs(dpos - target) < tol) return true;
-				Thread.Sleep(10);
+				Thread.Sleep(5);
 			}
 			return false;
 		}

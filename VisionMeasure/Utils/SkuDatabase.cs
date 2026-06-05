@@ -8,6 +8,7 @@ using CommonLib;
 
 namespace VisionMeasure.Utils
 {
+/// <summary>SKU数据库 — 从CSV加载主数据+裁图数据, 支持关键词搜索, 防抖查询</summary>
 	public class SkuDatabase
 	{
 		private List<SkuData> _skuList = new List<SkuData>();

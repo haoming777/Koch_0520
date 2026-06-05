@@ -3,6 +3,7 @@ using OpenCvSharp;
 
 namespace VisionMeasure.Utils
 {
+/// <summary>图像裁剪工具 — 支持OpenCV Mat和Bitmap的水平/垂直裁剪</summary>
 	public class ImageCropper
 	{
 		public Mat CropBottomHalf(Mat src, int boxCount)

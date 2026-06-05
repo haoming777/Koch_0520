@@ -22,6 +22,7 @@ using static CommonLib.Class_Config;
 
 namespace Stations
 {
+/// <summary>	/// 端面工位处理器 — 批次模式(收集P张图后批量处理)	/// 入队: EnqueueImage → ConcurrentQueue(上下端面各一个队列)	/// 触发: 上下各P张图 → 批次触发 → BlockingCollection	/// 防呆: 5秒超时未满P张 → 强制处理现有图 → 清空残留队列	/// 处理: ProcessLoop后台线程 → 消费批次 → ProcessBatch(裁图→并行YOLO→解析→汇总)	/// 显示: 上下端面独立索引, 各有NG时显示第一张NG, 全OK显示最后一张	/// </summary>
 	public class EndFaceStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -123,9 +124,12 @@ namespace Stations
 				finally { SkipCrop = savedSkip; }
 			});
 		}
+		/// <summary>相机3(上端面)图像回调 — 入队到_upperQueue, 计数到P→触发批次</summary>
 		public void OnCam5(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgUpperCount); EnqueueImage(_upperQueue, ref _upperCount, bitmap, productId, "Upper"); }
+		/// <summary>相机4(下端面)图像回调 — 入队到_lowerQueue, 计数到P→触发批次</summary>
 		public void OnCam6(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgLowerCount); EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower"); }
 
+	/// <summary>入队图像: ConcurrentQueue原子入队→计数累加→上下各P张触发批次→DequeueBatch取P张→BlockingCollection.Add入处理队列, 超时5s防呆强制处理</summary>
 		private void EnqueueImage(ConcurrentQueue<ImageContext> queue, ref int count, Bitmap bitmap, long productId, string name)
 		{
 			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
@@ -145,6 +149,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>出队P张图像: 从ConcurrentQueue TryDequeue到满P张或队列空</summary>
 		private List<ImageContext> DequeueBatch(ConcurrentQueue<ImageContext> queue, ref int count)
 		{
 			var list = new List<ImageContext>();
@@ -156,6 +161,7 @@ namespace Stations
 			return list;
 		}
 
+		/// <summary>出队N张图像: TryDequeue指定数量(防呆超时时使用)</summary>
 			private List<ImageContext> DequeueBatchN(ConcurrentQueue<ImageContext> queue, ref int count, int n)
 		{
 			var list = new List<ImageContext>();
@@ -168,12 +174,14 @@ namespace Stations
 		}
 
 		// 从模型best.json加载阈值
+		/// <summary>从模型best.json加载端面缺陷检测的Conf/Iou阈值</summary>
 		public void InitThresholdsFromModel() {
 			// 上端面模型阈值优先
 			if (_models.EndFaceUpperModel != null) { ConfThreshold = _models.EndFaceUpperModel.DefaultConfThres; IouThreshold = _models.EndFaceUpperModel.DefaultIouThres; }
 			Logger.Info($"[EndFace] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 		}
 
+		/// <summary>启动后台处理线程: new Thread(ProcessLoop){AboveNormal,IsBackground}→Start</summary>
 		public void Start()
 		{
 			_processThread = new Thread(ProcessLoop) { Name = "EndFaceStationProcessor", IsBackground = true, Priority = ThreadPriority.AboveNormal };
@@ -183,6 +191,7 @@ namespace Stations
 
 		public void Stop() { _cts.Cancel(); _processThread?.Join(3000); }
 
+	/// <summary>		/// 后台处理循环(AboveNormal优先级线程): 消费BlockingCollection批次		/// 防呆: 每次循环前检查队列超时(5秒未满P张→强制处理+清空残留)		/// 消费: TryTake(100ms超时) → ProcessBatch → 释放ImageContext		/// </summary>
 		private void ProcessLoop()
 		{
 			while (!_cts.Token.IsCancellationRequested)
@@ -225,6 +234,7 @@ namespace Stations
 			}
 		}
 
+	/// <summary>		/// 批处理核心: 裁图→并行YOLO(上下端面各自推理)→解析缺陷→汇总状态→绘制→保存		/// 上端面裁右边(cropRight=true), 下端面裁左边(cropRight=false)		/// 汇总: upperStatus[i] &amp;&amp; lowerStatus[i] → mergedStatus[i]		/// 性能记录: PerformanceMonitor.Record (Crop/Inference/Draw/Save/Total)		/// </summary>
 		private void ProcessBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages)
 		{
 			int actualP = Math.Min(upperImages.Count, lowerImages.Count);
@@ -267,8 +277,8 @@ namespace Stations
 
 				for (int i = 0; i < actualP; i++)
 				{
-					string uStatus = upperDefects.ContainsKey(i) ? upperDefects[i].First().DefectType : "OK";
-					string lStatus = lowerDefects.ContainsKey(i) ? lowerDefects[i].First().DefectType : "OK";
+					string uStatus = upperDefects.ContainsKey(i) ? string.Join(",", upperDefects[i].Select(d => d.DefectType)) : "OK";
+					string lStatus = lowerDefects.ContainsKey(i) ? string.Join(",", lowerDefects[i].Select(d => d.DefectType)) : "OK";
 					upperStatus.Add(uStatus);
 					lowerStatus.Add(lStatus);
 					mergedStatus.Add((uStatus == "OK" && lStatus == "OK") ? "OK" : (uStatus != "OK" ? uStatus : lStatus));
@@ -316,7 +326,7 @@ namespace Stations
 				double saveTime = 0;
 				using (var saveScope = new StopwatchScope(t => saveTime = t))
 				{
-					SaveImagesBatch(upperImages, lowerImages, upperMats, lowerMats, mergedStatus, firstProductId, isOk);
+					SaveImagesBatch(upperImages, lowerImages, upperMats, lowerMats, upperStatus, lowerStatus, mergedStatus, firstProductId, isOk);
 				}
 
 				double totalTime = sw.Elapsed.TotalMilliseconds;
@@ -337,12 +347,10 @@ namespace Stations
 
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, actualP);
-				var upStats = new Dictionary<string, int>(); foreach (var s in upperStatus) { if (s != "OK") { if (upStats.ContainsKey(s)) upStats[s]++; else upStats[s] = 1; } }
-				var loStats = new Dictionary<string, int>(); foreach (var s in lowerStatus) { if (s != "OK") { if (loStats.ContainsKey(s)) loStats[s]++; else loStats[s] = 1; } }
-				string defStr = "";
-				if (upStats.Count > 0) defStr += " 上端面:" + string.Join(" ", upStats.Select(kv => kv.Key + kv.Value));
-				if (loStats.Count > 0) defStr += " 下端面:" + string.Join(" ", loStats.Select(kv => kv.Key + kv.Value));
-				if (defStr.Length > 0) defStr = " |" + defStr;
+				var upStats = new Dictionary<string, int>(); foreach (var s in upperStatus) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (upStats.ContainsKey(k)) upStats[k]++; else upStats[k] = 1; } } }
+				var loStats = new Dictionary<string, int>(); foreach (var s in lowerStatus) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (loStats.ContainsKey(k)) loStats[k]++; else loStats[k] = 1; } } }
+				string defStr = " | 上端面:" + (upStats.Count > 0 ? string.Join(" ", upStats.Select(kv => kv.Key + kv.Value)) : "0");
+				defStr += " 下端面:" + (loStats.Count > 0 ? string.Join(" ", loStats.Select(kv => kv.Key + kv.Value)) : "0");
 				Logger.Info($"[EndFace] 完成 P={actualP} OK={boxOk} NG={mergedStatus.Count - boxOk}{defStr} | 耗时={totalTime:F0}ms");
 			}
 			catch (Exception ex)
@@ -356,6 +364,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>批量裁图: 遍历ImageContext→ToMat→按cropPx裁剪(cropRight=裁右边/cropLeft=裁左边)→返回Mat列表</summary>
 		private List<Mat> CropImagesBatch(List<ImageContext> images, int cropPx, bool cropRight)
 		{
 			var mats = new List<Mat>();
@@ -378,12 +387,14 @@ namespace Stations
 			return mats;
 		}
 
+	/// <summary>批量YOLO推理: model.PredictBatch(所有Mat图片一次性送入GPU), 模型为null返回空列表</summary>
 		private List<YoloInference.YoloResult> RunInference(List<Mat> images, YoloOnnx model)
 		{
 			if (model == null) return new List<YoloInference.YoloResult>();
 			return model.PredictBatch(images, ConfThreshold, IouThreshold);
 		}
 
+	/// <summary>解析YOLO结果: 遍历每张图的Boxes→BoxesN(归一化坐标)→GetDefectType(classId映射缺陷名)→构建BoxDefect字典</summary>
 		private Dictionary<int, List<BoxDefect>> ParseResults(List<YoloInference.YoloResult> results)
 		{
 			var defects = new Dictionary<int, List<BoxDefect>>();
@@ -404,6 +415,7 @@ namespace Stations
 			return defects;
 		}
 
+	/// <summary>批量绘制: 遍历每张图像→DrawDefectOnImage(缺陷框+状态标签+序号)→存入ImageContext.RenderBitmap</summary>
 		private void DrawResultsBatch(List<ImageContext> images, List<Mat> mats, Dictionary<int, List<BoxDefect>> defects, List<string> status)
 		{
 			for (int i = 0; i < images.Count; i++)
@@ -413,6 +425,7 @@ namespace Stations
 			}
 		}
 
+	/// <summary>绘制单张端面缺陷图: 填充半透明框+实线边框(破损红/搭舌橙/边缘紫)+缺陷类型标签+OK/NG状态(右上角)+序号(右下角)</summary>
 		private Bitmap DrawDefectOnImage(Mat image, List<BoxDefect> defects, string status, int index, int total)
 		{
 			var bitmap = image.ToBitmap();
@@ -480,6 +493,7 @@ namespace Stations
 			return bitmap;
 		}
 
+	/// <summary>更新显示缓存: 释放旧Bitmap→逐张重新绘制上下端面→上下拼接combined→存入_displayBitmaps/Images→重置索引(NG优先)</summary>
 		private void UpdateDisplayImages(List<Mat> upperMats, List<Mat> lowerMats,
 			Dictionary<int, List<BoxDefect>> upperDefects, Dictionary<int, List<BoxDefect>> lowerDefects,
 			List<string> upperStatus, List<string> lowerStatus)
@@ -524,6 +538,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>绘制上下端面合并图: 上半=上端面缺陷框, 下半=下端面缺陷框, 右上角上下OK/NG状态标签</summary>
 		private Bitmap DrawDefectOnCombined(Mat combined, List<BoxDefect> upperDefects, List<BoxDefect> lowerDefects, string upperStatus, string lowerStatus)
 		{
 			var bitmap = combined.ToBitmap();
@@ -582,6 +597,7 @@ namespace Stations
 			return bitmap;
 		}
 
+	/// <summary>查找第一个NG索引: 遍历上/下端面状态, 任一NG即返回该索引, 全OK返回最后一张</summary>
 		private int FindFirstNgIndex(List<string> upperStatus, List<string> lowerStatus)
 		{
 			for (int i = 0; i < _upperDisplayImages.Count; i++)
@@ -591,6 +607,7 @@ namespace Stations
 		}
 
 		/// <summary>在单侧状态列表中找第一个NG，全OK返回最后一张</summary>
+		/// <summary>在单侧状态列表中找第一个NG, 全OK返回最后一张索引</summary>
 		private int FindFirstNgInList(List<string> statusList, int count)
 		{
 			for (int i = 0; i < count && i < statusList.Count; i++)
@@ -599,6 +616,7 @@ namespace Stations
 			return Math.Max(0, count - 1);
 		}
 
+		/// <summary>获取当前显示的合并图像Mat(Clone副本, 线程安全)</summary>
 		public Mat GetCurrentDisplayImage()
 		{
 			lock (_resultLock)
@@ -609,6 +627,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>获取当前上端面渲染图Mat(Clone副本, 线程安全)</summary>
 		public Mat GetCurrentUpperImage()
 		{
 			lock (_resultLock)
@@ -619,6 +638,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>获取当前下端面渲染图Mat(Clone副本, 线程安全)</summary>
 		public Mat GetCurrentLowerImage()
 		{
 			lock (_resultLock)
@@ -631,6 +651,7 @@ namespace Stations
 
 		public bool NavigationEnabled { get; set; } = false;
 
+		/// <summary>轮播上一张: _displayIndex循环递减</summary>
 		public void NavigatePrev()
 		{
 			if (!NavigationEnabled) return;
@@ -644,6 +665,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>轮播下一张: _displayIndex循环递增</summary>
 		public void NavigateNext()
 		{
 			if (!NavigationEnabled) return;
@@ -657,7 +679,8 @@ namespace Stations
 			}
 		}
 
-		private void SaveImagesBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages, List<Mat> upperMats, List<Mat> lowerMats, List<string> mergedStatus, long productId, bool isOk)
+	/// <summary>保存端面批次图片: 渲染图(上/下端面分目录)+原图→JPEG 85%→Images/{日期}/{班次}/端面工位/{上下端面}/{OK|NG}/</summary>
+		private void SaveImagesBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages, List<Mat> upperMats, List<Mat> lowerMats, List<string> upperStatus, List<string> lowerStatus, List<string> mergedStatus, long productId, bool isOk)
 		{
 			bool saveOkImage = _Config.IsSaveOkImage;
 			string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
@@ -681,19 +704,16 @@ namespace Stations
 				Directory.CreateDirectory(lowerDir);
 				for (int i = 0; i < upperImages.Count; i++)
 				{
-					if (upperImages[i].RenderBitmap != null)
+					// 只存NG图: 上下端面各自独立判断, OK的那个不存
+					bool upNg = isOk || (i < upperStatus.Count && upperStatus[i] != "OK");
+					bool loNg = isOk || (i < lowerStatus.Count && lowerStatus[i] != "OK");
+					if (upNg && upperImages[i].RenderBitmap != null)
 					{
-						string fileName = $"{ts}_{i + 1}_上端面_渲染_{ngTypes}.jpg";
-						string filePath = Path.Combine(upperDir, fileName);
-						var jpegData = upperImages[i].RenderBitmap.ToJpegBytesFast(85);
-						_imageSaver.AddSaveTask(filePath, jpegData, true, 85);
+						_imageSaver.AddSaveTask(Path.Combine(upperDir, $"{ts}_{i + 1}_上端面_渲染_{ngTypes}.jpg"), upperImages[i].RenderBitmap.ToJpegBytesFast(85), true, 85);
 					}
-					if (lowerImages[i].RenderBitmap != null)
+					if (loNg && lowerImages[i].RenderBitmap != null)
 					{
-						string lfn = ts + "_" + (i + 1) + "_下端面_渲染_" + ngTypes + ".jpg";
-						string lfp = Path.Combine(lowerDir, lfn);
-						var ljd = lowerImages[i].RenderBitmap.ToJpegBytesFast(85);
-						_imageSaver.AddSaveTask(lfp, ljd, true, 85);
+						_imageSaver.AddSaveTask(Path.Combine(lowerDir, $"{ts}_{i + 1}_下端面_渲染_{ngTypes}.jpg"), lowerImages[i].RenderBitmap.ToJpegBytesFast(85), true, 85);
 					}
 				}
 			}
@@ -706,17 +726,16 @@ namespace Stations
 				Directory.CreateDirectory(lowerDir);
 				for (int i = 0; i < upperImages.Count; i++)
 				{
-					string fileName = $"{ts}_{i + 1}_上端面_原图_{ngTypes}.jpg";
-					string filePath = Path.Combine(upperDir, fileName);
-					var upperBmp = upperMats[i].ToBitmap(); if (upperBmp != null) { _imageSaver.AddSaveTask(filePath, upperBmp.ToJpegBytesFast(85), false); upperBmp.Dispose(); }
-
-					fileName = $"{ts}_{i + 1}_下端面_原图_{ngTypes}.jpg";
-					filePath = Path.Combine(lowerDir, fileName);
-					var lowerBmp = lowerMats[i].ToBitmap(); if (lowerBmp != null) { _imageSaver.AddSaveTask(filePath, lowerBmp.ToJpegBytesFast(85), false); lowerBmp.Dispose(); }
+					// 上下端面各自独立判断, OK那个不存原图
+					bool upNg = isOk || (i < upperStatus.Count && upperStatus[i] != "OK");
+					bool loNg = isOk || (i < lowerStatus.Count && lowerStatus[i] != "OK");
+					if (upNg) { var bmp = upperMats[i].ToBitmap(); if (bmp != null) { _imageSaver.AddSaveTask(Path.Combine(upperDir, $"{ts}_{i + 1}_上端面_原图_{ngTypes}.jpg"), bmp.ToJpegBytesFast(85), false); bmp.Dispose(); } }
+					if (loNg) { var bmp = lowerMats[i].ToBitmap(); if (bmp != null) { _imageSaver.AddSaveTask(Path.Combine(lowerDir, $"{ts}_{i + 1}_下端面_原图_{ngTypes}.jpg"), bmp.ToJpegBytesFast(85), false); bmp.Dispose(); } }
 				}
 			}
 		}
 
+		/// <summary>获取当前班次: 00~08=晚班, 08~16=早班, 16~24=中班</summary>
 		private string GetCurrentShift()
 		{
 			var now = DateTime.Now.TimeOfDay;
@@ -725,6 +744,7 @@ namespace Stations
 			return "中班";
 		}
 
+		/// <summary>生成NG类型字符串: 从statusList提取非OK项→去重→_连接, 全OK返回"OK"</summary>
 		private string GetNgTypesString(List<string> statusList)
 		{
 			var ngTypes = statusList.Where(s => s != "OK").Distinct().ToList();
@@ -732,6 +752,7 @@ namespace Stations
 			return string.Join("_", ngTypes);
 		}
 
+	/// <summary>缺陷classId→中文名称映射: 0=搭舌缺陷 1=边缘问题 2=破损</summary>
 		private string GetDefectType(int classId)
 		{
 			var classMap = new Dictionary<int, string> { { 0, "搭舌缺陷" }, { 1, "边缘问题" }, { 2, "破损" } };
@@ -739,6 +760,7 @@ namespace Stations
 		}
 
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
+		/// <summary>清零统计计数: Interlocked.Exchange置0(线程安全)</summary>
 		public void ClearCounters()
 		{
 			Interlocked.Exchange(ref _totalCount, 0);
@@ -747,6 +769,7 @@ namespace Stations
 		}
 
 		private void CleanupDisplayBitmaps() { lock (_resultLock) { foreach (var b in _currentDisplayBitmaps) b?.Dispose(); foreach (var b in _upperDisplayBitmaps) b?.Dispose(); foreach (var b in _lowerDisplayBitmaps) b?.Dispose(); } }
+		/// <summary>释放资源: 取消令牌→Join线程→Dispose队列→清理显示Bitmap缓存</summary>
 		public void Dispose()
 		{
 			if (_disposed) return;

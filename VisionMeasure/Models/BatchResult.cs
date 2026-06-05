@@ -7,6 +7,7 @@ namespace Models
 	/// <summary>
 	/// 批次结果记录（多个产品一组）
 	/// </summary>
+/// <summary>批次结果记录 — 多个产品一组的检测结果, 含各工位结果数组和匹配状态</summary>
 	public class BatchResultRecord
 	{
 		public DateTime Timestamp { get; set; } = DateTime.Now;
@@ -47,6 +48,7 @@ namespace Models
 	/// <summary>
 	/// 班次统计结果
 	/// </summary>
+/// <summary>班次统计 — 按班次汇总OK/NG/良率/各工位缺陷统计</summary>
 	public class ShiftStatistics
 	{
 		public string Shift { get; set; }          // Morning/Afternoon/Night

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 namespace CommonLib
 {
+/// <summary>高速图像保存器 — BlockingCollection后台队列, 异步存图不阻塞主流程</summary>
 	public class HighSpeedImageSaver : IDisposable
 	{
 		private readonly BlockingCollection<ImageTask> _queue = new BlockingCollection<ImageTask>();

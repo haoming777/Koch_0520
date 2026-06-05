@@ -7,6 +7,7 @@ using CommonLib;
 
 namespace VisionMeasure.From
 {
+/// <summary>检测参数设置界面 — 11个Tab(正面/条码/日期码/挂钩/端面/侧面/字号/相机/运动/保存/工位), 保存后触发OnParametersChanged热更新</summary>
 	public partial class DetectionParametersForm : Form
 	{
 		private DetectionParameters _params;
@@ -477,6 +478,7 @@ namespace VisionMeasure.From
 
 		// ====== 从JSON加载参数到UI ======
 		private void LoadParameters()
+		/// <summary>从DetectionParams加载参数到各Tab控件: 遍历所有TrackBar/NumericUpDown/CheckBox/TextBox/ComboBox设置值</summary>
 		{
 			// 正面
 			_chkEnablePNumberCheck.Checked = _params.Front.EnablePNumberCheck;
@@ -593,6 +595,7 @@ namespace VisionMeasure.From
 
 		// ====== 保存参数到JSON并通知重载 ======
 		private void SaveParameters()
+		/// <summary>保存各Tab参数到DetectionParams: 从控件读取→赋值给_params子类→保存ModelParams到各best.json→保存AxisParams到AxisParams.json</summary>
 		{
 			// ── 1. 写入 ModelParams JSON ──
 			// barcode
@@ -727,6 +730,7 @@ namespace VisionMeasure.From
 		}
 
 		private void BtnSave_Click(object sender, EventArgs e)
+		/// <summary>保存并应用检测参数: 从各Tab控件读取值→更新_params→SaveToFile写入DetectionParams.json→触发OnParametersChanged热更新(无需重启软件)</summary>
 		{
 			SaveParameters();
 			this.DialogResult = DialogResult.OK;
@@ -734,6 +738,7 @@ namespace VisionMeasure.From
 		}
 
 		private void BtnReset_Click(object sender, EventArgs e)
+		/// <summary>重置所有参数为默认值: 重新new各子类→保存→重新LoadModelParams→重新LoadParameters刷新UI</summary>
 		{
 			if (MessageBox.Show("确认重置所有参数为默认值？", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
 			{

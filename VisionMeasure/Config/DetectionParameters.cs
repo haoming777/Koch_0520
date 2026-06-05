@@ -11,6 +11,7 @@ namespace Config
 	/// <summary>
 	/// 检测参数配置 - JSON格式存储
 	/// </summary>
+/// <summary>	/// 检测参数配置 — 单例(线程安全), JSON存储, 保存位置: Config/DetectionParams.json	/// 包含8个子参数类: Front(正面)/EndFace(端面)/Back(背面)/Side(侧面)/Camera(相机)/Motion(运动)/Save(存图)/Station(工位)	/// 所有可调参数通过检测参数按钮→DetectionParametersForm修改, 保存立即生效(无需重启)	/// 子类中的[JsonProperty]特性对应JSON字段的中文名	/// </summary>
 	public class DetectionParameters
 	{
 		private static DetectionParameters _instance;
@@ -58,6 +59,7 @@ namespace Config
 
 		#region 参数子类
 
+	/// <summary>正面工位参数: P号OCR+盒子破损YOLO的置信度/IOU阈值, 检测启停开关, OK/NG/良率显示计数</summary>
 		public class FrontParams
 		{
 			[JsonProperty("置信度阈值")] public float ConfThreshold { get; set; } = 0.25f;
@@ -72,6 +74,7 @@ namespace Config
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
 		}
 
+	/// <summary>端面工位参数: 上下端面各Conf/IOU, 上端面检测开关, 曝光时间(us), 飞拍延时(ms)</summary>
 		public class EndFaceParams
 		{
 			[JsonProperty("上端面置信度阈值")] public float UpperConfThreshold { get; set; } = 0.5f;
@@ -86,6 +89,7 @@ namespace Config
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
 		}
 
+	/// <summary>背面工位参数: 通用Conf/IOU, 条码/日期码/挂钩各自Conf阈值, 挂钩分类ID, 三个检测启停开关</summary>
 		public class BackParams
 		{
 			[JsonProperty("置信度阈值")] public float ConfThreshold { get; set; } = 0.5f;
@@ -103,6 +107,7 @@ namespace Config
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
 		}
 
+	/// <summary>侧面工位参数: 裁剪比例/Conf/IOU, 安全锁(IN端口+有效电平+恢复模式), 缺陷检测开关, 运动启停, 边缘模式, 缺少判NG</summary>
 		public class SideParams
 		{
 			[JsonProperty("裁剪比例(宽/高)")] public float CropRatio { get; set; } = 2.0f;
@@ -121,6 +126,7 @@ namespace Config
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
 		}
 
+	/// <summary>相机参数: 8台相机序列号+各自曝光时间(us), 触发脉冲宽度(ms), 模拟模式开关</summary>
 		public class CameraParams
 		{
 			[JsonProperty("触发脉冲宽度(ms)")] public int PulseWidthMs { get; set; } = 50;
@@ -145,6 +151,7 @@ namespace Config
 			public bool GetSimulateMode() => SimulateMode;
 		}
 
+	/// <summary>运动控制参数: 侧面轴起止位置+速度+加速度, 运动控制卡IP, 回零速度/加速度</summary>
 		public class MotionParams
 		{
 			[JsonProperty("侧面运动轴起点")] public float SideStartPosition { get; set; } = 0;
@@ -156,6 +163,7 @@ namespace Config
 			[JsonProperty("回零加速度")] public float HomeAccel { get; set; } = 10000;
 		}
 
+	/// <summary>图像保存参数: OK/NG渲染图/原图各自开关, JPEG压缩质量(0-100), 保存路径, 保留天数</summary>
 		public class SaveParams
 		{
 			[JsonProperty("保存OK渲染图")] public bool SaveOkImage { get; set; } = true;
@@ -167,6 +175,7 @@ namespace Config
 			[JsonProperty("保留天数")] public int RetentionDays { get; set; } = 7;
 		}
 
+	/// <summary>工位参数: 4工位启停开关, 各传感器输入端口(IN4/IN10/IN11/IN12/IN13), 盒序反转开关</summary>
 		public class StationParams
 		{
 			[JsonProperty("正面工位启用")] public bool FrontEnabled { get; set; } = true;
@@ -205,6 +214,7 @@ namespace Config
 			}
 		}
 
+		/// <summary>从JSON文件加载配置 → 文件不存在创建默认 → 设置_configPath</summary>
 		public static DetectionParameters LoadFromFile(string configPath)
 		{
 			try
@@ -239,6 +249,7 @@ namespace Config
 			return defaultParams;
 		}
 
+		/// <summary>序列化当前配置→JSON→写入_configPath文件(线程安全)</summary>
 		public void SaveToFile()
 		{
 			lock (_lock)
@@ -263,6 +274,7 @@ namespace Config
 			}
 		}
 
+		/// <summary>重置所有参数子类为new默认值→保存→日志</summary>
 		public void ResetToDefault()
 		{
 			Front = new FrontParams();
@@ -278,11 +290,13 @@ namespace Config
 			SaveToFile();
 		}
 
+		/// <summary>导出当前配置为JSON字符串(用于备份/传输)</summary>
 		public string ExportToJson()
 		{
 			return JsonConvert.SerializeObject(this, Formatting.Indented);
 		}
 
+		/// <summary>从JSON字符串导入配置→覆盖所有子类→SaveToFile持久化</summary>
 		public bool ImportFromJson(string json)
 		{
 			try

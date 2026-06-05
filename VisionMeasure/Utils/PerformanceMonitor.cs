@@ -8,6 +8,7 @@ using VisionMeasure.Utils;using CommonLib;
 
 namespace VisionMeasure.Utils
 {
+/// <summary>性能监控器 — 记录各工位检测耗时(Crop/Inference/Draw/Save/Total)</summary>
 	public class PerformanceMonitor : IDisposable
 	{
 		private readonly BlockingCollection<PerformanceRecord> _recordQueue;

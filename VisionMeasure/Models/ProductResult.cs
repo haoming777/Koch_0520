@@ -12,6 +12,7 @@ namespace Models
 			return dict.TryGetValue(key, out var value) ? value : defaultValue;
 		}
 	}
+/// <summary>统一检测结果 — 四工位OK/NG+缺陷列表+渲染图+性能耗时, FinalResult=四工位全部OK才为true</summary>
 	public class ProductResult
 	{
 		public long ProductId { get; set; }

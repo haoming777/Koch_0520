@@ -177,11 +177,8 @@
   <ItemGroup>
     <Compile Include="AI\ModelOutputs.cs" />
     <Compile Include="AI\Vimo.cs" />
-    <Compile Include="AI\YoloOnnxSegmentation.cs" />
     <Compile Include="AI\YoloInference.cs" />
     <Compile Include="Class\RectClass.cs" />
-    <Compile Include="Class\RoundnessDetector - 复制.cs" />
-    <Compile Include="Class\RoundnessDetector.cs" />
     <Compile Include="Class\TraceClass.cs" />
     <Compile Include="Config\CameraTriggerConfig.cs" />
     <Compile Include="Config\DetectionParameters.cs" />

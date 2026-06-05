@@ -7,6 +7,7 @@ using System.Linq;
  namespace VisionMeasure.Utils
 {
 	public static class BitmapFastConverter
+	/// <summary>Bitmap快速转换扩展 — 提供ToJpegBytesFast(缓存JpegCodec避免每次遍历编码器)和ToPngBytesFast方法, 用于高速存图场景</summary>
 	{
 		// 缓存JPEG编码器，避免每次存图遍历ImageCodecInfo
 		private static readonly ImageCodecInfo JpegCodec = ImageCodecInfo.GetImageEncoders()

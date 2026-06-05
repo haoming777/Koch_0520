@@ -6,6 +6,7 @@ using YoloInference;
 
 namespace Detection
 {
+/// <summary>缺陷检测服务 — 封装YOLO推理流程(Predict→解析Box→坐标映射→输出Defect列表)</summary>
 	public class DefectDetectionService
 	{
 		// ==========================================

@@ -8,6 +8,7 @@ using SmartMore.ViMo;
 
 namespace VisionMeasure.Utils
 {
+/// <summary>结果绘制器 — 在图像上画缺陷框/标签/分区虚线/OK/NG状态</summary>
 	public class ResultDrawer
 	{
 		private static readonly Dictionary<int, Scalar> ClassColors = new Dictionary<int, Scalar>

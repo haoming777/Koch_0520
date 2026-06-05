@@ -82,9 +82,6 @@ namespace SetCamera
 				updeteThread.IsBackground = true;
 				updeteThread.Start();
 
-				leftLb.Text = _Config.zhengPosition.ToString("F2");
-				rightLb.Text = _Config.fanPosition.ToString("F2");
-				roundLb.Text = _Config.roundPosition.ToString("F2");
 
 				xlPictureBox1.ISRealTimeDisplay = true;
 				//cam1 = GlobalVar.CameraSdk1;
@@ -103,11 +100,6 @@ namespace SetCamera
 				uiComboBox_cam.SelectedIndex = 0;
 				uiComboBox_axis.SelectedIndex = 0;
 
-				cam1TriggerPath = _Config.Output_Camera1;
-				cam2TriggerPath = _Config.Output_Camera2;
-				cam3TriggerPath = _Config.Output_Camera3;
-				cam4TriggerPath = _Config.Output_Camera4;
-				cam5TriggerPath = _Config.Output_Camera5;
 
 
 
@@ -497,11 +489,6 @@ namespace SetCamera
 			{
 				if (e.KeyCode == Keys.Enter)
 				{
-					_Config.zhengPosition = Convert.ToDouble(leftTxt.Text);
-					Thread.Sleep(10);
-					leftTxt.Text = _Config.zhengPosition.ToString("F2");
-					leftLb.Text = _Config.zhengPosition.ToString("F2");
-					roundLb.Text = _Config.roundPosition.ToString("F2");
 
 				}
 			}
@@ -519,11 +506,7 @@ namespace SetCamera
 			{
 				if (e.KeyCode == Keys.Enter)
 				{
-					_Config.fanPosition = Convert.ToDouble(rightTxt.Text);
-					Thread.Sleep(10);
-					rightTxt.Text = _Config.fanPosition.ToString("F2");
-					rightLb.Text = _Config.fanPosition.ToString("F2");
-					roundLb.Text = _Config.roundPosition.ToString("F2");
+					
 				}
 			}
 			catch (Exception ex)

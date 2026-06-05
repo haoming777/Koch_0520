@@ -16,6 +16,7 @@ using VisionMeasure.Utils;using CommonLib;
 
 namespace AIsdk
 {
+/// <summary>SmartMore ViMo推理封装 — OCR/分割/分类模型(.vimosln), Init→Run, 支持GPU/CPU</summary>
 	public class Vimo
 	{
 		private const int ERROR_OK = 0;
@@ -36,10 +37,12 @@ namespace AIsdk
 		IOcrModule module;
 		ISegmentationModule module_segmentation;
 		IClassificationModule module_class;
+		/// <summary>无参构造, 需后续调用Init加载模型</summary>
 		public Vimo()
 		{
 		}
 
+		/// <summary>构造并初始化: 传modelPath+useGpu+deviceId+moduleId → Init加载模型</summary>
 		public Vimo(string modelPath, bool useGpu, int deviceId, string moduleId)
 		{
 			this.modelsPath = modelPath;
@@ -49,6 +52,7 @@ namespace AIsdk
 		}
 
 
+		/// <summary>初始化ViMo检测模型(.vimosln) → GPU优先, 失败自动降级CPU</summary>
 		public int Init(string modelPath, bool usegup, int deviceid, string modelid)
 		{
 			try
@@ -74,6 +78,7 @@ namespace AIsdk
 			}
 		}
 
+		/// <summary>初始化ViMo分割模型 → 用于日期码C1分割步骤</summary>
 		public int Init_Segmentation(string modelPath, bool usegup, int deviceid, string modelid)
 		{
 			try
@@ -99,6 +104,7 @@ namespace AIsdk
 			}
 		}
 
+		/// <summary>初始化ViMo有序OCR模型 → 用于日期码C3识别步骤</summary>
 		public int Init_OrderOcr(string modelPath, bool usegup, int deviceid, string modelid)
 		{
 			try
@@ -127,6 +133,7 @@ namespace AIsdk
 			}
 		}
 
+		/// <summary>初始化ViMo分类模型 → 用于日期码C2重影分类</summary>
 		public int Init_Class(string modelPath, bool usegup, int deviceid, string modelid)
 		{
 			try
@@ -157,6 +164,7 @@ namespace AIsdk
 		/// <param name="LabelImage"></param>
 		/// <param name="defects"></param>
 		/// <returns></returns>
+		/// <summary>运行目标检测推理 → 输出DetectionResponse列表(Box+ClassId+Score)</summary>
 		public int Run(Mat image, out ResponseList<DetectionResponse> results)
 		{
 			try
@@ -187,6 +195,7 @@ namespace AIsdk
 		/// <param name="LabelImage"></param>
 		/// <param name="defects"></param>
 		/// <returns></returns>
+		/// <summary>运行分割推理 → 输出SegmentationResponse(Mask+连通域)</summary>
 		public int Run(Mat image, out ResponseList<SegmentationResponse> results)
 		{
 			try
@@ -222,6 +231,7 @@ namespace AIsdk
 		/// <param name="LabelImage"></param>
 		/// <param name="defects"></param>
 		/// <returns></returns>
+		/// <summary>运行分类推理 → 输出ClassificationResponse(Label+Score)</summary>
 		public int Run(Mat image, out ResponseList<ClassificationResponse> results)
 		{
 			try
@@ -252,6 +262,7 @@ namespace AIsdk
 		/// <param name="LabelImage"></param>
 		/// <param name="defects"></param>
 		/// <returns></returns>
+		/// <summary>运行OCR推理 → 输出OcrResponse(Blocks文本+Polygon位置)</summary>
 		public int Run(Mat image, out ResponseList<OcrResponse> results)
 		{
 			try
@@ -277,6 +288,7 @@ namespace AIsdk
 			}
 		}
 
+		/// <summary>运行有序OCR(全图) → 输出带顺序的文本识别结果</summary>
 		public int Run_OrderOcr(Mat image, out OcrResponse results)
 		{
 			try
@@ -302,6 +314,7 @@ namespace AIsdk
 			}
 		}
 
+		/// <summary>运行有序OCR(指定ROI) → 输出带顺序的文本识别结果</summary>
 		public int Run_OrderOcr(Mat image, Rect roi, out OcrResponse results)
 		{
 			try

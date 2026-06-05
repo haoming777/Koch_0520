@@ -10,6 +10,7 @@ using XL.Tool;
 
 namespace VisionMeasure.Utils
 {
+/// <summary>图像缓冲池 — 复用Mat/Bitmap减少GC压力</summary>
 	public class ImageBufferPool : IDisposable
 	{
 		private class PoolItem<T> where T : IDisposable

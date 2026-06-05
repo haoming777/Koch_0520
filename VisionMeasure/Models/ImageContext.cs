@@ -4,6 +4,7 @@ using OpenCvSharp;
 
 namespace Models
 {
+/// <summary>图像上下文 — ProductId+Bitmap+接收时间+渲染Bitmap, 用于队列传输</summary>
 	public class ImageContext : IDisposable
 	{
 		public long ProductId { get; set; }

@@ -39,6 +39,7 @@ namespace Stations
 	///   5. 结果绘制(分盒框, 虚线分区, OK/NG标签)
 	///   6. 图像保存(渲染图 + 原图)
 	/// </summary>
+/// <summary>	/// 背面工位处理器 — 左右图配对后3路并行推理	/// 检测项:	///   1. 条码识别: ZXing.Net + OpenCV预处理管线(对比度/直方图/高斯/中值/阈值/形态学)	///      逐盒ROI解码 → 与参考条码比对(完全匹配=OK, 不匹配=条码错, 未识别=条码缺少)	///   2. 日期码识别: 三步流水线(C1 ViMo分割→C2 ViMo分类重影→C3 ViMo OCR校验)	///      支持MFG/LOT/双排三种格式, 校验日期是否等于当天	///   3. 挂钩错位: YOLO检测(classId=1→明显暗红) + 分割厚度计算(classId=0→分割→DistanceTransform)	/// 汇总: 3路结果合并 → 逐盒status → OK/NG计数(按盒粒度) → 渲染+保存	/// </summary>
 	public class BackStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -109,6 +110,7 @@ namespace Stations
 		public long ImgCount => _imgCount;
 
 		/// <summary>相机5(背面左)图像回调</summary>
+		/// <summary>相机5(背面左)图像回调 — 图像→Mat→配对缓冲→CheckAndProcess触发处理</summary>
 		public void OnCam3(Bitmap bmp, long pid)
 		{
 			if (bmp == null) return;
@@ -118,6 +120,7 @@ namespace Stations
 			CheckAndProcess();
 		}
 
+		/// <summary>相机6(背面右)图像回调 — 图像→Mat→配对缓冲→CheckAndProcess触发处理</summary>
 		public void OnCam4(Bitmap bmp, long pid)
 		{
 			if (bmp == null) return;
@@ -127,6 +130,7 @@ namespace Stations
 			CheckAndProcess();
 		}
 
+		/// <summary>配对检查+异步处理: 左右图就绪→取图→Task.Run(Process)后台处理, 不阻塞相机回调</summary>
 		private async void CheckAndProcess()
 		{
 			Mat l = null, r = null;
@@ -250,7 +254,9 @@ namespace Stations
 				});
 				var defStats = new Dictionary<string, int>();
 				foreach (var s in status) { if (s != "OK") { if (defStats.ContainsKey(s)) defStats[s]++; else defStats[s] = 1; } }
-				string defStr = defStats.Count > 0 ? " | " + string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value)) : "";
+				string defStr = defStats.Count > 0 ? string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value))
+					: "条码:0 日期码:0 明显挂钩:0 轻微挂钩:0";
+				defStr = " | " + defStr;
 				Logger.Info($"[Back] 完成 P={p} OK={boxOk} NG={status.Count - boxOk}{defStr} | 耗时={total:F0}ms");
 				Logger.Trace("[Back] ✓ 全流程完成 结果=" + (isOk ? "OK" : "NG") + " 总=" + total.ToString("F0") + "ms");
 				OnResultReady?.Invoke(result);
@@ -265,6 +271,7 @@ namespace Stations
 		}
 
 		// ====== 条形码识别 (ZXing.Net, 逐盒ROI, 无图像预处理仅灰度) ======
+	/// <summary>条码识别: 逐盒ROI裁剪→ApplyBarcodePreprocess(对比度/直方图/高斯/中值/阈值/形态学)→ZXing解码→与参考条码比对</summary>
 		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int hp)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
@@ -305,6 +312,7 @@ namespace Stations
 			return r;
 		}
 
+	/// <summary>单盒条码解码: 预处理管线→BarcodeReader.DecodeMultiple→多结果选优(参考条码匹配/编辑距离)→返回缺陷(条码:xxx/条码错:xxx/条码缺少)</summary>
 		private BoxDefect DecodeBarcodeZxing(Mat roi, string refBarcode, int ox, int oy, int fw, int fh, int boxIdx)
 		{
 			try
@@ -379,6 +387,7 @@ namespace Stations
 			catch (Exception ex) { Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message); float pad2 = roi.Width * 0.03f; return new BoxDefect(boxIdx, "条码缺少", new float[] { (float)(ox + pad2) / fw, (float)oy / fh, (float)(ox + roi.Width - pad2) / fw, (float)(oy + roi.Height) / fh }); }
 		}
 
+	/// <summary>条码OpenCV预处理管线: 1.对比度亮度调整 2.灰度化 3.直方图均衡 4.高斯/中值滤波 5.自适应/Otsu/固定阈值 6.反转 7.形态学(闭/开/膨胀/腐蚀)</summary>
 		private static Mat ApplyBarcodePreprocess(Mat src, Config.ModelParams p)
 		{
 			if (!p.BcEnablePreprocess) { var g2 = new Mat(); Cv2.CvtColor(src, g2, ColorConversionCodes.BGR2GRAY); return g2; }
@@ -402,6 +411,7 @@ namespace Stations
 			return m;
 		}
 
+		/// <summary>计算编辑距离(Levenshtein) — 用于条码模糊匹配, 在多个解码结果中选最优</summary>
 		private static int LevenshteinDistance(string a, string b)
 		{
 			if (string.IsNullOrEmpty(a)) return b == null ? 0 : b.Length;
@@ -421,6 +431,7 @@ namespace Stations
 		private static readonly Regex LOT_RX = new Regex(@"L[0O]T\s*(\d{4}/\d{2}/\d{2})", RegexOptions.IgnoreCase);
 		private static readonly Regex EXP_RX = new Regex(@"EXP\s*(\d{2}/\d{2}/\d{4})", RegexOptions.IgnoreCase);
 
+	/// <summary>日期码识别: 合并左右图(Cv2.HConcat)→crop下1/3区域→ProcessDateCodeFull(C1分割+C2分类+C3 OCR三步流水线)</summary>
 		private Dictionary<int, List<BoxDefect>> RecognizeDateCodes(Mat left, Mat right, int hp)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
@@ -445,6 +456,7 @@ namespace Stations
 		}
 
 		/// <summary>三步流水线: C1全图分割→C2重影分类→C3 OCR (参考AIRunThread.cs)</summary>
+	/// <summary>日期码三步流水线: C1=ViMo分割全图→Mask→ConnectedComponents提取区域 | C2=ViMo分类逐区域判断重影 | C3=ViMo OCR识别→校验(MFG/LOT/双排→日期比对)</summary>
 		private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p, int cropY, int fullH)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
@@ -562,12 +574,17 @@ namespace Stations
 			return r;
 		}
 
+		/// <summary>校验MFG格式日期: "MFG dd/MM/yyyy"→提取日期→比对当天, 0=正确 1=格式错 2=日期不匹配</summary>
 		private int CheckMFG(string text) { var m = MFG_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
+		/// <summary>校验LOT格式日期: "LOT yyyy/MM/dd"→提取日期→比对当天</summary>
 		private int CheckLOT(string text) { var m = LOT_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "yyyy/MM/dd", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
+		/// <summary>校验双排格式: 分离MFG行和EXP行→分别校验→MFG和EXP都通过才算OK</summary>
 		private int CheckDoubleRow(List<string> lines) { if (lines.Count < 2) return 1; string mfgLine = null, expLine = null; foreach (var line in lines) { string s3 = line.Length >= 3 ? line.Substring(0, 3) : line; if (mfgLine == null && Regex.IsMatch(s3, "[MFG]")) mfgLine = line; if (expLine == null && Regex.IsMatch(s3, "[EXP]")) expLine = line; } if (mfgLine == null || expLine == null) return 1; int mfgR = CheckMFG(mfgLine); return mfgR != 0 ? mfgR : CheckEXP(expLine); }
+		/// <summary>校验EXP格式日期: "EXP dd/MM/yyyy"→提取日期→比对(加10年)</summary>
 		private int CheckEXP(string text) { var m = EXP_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.AddYears(10).Date ? 0 : 2; return 2; }
 
 		// ====== 挂钩缺陷检测 (原有代码不变) ======
+	/// <summary>		/// 挂钩缺陷检测 — YOLO检测+分割厚度计算		/// 明显错位: classId=1 → BoxesN直接映射 → DarkRed框		/// 轻微错位: classId=0 → 分割(内圈+外圈) → DistanceTransform → maxVal*2=厚度		///   厚度 > HookThicknessThreshold → OrangeRed框		/// 轻微检测仅在无明显错位时进行(避免重复标记)		/// </summary>
 		private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int p)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -639,6 +656,7 @@ namespace Stations
 			return results;
 		}
 
+		/// <summary>计算挂钩厚度: FillPoly(内外圈)→DistanceTransform→maxVal*2=最大厚度(px)</summary>
 		private (double MaxThickness, CvPoint MaxLoc) CalcThickness(CvSize sz, CvPoint[] inner, CvPoint[] outer)
 		{
 			using (Mat mask = Mat.Zeros(sz, MatType.CV_8UC1))
@@ -654,12 +672,14 @@ namespace Stations
 			}
 		}
 
+		/// <summary>添加缺陷到字典: 若key不存在创建List→Add BoxDefect</summary>
 		private void AddDefect(Dictionary<int, List<BoxDefect>> dict, int idx, string type, float[] box, float score = 1.0f)
 		{
 			if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
 			dict[idx].Add(new BoxDefect(idx, type, box, score));
 		}
 
+		/// <summary>YOLO结果→分盒映射: Boxes→centerX→分盒索引→构建BoxDefect字典</summary>
 		private void MapBoxes(YoloInference.YoloResult res, Dictionary<int, List<BoxDefect>> dict, int start, int end, string type)
 		{
 			if (res == null || res.Boxes == null) return;
@@ -677,6 +697,7 @@ namespace Stations
 		}
 
 		// ====== 绘制 ======
+	/// <summary>绘制背面检测结果: 缺陷框(条码绿/橙虚线, 日期码橙, 挂钩暗红/橙红)+分区虚线+盒状态标签(OK绿/NG红)+盒序号(黄)</summary>
 		private Bitmap DrawResult(Mat img, List<BoxDefect> defects, List<string> status, int start, int end)
 		{
 			var bmp = img.ToBitmap();
@@ -745,6 +766,7 @@ namespace Stations
 			return bmp;
 		}
 
+	/// <summary>合并左右渲染图为一张: 左右水平拼接, 黑底+白色分隔线+OK/NG大字(右上角, 半透明黑底)</summary>
 		private Bitmap MergeImages(Bitmap left, Bitmap right)
 		{
 			var m = new Bitmap(left.Width + right.Width, Math.Max(left.Height, right.Height), PixelFormat.Format24bppRgb);
@@ -768,6 +790,7 @@ namespace Stations
 			left.Dispose(); right.Dispose(); return m;
 		}
 
+	/// <summary>保存背面工位图片: 渲染图+左原图+右原图 → JPEG 85% → Images/{日期}/{班次}/背面工位/{OK|NG}/</summary>
 		private void SaveImages(Bitmap leftRaw, Bitmap rightRaw, Bitmap merged, long pid, bool isOk, List<string> st)
 		{
 			bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage, sor = _Config.IsSaveOkRawImage, snr = _Config.IsSaveNgRawImage;
@@ -787,6 +810,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>获取当前班次: 00~08=晚班, 08~16=早班, 16~24=中班</summary>
 		private string GetShift()
 		{
 			var n = DateTime.Now.TimeOfDay;

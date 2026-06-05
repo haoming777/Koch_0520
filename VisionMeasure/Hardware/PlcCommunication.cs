@@ -5,6 +5,7 @@ using VisionMeasure.Utils;using CommonLib;
 
 namespace Hardware
 {
+/// <summary>PLC通讯(S7-1500 ModbusTCP) — 当前为桩代码, Connect直接成功, SendResult仅在模拟模式打印日志</summary>
 	public class PlcCommunication
 	{
 		private readonly string _ip;

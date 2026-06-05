@@ -18,7 +18,6 @@ using Newtonsoft.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using VisionMeasure.Utils;
-using CommonLib;
 using VisionMeasure.From;
 using XL.Controls;
 using static CommonLib.Class_Config;
@@ -30,11 +29,15 @@ using DrawPoint = System.Drawing.Point;
 using DrawSize = System.Drawing.Size;
 using Timer = System.Windows.Forms.Timer;
 using VisionMeasure.Stations;  // 引入 FrontStationProcessor 所在的命名空间
-using VisionMeasure.Utils;
-using CommonLib;     // 引入 SystemConfig 所在的命名空间
 
 namespace VisionMeasure
 {
+	/// <summary>
+	/// 主窗体 — 系统核心调度器, 实现ICamera接口直接接收大华相机事件
+	/// 职责: 硬件管理(ZMC+PLC+8相机+触发管理器) | AI模型(11个GPU0/GPU1) | 4工位调度 | UI更新 | 配置热更新 | 安全锁 | 班次管理
+	/// 启动: InitHardware→InitCameras→InitAiModels→InitStations→InitUI
+	/// 关键设计: 相机直连(不再通过CameraManager) | 预加载优化(Program.cs后台加载) | 热更新(无需重启)
+	/// </summary>
 	public partial class MainFrm : Form, ICamera
 	{
 		/// <summary>手动测试模式：true时停止所有自动触发</summary>
@@ -133,6 +136,7 @@ namespace VisionMeasure
 			this.FormClosing += MainFrm_FormClosing;
 		}
 
+		/// <summary>更新Loading画面进度: 调用_loadingForm.UpdateProgress(百分比, 提示文字), 每步初始化后调用</summary>
 		private void UpdateLoadingProgress(int percent, string message)
 		{
 			_loadingForm?.UpdateProgress(percent, message);
@@ -140,6 +144,11 @@ namespace VisionMeasure
 
 		#region 窗体加载
 
+		/// <summary>
+		/// 系统启动入口, 按依赖顺序初始化所有子系统
+		/// 流程: DB→参数→SKU→性能监控→图像保存器→硬件→相机→AI模型→工位处理器→UI界面→班次检查
+		/// 最后: 最大化窗口 + 添加手动测试按钮
+		/// </summary>
 		private async void MainFrm_Load(object sender, EventArgs e)
 		{
 			try
@@ -243,20 +252,20 @@ namespace VisionMeasure
 				xlPictureBox5.ISRealTimeDisplay = true;
 				xlPictureBox6.ISRealTimeDisplay = true;
 
-				// 添加手动测试按钮
-				var btnTest = new Sunny.UI.UIButton
-				{
-					Text = "手动测试",
-					Size = new System.Drawing.Size(100, 36),
-					Location = new System.Drawing.Point(800, 10),
-					Anchor = AnchorStyles.Top | AnchorStyles.Right,
-					FillColor = System.Drawing.Color.FromArgb(0, 122, 204),
-					Radius = 6,
-					Font = new System.Drawing.Font("微软雅黑", 9F)
-				};
-				btnTest.Click += BtnManualTest_Click;
-				this.Controls.Add(btnTest);
-				btnTest.BringToFront();
+				//// 添加手动测试按钮
+				//var btnTest = new Sunny.UI.UIButton
+				//{
+				//	Text = "手动测试",
+				//	Size = new System.Drawing.Size(100, 36),
+				//	Location = new System.Drawing.Point(800, 10),
+				//	Anchor = AnchorStyles.Top | AnchorStyles.Right,
+				//	FillColor = System.Drawing.Color.FromArgb(0, 122, 204),
+				//	Radius = 6,
+				//	Font = new System.Drawing.Font("微软雅黑", 9F)
+				//};
+				//btnTest.Click += BtnManualTest_Click;
+				//this.Controls.Add(btnTest);
+				//btnTest.BringToFront();
 			}
 			catch (Exception ex)
 			{
@@ -270,6 +279,11 @@ namespace VisionMeasure
 
 		#region 硬件初始化
 
+		/// <summary>
+		/// 初始化硬件层: 运动控制卡 + PLC
+		/// 流程: ZMC(从DetectionParams.ControlIp读取IP→Connect→InitAxes→ApplyAxisParams) + PLC(从SystemConfig读取IP/端口→Connect)
+		/// 注意事项: UseSimulateMode=false使用真实硬件, 连接失败时UI状态灯变红
+		/// </summary>
 		private void InitHardware()
 		{
 			// 是否使用模拟模式（没有真实硬件时使用）
@@ -312,6 +326,14 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>
+		/// 初始化8个大华工业相机, 并启动触发管理器
+		/// 流程: new DaHuaSDK → SetCameraInterface(this) → 订阅OnImage → SetCameraByKey(SN) → Open
+		///       → StopStreamGrabber → AcquisitionMode(0单帧) → TriggerMode(1触发) → TriggerSource(1外触发)
+		///       → SetExposureTime → StartStreamGrabber → 赋值cameraNSDK字段
+		/// 注意事项: Open后先Stop再配模式后才Start(否则模式可能不生效)
+		/// 最后: 初始化CameraTriggerManager(3线程) + ZMC心跳(150ms)
+		/// </summary>
 		private void InitCameras()
 		{
 			bool useSimulateMode = _detectionParams.Camera.GetSimulateMode();
@@ -480,6 +502,13 @@ namespace VisionMeasure
 		/// 相机触发回调 - 当检测到触发信号并输出脉冲后调用
 		/// </summary>
 		/// <param name="cameraId">被触发的相机ID</param>
+		/// <summary>
+		/// ★ 相机触发回调(CameraTriggerManager线程)
+		/// Camera7(IN13↑): 检查侧面轴位置→不在起点则预归位(带安全锁监控)→超时15s
+		/// Camera8(IN13↓): 空闲→StartDetection | 正忙→标记_sideTriggerPending→后台轮询等完成后自动启动
+		/// 参数: cameraId = 被触发的相机ID(7或8)
+		/// 注意事项: 在MonitorLoop线程(Highest+CPU绑定)中执行, 耗时操作全部Task.Run异步
+		/// </summary>
 		private void OnCameraTriggered(int cameraId)
 		{
 			// 侧面工位：
@@ -560,6 +589,11 @@ namespace VisionMeasure
 				}
 			}
 		}
+		/// <summary>
+		/// 加载AI模型(共11个)
+		/// 流程: 优先用Program.cs预加载的PreloadedModels, 否则ModelPathConfig→AiModelManager→LoadAllModels
+		/// GPU分配: GPU0=YOLO(目标检测), GPU1=ViMo(OCR/分割/分类)
+		/// </summary>
 		private void InitAiModels()
 		{
 			if (PreloadedModels != null)
@@ -574,6 +608,11 @@ namespace VisionMeasure
 			_aiModels.LoadAllModels();
 		}
 
+		/// <summary>
+		/// 初始化4个工位处理器(Front/Back/EndFace/Side)
+		/// 加载: AxisParams.json(运动轴参数) + DetectionParams.json(Enable*开关/安全锁/边缘模式) + SkuDatabase(SKU)
+		/// 绑定: OnResultReady→OnStationResult | 侧面额外OnRealTimeDisplay→xlPic5/6
+		/// </summary>
 		private void InitStations()
 		{
 			string imgPath = _detectionParams.Save.ImageSavePath;
@@ -668,6 +707,7 @@ namespace VisionMeasure
 		/// 旧相机回调入口（保留兼容），新代码使用独立的OnCameraNImage事件
 		/// 显示控件映射: xlPictureBox1=正面, xlPictureBox2=背面, xlPictureBox3=上端面, xlPictureBox4=下端面, xlPictureBox5=左侧面, xlPictureBox6=右侧面
 		/// </summary>
+		/// <summary>旧相机回调入口(保留兼容): 按cameraId分派到各工位处理器, 新代码使用独立OnCameraNImage事件</summary>
 		private void OnCameraImageReceived(int cameraId, Bitmap image)
 		{
 			if (_isClosing || image == null) return;
@@ -688,6 +728,7 @@ namespace VisionMeasure
 
 		#region ICamera 接口实现
 
+		/// <summary>ICamera接口: 相机打开回调→通过序列号查找ID→UpdateCameraState(id, true)</summary>
 		public void OnCameraOpen(string cameraName, string cameraKey)
 		{
 			Logger.Info($"[ICamera] 相机打开: Name={cameraName}, Key={cameraKey}");
@@ -695,6 +736,7 @@ namespace VisionMeasure
 			if (camId > 0) UpdateCameraState(camId, true);
 		}
 
+		/// <summary>ICamera接口: 相机关闭回调→UpdateCameraState(id, false)</summary>
 		public void OnCameraClose(string cameraName, string cameraKey)
 		{
 			Logger.Warning($"[ICamera] 相机关闭: Name={cameraName}, Key={cameraKey}");
@@ -702,6 +744,7 @@ namespace VisionMeasure
 			if (camId > 0) UpdateCameraState(camId, false);
 		}
 
+		/// <summary>ICamera接口: 相机掉线回调→UpdateCameraState(id, false)</summary>
 		public void OnCameraConnectLoss(string cameraName, string cameraKey)
 		{
 			Logger.Warning($"[ICamera] 相机掉线: Name={cameraName}, Key={cameraKey}");
@@ -713,6 +756,12 @@ namespace VisionMeasure
 
 		#region 各相机OnImage事件处理
 
+		/// <summary>
+		/// Camera1图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到正面左→FrontStation.OnCam1
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera1Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -726,6 +775,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera1] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera2图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到正面右→FrontStation.OnCam2
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera2Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -739,6 +794,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera2] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera3图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到上端面→EndFaceStation.OnCam5
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera3Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -752,6 +813,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera3] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera4图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到下端面→EndFaceStation.OnCam6
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera4Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -765,6 +832,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera4] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera5图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到背面左→BackStation.OnCam3
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera5Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -778,6 +851,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera5] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera6图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到背面右→BackStation.OnCam4
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera6Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -791,6 +870,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera6] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera7图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到左侧面→SideStation.OnCam7
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera7Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -804,6 +889,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error($"[Camera7] OnImage异常: {ex.Message}"); }
 		}
 
+		/// <summary>
+		/// Camera8图像回调 — DaHuaSDK.OnImage事件触发
+		/// 流程: ProductId自增→Interlocked计数→工位开关检查→分发到右侧面→SideStation.OnCam8
+		/// 参数: bitmap=原始图像, cameraName=相机名称, cameraKey=序列号
+		/// 注意事项: 在SDK回调线程执行, 不做耗时操作(仅入队/配对缓冲)
+		/// </summary>
 		private void OnCamera8Image(Bitmap bitmap, string cameraName, string cameraKey)
 		{
 			try
@@ -820,6 +911,11 @@ namespace VisionMeasure
 		#endregion
 
 		/// <summary>统一的相机连接状态更新（修复B1: case 6/7/8之前错误检查camera5State）</summary>
+		/// <summary>
+		/// 统一相机连接状态更新(BeginInvoke跨线程)
+		/// 参数: cameraId=相机编号1~8, isConnected=是否已连接
+		/// 注意事项: 已修复case6/7/8错误检查camera5State的bug; 每个case先判null防崩溃
+		/// </summary>
 		private void UpdateCameraState(int cameraId, bool isConnected)
 		{
 			this.BeginInvoke(new Action(() =>
@@ -841,6 +937,11 @@ namespace VisionMeasure
 		}
 
 		/// <summary>根据相机序列号(Key)查找相机ID</summary>
+		/// <summary>
+		/// 通过相机序列号查找相机ID
+		/// 参数: cameraKey=序列号(ICamera回调传回SN不是ID)
+		/// 返回值: 相机ID(1~8), 未匹配返回0
+		/// </summary>
 		private int GetCameraIdByKey(string cameraKey)
 		{
 			if (string.IsNullOrEmpty(cameraKey)) return 0;
@@ -881,6 +982,12 @@ namespace VisionMeasure
 		long ft2 = okCount + ngCount;
 		if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = ft2 > 0 ? (okCount * 100.0 / ft2).ToString("F1") + "%" : "0%";
 		}
+		/// <summary>
+		/// 工位检测结果→UI更新(BeginInvoke跨线程)
+		/// Back→xlPic2 | EndFaceUpper→xlPic3 | EndFaceLower→xlPic4 | SideLeft→xlPic5 | SideRight→xlPic6
+		/// 同时调用UpdateStatistics刷新OK/NG/良率
+		/// 参数: result = 各工位检测结果(渲染图Bitmap+缺陷列表+OK状态)
+		/// </summary>
 		private void OnStationResult(ProductResult result)
 		{
 			this.BeginInvoke(new Action(() =>
@@ -903,6 +1010,11 @@ namespace VisionMeasure
 			}));
 		}
 
+		/// <summary>
+		/// 刷新4工位统计标签
+		/// 流程: 从各processor读取累计OK/NG→更新UI→良率=OK×100÷(OK+NG)(1位小数)
+		/// 注意事项: BeginInvoke线程安全, 4工位独立统计
+		/// </summary>
 		private void UpdateStatistics(ProductResult result)
 		{
 			// 更新正面统计
@@ -935,6 +1047,7 @@ namespace VisionMeasure
 			}));
 		}
 
+		/// <summary>端面状态更新回调: 更新轮播索引标签+RefreshCarouselDisplays刷新显示</summary>
 		private void OnEndFaceStatusUpdate(List<string> upperStatus, List<string> lowerStatus, List<string> mergedStatus, int p)
 		{
 			this.BeginInvoke(new Action(() =>
@@ -947,6 +1060,7 @@ namespace VisionMeasure
 			}));
 		}
 
+		/// <summary>侧面状态更新回调: 更新轮播索引标签+RefreshCarouselDisplays刷新显示</summary>
 		private void OnSideStatusUpdate(List<string> leftStatus, List<string> rightStatus, List<string> mergedStatus, int p)
 		{
 			this.BeginInvoke(new Action(() =>
@@ -988,6 +1102,11 @@ namespace VisionMeasure
 
 		#region UI初始化
 
+		/// <summary>
+		/// 初始化用户界面
+		/// 流程: SKU搜索控件(ComboBox+300ms防抖)→加载参数→绑定按钮→恢复计数→SKU显示→测试按钮
+		/// 按钮: 检测参数→DetectionParametersForm(11Tab)→OnParametersChanged热更新(无需重启)
+		/// </summary>
 		private void InitUI()
 		{
 			SetupSkuSearch();
@@ -999,6 +1118,7 @@ namespace VisionMeasure
 			InitTestButtons();
 		}
 
+		/// <summary>创建4个工位测试按钮: 正面/背面/端面/侧面, 添加到tableLayoutPanel34, 绑定Click事件</summary>
 		private void InitTestButtons()
 		{
 			if (tableLayoutPanel34 == null) return;
@@ -1032,6 +1152,7 @@ namespace VisionMeasure
 			Logger.Info("工位测试按钮已初始化");
 		}
 
+		/// <summary>选择图片文件: OpenFileDialog→过滤jpg/png/bmp/tiff→返回Bitmap, 测试用</summary>
 		private Bitmap PickImage(string title)
 		{
 			using (var dlg = new OpenFileDialog { Title = title, Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp;*.tiff" })
@@ -1045,6 +1166,11 @@ namespace VisionMeasure
 			return null;
 		}
 
+		/// <summary>
+		/// 正面离线测试(不依赖相机/PLC)
+		/// 流程: 选左右图→SkipCrop=true→送入FrontStation(P号OCR+盒子破损)
+		/// 注意: 测试完恢复SkipCrop=false
+		/// </summary>
 		private void TestFrontBtn_Click(object sender, EventArgs e)
 		{
 			if (_frontStation == null) { MessageBox.Show("正面工位未初始化"); return; }
@@ -1059,6 +1185,7 @@ namespace VisionMeasure
 			_frontStation.SkipCrop = false;
 		}
 
+		/// <summary>背面离线测试: 选左右图→SkipCrop→送入BackStation(条码+日期码+挂钩)</summary>
 		private void TestBackBtn_Click(object sender, EventArgs e)
 		{
 			if (_backStation == null) { MessageBox.Show("背面工位未初始化"); return; }
@@ -1073,6 +1200,7 @@ namespace VisionMeasure
 			_backStation.SkipCrop = false;
 		}
 
+		/// <summary>端面离线测试: 选上下图→TestProcessPair(跳过运动轴,直接批处理)</summary>
 		private void TestEndFaceBtn_Click(object sender, EventArgs e)
 		{
 			if (_endFaceStation == null) { MessageBox.Show("端面工位未初始化"); return; }
@@ -1084,6 +1212,7 @@ namespace VisionMeasure
 			_endFaceStation.TestProcessPair(upper, lower);
 		}
 
+		/// <summary>侧面离线测试: 选左右图→TestProcessPair(跳过运动轴,直接推理+汇总)</summary>
 		private void TestSideBtn_Click(object sender, EventArgs e)
 		{
 			if (_sideStation == null) { MessageBox.Show("侧面工位未初始化"); return; }
@@ -1097,7 +1226,9 @@ namespace VisionMeasure
 
 
 
+		/// <summary>持久化班次计数→Config/counts.json(班次+日期+4工位OK/NG), 关闭时调用</summary>
 		private void SaveCounts() { try { var data = new Dictionary<string,string>() { {"shift",GetCurrentShift()},{"date",DateTime.Now.ToString("yyyyMMdd")},{"frontOk",_frontStation?.OkCount.ToString()??"0"},{"frontNg",_frontStation?.NgCount.ToString()??"0"},{"backOk",_backStation?.OkCount.ToString()??"0"},{"backNg",_backStation?.NgCount.ToString()??"0"},{"endOk",_endFaceStation?.OkCount.ToString()??"0"},{"endNg",_endFaceStation?.NgCount.ToString()??"0"},{"sideOk",_sideStation?.OkCount.ToString()??"0"},{"sideNg",_sideStation?.NgCount.ToString()??"0"} }; File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"), Newtonsoft.Json.JsonConvert.SerializeObject(data)); } catch {} }
+		/// <summary>恢复班次计数←Config/counts.json, 班次/日期不匹配则从0开始, BeginInvoke恢复UI</summary>
 		private void LoadCounts() { try { var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"); if(!File.Exists(path)) return; var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string,string>>(File.ReadAllText(path)); if(data==null) return; this.BeginInvoke(new Action(()=>{ string savedShift = data.ContainsKey("shift") ? data["shift"] : ""; if(!string.IsNullOrEmpty(savedShift) && savedShift != GetCurrentShift() || (data.ContainsKey("date") && data["date"] != DateTime.Now.ToString("yyyyMMdd"))) { Logger.Info("计数班次不匹配("+savedShift+"!="+GetCurrentShift()+"),从0开始"); return; } if(data.ContainsKey("frontOk")){ if(OK_zheng_Lb!=null)OK_zheng_Lb.Text=data["frontOk"]; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text=data["frontNg"]; if(OK_fan_Lb!=null)OK_fan_Lb.Text=data["backOk"]; if(NG_fan_Lb!=null)NG_fan_Lb.Text=data["backNg"]; if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text=data["endOk"]; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text=data["endNg"]; if(OK_cemian_Lb!=null)OK_cemian_Lb.Text=data["sideOk"]; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text=data["sideNg"]; } long fOk = long.Parse(data.ContainsKey("frontOk")?data["frontOk"]:"0"); long fNg = long.Parse(data.ContainsKey("frontNg")?data["frontNg"]:"0");
 					long bOk = long.Parse(data.ContainsKey("backOk")?data["backOk"]:"0"); long bNg = long.Parse(data.ContainsKey("backNg")?data["backNg"]:"0");
 					long eOk = long.Parse(data.ContainsKey("endOk")?data["endOk"]:"0"); long eNg = long.Parse(data.ContainsKey("endNg")?data["endNg"]:"0");
@@ -1106,6 +1237,7 @@ namespace VisionMeasure
 					_endFaceStation?.RestoreCounts(eOk, eNg); _sideStation?.RestoreCounts(sOk, sNg);
 					Logger.Info("计数已从本地恢复"); })); } catch {} }
 
+		/// <summary>持久化SKU手动参数→Config/sku_params.json(P/Z/MM/条码/日期码格式)</summary>
 		private void SaveSkuParams()
 		{
 			try
@@ -1125,6 +1257,7 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error("保存SKU参数失败: " + ex.Message); }
 		}
 
+		/// <summary>恢复SKU参数←Config/sku_params.json→UI控件+_currentSku→推4工位+端面更新P</summary>
 		private void LoadSkuParams()
 		{
 			try
@@ -1169,6 +1302,7 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error("加载SKU参数失败: " + ex.Message); }
 		}
 
+		/// <summary>保存所有模型参数到best.json: 各工位YOLO/ViMo模型的阈值同步回meta文件</summary>
 		private void SaveAllModelParams()
 		{
 			try
@@ -1183,6 +1317,12 @@ namespace VisionMeasure
 			catch (Exception ex) { Logger.Error("保存模型参数失败: " + ex.Message); }
 		}
 
+		/// <summary>
+		/// ★ 创建SKU搜索控件(ComboBox替换原TextBox)
+		/// 流程: TextChanged→300ms防抖Timer→SkuDatabase.Search→BeginUpdate批量更新下拉→EndUpdate
+		///       选中后→更新_currentSku→推4工位→保存LastSkuNumber到DetectionParams.json
+		/// 注意事项: BeginUpdate/EndUpdate避免每次Add刷新UI; 回车键也可直接输入SKU
+		/// </summary>
 		private void SetupSkuSearch()
 		{
 			if (SKU_Txt == null) return;
@@ -1301,6 +1441,7 @@ namespace VisionMeasure
 				}
 			};
 		}
+		/// <summary>应用SKU切换: 更新显示标签→推送到4个工位处理器→端面更新P值</summary>
 		private void ApplySkuChange()
 		{
 			if (_currentSku == null) return;
@@ -1367,6 +1508,7 @@ namespace VisionMeasure
 				Logger.Error($"更新SKU显示失败: {ex.Message}");
 			}
 		}
+		/// <summary>初始化轮播图索引标签: 端面(xlPic3下方)+侧面(xlPic5下方), 显示"当前/总数"</summary>
 		private void InitCarouselLabels()
 		{
 			// 只添加索引标签，不添加按钮
@@ -1405,6 +1547,7 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>刷新轮播图: 端面(上→xlPic3/下→xlPic4)+侧面(xlPic5)</summary>
 		private void RefreshCarouselDisplays()
 		{
 			try
@@ -1444,6 +1587,12 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>
+		/// 更新PictureBox图像(支持跨线程BeginInvoke)
+		/// 流程: InvokeRequired→BeginInvoke递归→Clone副本→pb.Image=新→Dispose旧
+		/// 参数: pb=目标控件, image=要显示的Bitmap
+		/// 注意事项: Clone避免外部释放导致Paint异常; >1920px等比缩放; 先赋值再Dispose避免闪烁
+		/// </summary>
 		private void UpdatePictureBox(XLPictureBox pb, Bitmap image)
 		{
 			if (pb == null || image == null) return;
@@ -1478,6 +1627,10 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>
+		/// 绑定所有按钮事件
+		/// 清空→ClearAll | 检测参数→Form(11Tab)→OnParametersChanged热更新 | 保存SKU→json | 各工位小清空 | 打开NG目录
+		/// </summary>
 		private void BindButtonEvents()
 		{
 			// 总清空
@@ -1539,12 +1692,13 @@ namespace VisionMeasure
 				MessageBox.Show("SKU【" + sku + "】保存成功！\nP=" + _currentSku.P + " Z=" + _currentSku.Z + " MM=" + _currentSku.MM + diff, "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		};
 		// 各工位小清空
-			if (Clear_zheng_Btn != null) Clear_zheng_Btn.Click += (ss,ee) => { _frontStation?.ClearCounters(); if(OK_zheng_Lb!=null)OK_zheng_Lb.Text="0"; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text="0"; };
-			if (Clear_fan_Btn != null) Clear_fan_Btn.Click += (ss,ee) => { _backStation?.ClearCounters(); if(OK_fan_Lb!=null)OK_fan_Lb.Text="0"; if(NG_fan_Lb!=null)NG_fan_Lb.Text="0"; };
-			if (Clear_duanmian_Btn != null) Clear_duanmian_Btn.Click += (ss,ee) => { _endFaceStation?.ClearCounters(); if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text="0"; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text="0"; };
-			if (Clear_cemian_Btn != null) Clear_cemian_Btn.Click += (ss,ee) => { _sideStation?.ClearCounters(); if(OK_cemian_Lb!=null)OK_cemian_Lb.Text="0"; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text="0"; };
+			if (Clear_zheng_Btn != null) Clear_zheng_Btn.Click += (ss,ee) => { _frontStation?.ClearCounters(); if(OK_zheng_Lb!=null)OK_zheng_Lb.Text="0"; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text="0"; if(Yield_zheng_Lb!=null)Yield_zheng_Lb.Text="0%"; };
+			if (Clear_fan_Btn != null) Clear_fan_Btn.Click += (ss,ee) => { _backStation?.ClearCounters(); if(OK_fan_Lb!=null)OK_fan_Lb.Text="0"; if(NG_fan_Lb!=null)NG_fan_Lb.Text="0"; if(Yield_fan_Lb!=null)Yield_fan_Lb.Text="0%"; };
+			if (Clear_duanmian_Btn != null) Clear_duanmian_Btn.Click += (ss,ee) => { _endFaceStation?.ClearCounters(); if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text="0"; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text="0"; if(Yield_duanmian_Lb!=null)Yield_duanmian_Lb.Text="0%"; };
+			if (Clear_cemian_Btn != null) Clear_cemian_Btn.Click += (ss,ee) => { _sideStation?.ClearCounters(); if(OK_cemian_Lb!=null)OK_cemian_Lb.Text="0"; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text="0"; if(Yield_cemian_Lb!=null)Yield_cemian_Lb.Text="0%"; };
 		}
 
+		/// <summary>初始化统计标签: 4工位OK/NG/良率全部归零</summary>
 		private void BindStatisticsControls()
 		{
 			// 初始化统计显示
@@ -1569,6 +1723,7 @@ namespace VisionMeasure
 
 		#region 统计清除
 
+		/// <summary>清除所有工位统计(确认对话框→4工位清零→UI归零)</summary>
 		private void ClearAllStatistics()
 		{
 			if (MessageBox.Show("确认清除所有统计数据吗？", "确认",
@@ -1581,12 +1736,16 @@ namespace VisionMeasure
 
 				if (OK_zheng_Lb != null) OK_zheng_Lb.Text = "0";
 				if (NG_zheng_Lb != null) NG_zheng_Lb.Text = "0";
+				if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = "0%";
 				if (OK_fan_Lb != null) OK_fan_Lb.Text = "0";
 				if (NG_fan_Lb != null) NG_fan_Lb.Text = "0";
+				if (Yield_fan_Lb != null) Yield_fan_Lb.Text = "0%";
 				if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = "0";
 				if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = "0";
+				if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = "0%";
 				if (OK_cemian_Lb != null) OK_cemian_Lb.Text = "0";
 				if (NG_cemian_Lb != null) NG_cemian_Lb.Text = "0";
+				if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = "0%";
 
 				Logger.Info("所有统计数据已清除");
 			}
@@ -1596,6 +1755,7 @@ namespace VisionMeasure
 
 		#region 班次管理
 
+		/// <summary>启动班次检查(60s): 早08~16/中16~24/晚00~08, 切换自动保存</summary>
 		private void StartShiftCheckTimer()
 		{
 			_shiftCheckTimer = new System.Timers.Timer(60000);
@@ -1608,6 +1768,7 @@ namespace VisionMeasure
 			Logger.Info($"当前班次: {_currentShift}");
 		}
 
+		/// <summary>检查班次是否切换: 比对_currentShift→切换时保存上一班数据→更新班次+起始时间</summary>
 		private void CheckShiftChange()
 		{
 			string newShift = GetCurrentShift();
@@ -1620,6 +1781,7 @@ namespace VisionMeasure
 			}
 		}
 
+		/// <summary>根据当前时间返回班次名: 00~08=晚班, 08~16=早班, 16~24=中班</summary>
 		private string GetCurrentShift()
 		{
 			var now = DateTime.Now.TimeOfDay;
@@ -1630,6 +1792,7 @@ namespace VisionMeasure
 			return "中班";
 		}
 
+		/// <summary>保存当前班次统计数据到SQLite: 计算4工位OK/NG总和→_dbHelper.SaveShiftStatistics(班次名+时间+总数+OK+NG)</summary>
 		private void SaveCurrentShiftStatistics()
 		{
 			try
@@ -1658,6 +1821,10 @@ namespace VisionMeasure
 
 		#region 窗体关闭
 
+		/// <summary>
+		/// ★ 程序关闭流程(按依赖顺序释放所有资源)
+		/// SaveCounts→SaveShift→_sideTriggerPending=false→工位Dispose→触发管理器→8相机Close→硬件Disconnect→性能/保存器/计时器→AI→Logger
+		/// </summary>
 		private void MainFrm_FormClosing(object sender, FormClosingEventArgs e)
 		{
 			try
@@ -1668,15 +1835,15 @@ namespace VisionMeasure
 				SaveCounts();
 				SaveCurrentShiftStatistics();
 
-				_sideTriggerPending = false; // 终止待触发轮询任务
+				_sideTriggerPending = false;	// 终止待触发轮询任务
 				_frontStation?.Dispose();
 				_backStation?.Dispose();
 				_endFaceStation?.Dispose();
 				_sideStation?.Dispose();
 
-				_triggerMgr?.Dispose();  // 释放触发管理器（包含后台线程）
-										 // 释放所有相机SDK实例
-				DisposeAllCameras();
+				_triggerMgr?.Dispose();			// 释放触发管理器（包含后台线程）
+										 
+				DisposeAllCameras();			// 释放所有相机SDK实例
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
 				_perfMonitor?.Dispose();
@@ -1693,6 +1860,7 @@ namespace VisionMeasure
 			}
 		}
 		/// <summary>释放所有相机SDK实例</summary>
+		/// <summary>释放8个相机SDK(逐个StopStreamGrabber→Close, 独立try-catch)</summary>
 		private void DisposeAllCameras()
 		{
 			var cameras = new[] { camera1SDK, camera2SDK, camera3SDK, camera4SDK, camera5SDK, camera6SDK, camera7SDK, camera8SDK };

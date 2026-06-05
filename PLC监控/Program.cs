@@ -17,7 +17,7 @@ namespace PLC监控
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new IOFrm());
+            Application.Run(new ControlFrm());
         }
     }
 }

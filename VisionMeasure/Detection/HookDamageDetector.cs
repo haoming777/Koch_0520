@@ -19,11 +19,13 @@ namespace Detection
 		public Dictionary<string, List<object>> RightNgCoordinates { get; set; }
 	}
 
+/// <summary>挂钩缺陷检测器 — YOLO明显错位 + 分割轻微错位(厚度计算=DistanceTransform*2)</summary>
 	public class HookDamageDetector
 	{
 		/// <summary>
 		/// 通过距离变换求最大内切圆，计算实心框架的最大厚度
 		/// </summary>
+		/// <summary>计算挂钩厚度</summary>
 		private static (double MaxThickness, Point MaxLoc) CalculateThicknessByInscribedCircle(
 			Size imageShape, Point[] innerCoords, Point[] outerCoords)
 		{

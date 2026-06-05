@@ -10,6 +10,7 @@ using Config;
 
 namespace Hardware
 {
+/// <summary>【已废弃】旧版相机管理器(Parallel.ForEach初始化, 通过ICamera回调中转) — 已被MainFrm直接管理DaHuaSDK替代, 保留文件仅供参考</summary>
 	public class CameraManager : IDisposable
 	{
 		private readonly Dictionary<int, DaHuaSDK> _cameras = new Dictionary<int, DaHuaSDK>();

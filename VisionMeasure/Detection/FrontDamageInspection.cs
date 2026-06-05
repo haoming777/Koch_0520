@@ -5,6 +5,7 @@ using System.Linq;
 using YoloInference;
 
 namespace Detection { 
+/// <summary>正面破损检测 — YOLO推理→按中心X坐标分盒→输出每盒缺陷列表</summary>
 public class FrontDamageInspection
 {
 	// 模拟 Python 中 check_front_model.names 字典结构
@@ -21,6 +22,7 @@ public class FrontDamageInspection
 	        /// <param name="boxesWithScores">包含置信度的边界框列表 [x1, y1, x2, y2, score]</param>
 	        /// <param name="iouThreshold">交并比阈值</param>
 	        /// <returns>过滤后的边界框列表 [x1, y1, x2, y2]</returns>
+		/// <summary>YOLO NMS去重</summary>
 	public static List<float[]> ApplyNms(List<float[]> boxesWithScores, float iouThreshold = 0.45f)
 	{
 		if (boxesWithScores == null || boxesWithScores.Count == 0)

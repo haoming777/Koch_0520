@@ -119,31 +119,7 @@ namespace CommonLib
 
 			SetParse(g_handle, 0, temp0);//现在初始化X轴
 
-			ControlParms temp1 = new ControlParms()
-			{
-				Units = Convert.ToSingle(_Config.axis1_Units),
-				Speed = Convert.ToSingle(_Config.axis1_Speed),
-				Accel = Convert.ToSingle(_Config.axis1_Accel),
-				Decel = Convert.ToSingle(_Config.axis1_Decel),
-				Sramp = Convert.ToSingle(_Config.axis1_Sramp),
-				Lspeed = Convert.ToSingle(_Config.axis1_Lspeed)
-			};
-
-			SetParse(g_handle, 1, temp1);//现在初始化X轴
-
-
-
-			ControlParms temp2 = new ControlParms()
-			{
-				Units = Convert.ToSingle(_Config.axis2_Units),
-				Speed = Convert.ToSingle(_Config.axis2_Speed),
-				Accel = Convert.ToSingle(_Config.axis2_Accel),
-				Decel = Convert.ToSingle(_Config.axis2_Decel),
-				Sramp = Convert.ToSingle(_Config.axis2_Sramp),
-				Lspeed = Convert.ToSingle(_Config.axis2_Lspeed)
-			};
-
-			SetParse(g_handle, 2, temp2);//现在初始化X轴
+			
 
 			AxisParms_Init = new ControlParms()
 			{

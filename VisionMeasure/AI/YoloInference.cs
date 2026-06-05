@@ -42,6 +42,7 @@ namespace YoloInference
 	// ==========================================
 	// 1. 推理结果封装类
 	// ==========================================
+/// <summary>YOLO推理结果 — Boxes(像素坐标) + BoxesN(归一化坐标) + Scores + ClassIds + Masks(分割)</summary>
 	public class YoloResult
 	{
 		public Rect[] Boxes { get; set; }        // 绝对坐标框 (x, y, width, height)
@@ -63,6 +64,7 @@ namespace YoloInference
 	// ==========================================
 	// 2. YOLO 核心推理类 (工业级生产版)
 	// ==========================================
+/// <summary>YOLO ONNX推理引擎 — 加载.onnx模型+meta.json, 支持单张/批量预测, 指定GPU设备</summary>
 	public class YoloOnnx : IDisposable
 	{
 		private InferenceSession _session;
@@ -156,6 +158,7 @@ namespace YoloInference
 			Warmup(iterations: 3, warmupBatchSize: _expectedBatchSize);
 		}
 
+		/// <summary>初始化ONNX推理会话: 加载模型→配置GPU→Warmup预热</summary>
 		private void InitSession(string modelPath, int gpuDeviceId = 0)
 		{
 			try
@@ -199,6 +202,7 @@ namespace YoloInference
 			}
 		}
 
+		/// <summary>推理预热: 用零张量跑N次推理(触发GPU编译优化, 避免首帧慢)</summary>
 		private void Warmup(int iterations, int warmupBatchSize)
 		{
 			Logger.Info($"[GPU] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}])...");
@@ -218,12 +222,14 @@ namespace YoloInference
 			Logger.Info("[GPU] 模型预热完毕，硬件已就绪！\n");
 		}
 
+		/// <summary>单张预测: 预处理→ONNX推理→后处理解析Box→NMS去重→返回YoloResult</summary>
 		public YoloResult Predict(Mat origImg, float? confThres = null, float? iouThres = null)
 		{
 			var results = PredictBatch(new List<Mat>(1) { origImg }, confThres, iouThres);
 			return results.FirstOrDefault();
 		}
 
+		/// <summary>批量预测: 多图拼接→一次GPU推理→分别解析→返回YoloResult列表</summary>
 		public List<YoloResult> PredictBatch(List<Mat> origImgs, float? confThres = null, float? iouThres = null)
 		{
 			int batchSize = origImgs.Count;
@@ -281,6 +287,7 @@ namespace YoloInference
 
 		// 参考OpenCV高性能文档：用Cv2.CopyMakeBorder + CvDnn.BlobFromImages + Marshal.Copy
 		// 替代C# unsafe逐像素BGR→RGB÷255循环，全部交由OpenCV C++ SIMD底层处理
+		/// <summary>批量预处理: Resize→归一化→Padding→拼接为batch tensor(优化版单次分配)</summary>
 		private DenseTensor<float> PreprocessBatchOptimized(List<Mat> origImgs, float[] ratios, float[] padWs, float[] padHs)
 		{
 			int batchSize = origImgs.Count;
@@ -369,6 +376,7 @@ namespace YoloInference
 		// =========================================================
 		// [新增] YOLO26 解析逻辑 (针对 [batch, 300, 6] 端到端输出)
 		// =========================================================
+		/// <summary>YOLOv6后处理: 解析output tensor→Boxes坐标→映射回原图→按confThres过滤</summary>
 		private List<YoloResult> PostprocessYolo26(Tensor<float> output, List<Mat> origImgs, float[] ratios, float[] padWs, float[] padHs, float confThres)
 		{
 			int batchSize = origImgs.Count;
@@ -458,6 +466,7 @@ namespace YoloInference
 		// =========================================================
 		// 原有逻辑：标准 YOLO 解析 (密集锚框 + NMS)
 		// =========================================================
+		/// <summary>标准YOLO后处理: 解析output→NMS去重→坐标映射→返回检测结果</summary>
 		private List<YoloResult> PostprocessStandard(Tensor<float> output, List<Mat> origImgs, float[] ratios, float[] padWs, float[] padHs, float confThres, float iouThres)
 		{
 			int batchSize = origImgs.Count;
@@ -555,6 +564,7 @@ namespace YoloInference
 		}
 
 		// 保存参数到best.json
+		/// <summary>保存模型参数(Conf/Iou阈值)到meta.json文件</summary>
 		public void SaveParams(string metaJsonPath) {
 			try {
 				var json = File.ReadAllText(metaJsonPath);
@@ -566,6 +576,7 @@ namespace YoloInference
 			} catch (Exception ex) { Logger.Error("保存模型参数失败: " + ex.Message); }
 		}
 
+		/// <summary>释放ONNX推理资源和模型内存</summary>
 		public void Dispose()
 		{
 			_session?.Dispose();

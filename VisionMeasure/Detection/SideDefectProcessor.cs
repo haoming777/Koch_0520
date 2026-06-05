@@ -5,6 +5,7 @@ using YoloInference; // 引用你提供的命名空间
 
 namespace Detection
 {
+/// <summary>侧面缺陷处理器 — 头尾裁剪YOLO推理→坐标映射→输出缺陷</summary>
 	public class SideDefectProcessor
 	{
 		/// <summary>
@@ -15,6 +16,7 @@ namespace Detection
 		        /// <param name="cropRatio">裁剪比例 (宽/高)</param>
 		        /// <param name="model">已加载并初始化的 YoloOnnx 模型实例</param>
 		        /// <returns>返回包含缺陷名称列表和相对坐标列表的 Tuple</returns>
+		/// <summary>侧面缺陷检测</summary>
 		public static Tuple<List<string>, List<float[]>> DetectSideDefects(Mat image, float cropRatio, YoloOnnx model)
 		{
 			int height = image.Height;

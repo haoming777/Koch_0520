@@ -9,6 +9,7 @@ using CommonLib;
 
 namespace Models
 {
+/// <summary>	/// AI模型管理器 — 统一加载/管理所有AI模型(共11个), 分配GPU资源	/// GPU分配策略: 显卡0=YOLO模型(目标检测), 显卡1=ViMo模型(OCR/分割/分类)	/// 模型清单: FrontOcrModel(正面P号), FrontBoxBreakModel(盒子破),	///   EndFaceUpperModel(上端面), EndFaceLowerModel(下端面),	///   BackBarcodeModel(条码), BackDateCodeSeg/Cls/OcrModel(日期码3子模型),	///   BackHookModel(挂钩明显), HookSlightModel(挂钩轻微分割),	///   SideDefectModel(侧面缺陷)	/// 加载顺序: Front → EndFace → Back → Side	/// ViMo模型优先GPU, 失败自动降级CPU	/// </summary>
 	public class AiModelManager : IDisposable
 	{
 		private readonly ModelPathConfig _config;
@@ -17,7 +18,6 @@ namespace Models
 		// 正面模型
 		public Vimo FrontOcrModel { get; private set; }           // Vimo -> .vimosln
 		public YoloOnnx FrontBoxBreakModel { get; private set; }  // Yolo -> .onnx + meta.json
-		public YoloOnnx FrontFilmBreakModel { get; private set; } // Yolo -> .onnx + meta.json
 
 		// 端面模型
 		public YoloOnnx EndFaceUpperModel { get; private set; }    // Yolo -> .onnx + meta.json
@@ -43,6 +43,7 @@ namespace Models
 		}
 
 		public bool LoadAllModels()
+		/// <summary>加载所有AI模型(共11个): 按顺序 Front→EndFace→Back→Side, 返回全部成功标志, 记录GPU配置日志</summary>
 		{
 			try
 			{
@@ -67,6 +68,7 @@ namespace Models
 		}
 
 		private bool LoadFrontModels()
+		/// <summary>加载正面模型: P号码OCR(ViMo/GPU1, .vimosln) + 盒子破损检测(YoloOnnx/GPU0, .onnx+meta.json)</summary>
 		{
 			try
 			{
@@ -131,6 +133,7 @@ namespace Models
 		}
 
 		private bool LoadEndFaceModels()
+		/// <summary>加载端面模型: 上端面缺陷(YoloOnnx/GPU1) + 下端面缺陷(YoloOnnx/GPU1), 各需.onnx+meta.json</summary>
 		{
 			try
 			{
@@ -180,6 +183,7 @@ namespace Models
 		}
 
 		private bool LoadBackModels()
+		/// <summary>加载背面模型: 条码(YoloOnnx/GPU0) + 日期码分割/分类/OCR×3(ViMo/GPU1) + 挂钩明显(YoloOnnx/GPU0) + 挂钩轻微分割(YoloSeg/GPU0) + 切字(ViMo/GPU1)</summary>
 		{
 			try
 			{
@@ -273,6 +277,7 @@ namespace Models
 		}
 
 		private bool LoadSideModels()
+		/// <summary>加载侧面模型: 侧面缺陷检测(YoloOnnx/GPU1, .onnx+meta.json)</summary>
 		{
 			try
 			{
@@ -322,7 +327,6 @@ namespace Models
 			_disposed = true;
 
 			FrontBoxBreakModel?.Dispose();
-			FrontFilmBreakModel?.Dispose();
 			EndFaceUpperModel?.Dispose();
 			EndFaceLowerModel?.Dispose();
 			BackBarcodeModel?.Dispose();
@@ -333,6 +337,7 @@ namespace Models
 		}
 
 		private Vimo LoadVimoModel(string modelPath, string name, string moduleId = "0")
+		/// <summary>加载ViMo模型: Init(优先GPU, 失败自动降级CPU)→返回Vimo实例或null, 日志记录加载结果和GPU/CPU状态</summary>
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
 			string fullPath = _config.GetFullPath(modelPath);

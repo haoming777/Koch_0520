@@ -12,19 +12,35 @@ using CommonLib;
 
 namespace Hardware
 {
+	/// <summary>
+	/// 相机触发管理器 — 工业视觉系统的实时信号中枢
+	/// 核心职责:
+	///   1. 高频扫描(2000Hz) IN4~IN13 输入端口，检测传感器边沿信号
+	///   2. 根据边沿信号触发对应相机(通过OUT端口脉冲)
+	///   3. 统计各端口触发次数和图片接收量
+	/// 线程架构(3个线程):
+	///   - MonitorLoop: Highest优先级, 绑定最后CPU核心, 2000Hz边沿扫描
+	///   - PulseOutputLoop: AboveNormal优先级, 消费脉冲队列, 精确延时输出
+	///   - StatsReportLoop: 每15秒输出触发统计日志
+	/// 外部触发模式(ExternalTriggerEnabled=true): 只监听IN13启动侧面工位, 不输出脉冲
+	/// </summary>
 	public class CameraTriggerManager : IDisposable
 	{
 		// 核心绑定：把MonitorLoop锁在独立CPU核心上，防止被AI推理抢占
+		// SetThreadAffinityMask 将线程绑定到指定CPU核心, 1<<lastCore 表示最后一个核心
 		[System.Runtime.InteropServices.DllImport("kernel32.dll")]
 		private static extern IntPtr GetCurrentThread();
 		[System.Runtime.InteropServices.DllImport("kernel32.dll")]
 		private static extern IntPtr SetThreadAffinityMask(IntPtr hThread, IntPtr dwThreadAffinityMask);
 
 		private readonly MotionControlManager _motion;
+		/// <summary>上一周期的输入状态(用于边沿检测)</summary>
 		private readonly Dictionary<int, bool> _lastStates = new Dictionary<int, bool>();
+		/// <summary>各相机触发计数</summary>
 		private readonly Dictionary<int, long> _triggerCounts = new Dictionary<int, long>();
 		private readonly object _countLock = new object();
 
+		/// <summary>脉冲输出队列(容量100), 生产者=MonitorLoop, 消费者=PulseOutputLoop</summary>
 		private readonly BlockingCollection<PulseTask> _pulseQueue = new BlockingCollection<PulseTask>(100);
 		private volatile bool _isRunning;
 		private CancellationTokenSource _cts;
@@ -38,6 +54,7 @@ namespace Hardware
 		private readonly Dictionary<int, long> _inputEdgeCounts = new Dictionary<int, long>();
 		private readonly object _statsLock = new object();
 
+		/// <summary>触发事件: 参数为被触发的相机ID(1~8)</summary>
 		public event Action<int> OnTriggered;
 
 		public CameraTriggerManager(MotionControlManager motion, bool simulateMode = true)
@@ -49,6 +66,7 @@ namespace Hardware
 				_triggerCounts[kvp.Key] = 0;
 		}
 
+	/// <summary>启动触发管理器: 提升进程优先级到High→记录初始IO状态→启动3个线程(TrigMonitor=Highest+CPU绑定 | TrigPulseOut=AboveNormal | TrigStats=Normal)→外部触发模式下跳过PulseOut</summary>
 		public void Start()
 		{
 			_isRunning = true;
@@ -95,6 +113,7 @@ namespace Hardware
 			Logger.Info($"相机触发管理器启动 {(_simulateMode ? "(模拟模式)" : "")}");
 		}
 
+	/// <summary>停止触发管理器: 取消令牌→CompleteAdding脉冲队列→Join等待3线程退出(各3s超时)→输出总脉冲数</summary>
 		public void Stop()
 		{
 			_isRunning = false;
@@ -115,6 +134,11 @@ namespace Hardware
 		/// <summary>外部触发模式：true=所有OUT脉冲由外部硬件控制，程序只检测IN13启动侧面</summary>
 		public static bool ExternalTriggerEnabled = false;
 
+		/// <summary>
+		/// 信号监听线程 — 系统实时信号中枢 (Highest优先级, 绑定最后CPU核心)
+		/// ★ 2000Hz扫描: GetInMulti(4,13)批量读取10个端口 → 位运算边沿检测 → 入队脉冲
+		/// ★ 外部触发模式(ExternalTriggerEnabled=true): 只监听IN13, 不输出脉冲
+		/// </summary>
 		private void MonitorLoop()
 		{
 			// 锁定到最后一个CPU核心，AI推理线程用其他核心，MonitorLoop不被抢占
@@ -206,6 +230,7 @@ namespace Hardware
 			}
 		}
 
+	/// <summary>脉冲输出循环: 从BlockingCollection取脉冲任务→收集同一时间戳的脉冲批量输出(SetOutMulti位掩码)→PreciseDelay精确延时→关闭所有端口</summary>
 		private void PulseOutputLoop()
 		{
 			Logger.Info("脉冲输出线程启动");
@@ -239,6 +264,7 @@ namespace Hardware
 			}
 		}
 
+	/// <summary>批量脉冲输出: 计算端口范围→构建位掩码数组→SetOutMulti一次性设置多个端口→同时延时→同时关闭, 减少API调用次数</summary>
 		private void SendPulseBatch(List<PulseTask> tasks)
 		{
 			try
@@ -268,6 +294,7 @@ namespace Hardware
 			catch (Exception ex) { Logger.Error($"批量脉冲输出失败: {ex.Message}"); try { foreach (var t in tasks) _motion.SetOutput(t.OutputPort, false); } catch { } }
 		}
 
+	/// <summary>单脉冲输出: SetOutput(true)→PreciseDelay(pulseWidthMs)→SetOutput(false), 异常时确保输出关闭</summary>
 		private void SendPulse(PulseTask task)
 		{
 			try
@@ -288,6 +315,7 @@ namespace Hardware
 			}
 		}
 
+	/// <summary>精确延时(微秒级): SpinWait忙等待+Stopwatch高精度计时, 用于相机触发脉冲(10ms脉冲宽度需精确控制)</summary>
 		private void PreciseDelay(int milliseconds)
 		{
 			if (milliseconds <= 0) return;
@@ -297,6 +325,7 @@ namespace Hardware
 				spinWait.SpinOnce();
 		}
 
+		/// <summary>手动触发指定相机(测试用) — 构造PulseTask入队, 返回是否成功入队</summary>
 		public bool ManualTrigger(int cameraId)
 		{
 			var config = CameraTriggerConfig.GetConfig(cameraId);
@@ -311,21 +340,25 @@ namespace Hardware
 			});
 		}
 
+		/// <summary>获取各相机触发计数快照(线程安全副本)</summary>
 		public Dictionary<int, long> GetCounts()
 		{
 			lock (_countLock) return new Dictionary<int, long>(_triggerCounts);
 		}
 
+		/// <summary>重置所有触发计数为0</summary>
 		public void ResetCounts()
 		{
 			lock (_countLock) _triggerCounts.Clear();
 		}
 
+		/// <summary>获取触发统计: 总脉冲数+最大延时(当前返回0)</summary>
 		public (long totalPulses, long maxDelayMs) GetStats()
 		{
 			return (Interlocked.Read(ref _totalPulses), 0);
 		}
 
+	/// <summary>统计报告循环(每15s): 快照各端口触发边沿/OUT脉冲/收到图片计数→输出格式化统计表→空闲时(全零)跳过不输出日志</summary>
 		private void StatsReportLoop()
 		{
 			while (!_cts.Token.IsCancellationRequested && _isRunning)
@@ -367,6 +400,7 @@ namespace Hardware
 			}
 		}
 
+		/// <summary>释放触发管理器: Stop线程→取消令牌→Dispose队列</summary>
 		public void Dispose()
 		{
 			Stop();

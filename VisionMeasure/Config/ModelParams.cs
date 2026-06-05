@@ -86,6 +86,7 @@ namespace Config
 		public double StartHeightRatioPCode { get; set; } = 2.0 / 3.0;
 		public double StartHeightRatioDateCode { get; set; } = 2.0 / 3.0;
 
+		/// <summary>创建默认模型参数: 根据key(barcode/hook/side等)设置不同的默认Conf/Iou</summary>
 		public static ModelParams CreateDefault(string key, string name)
 		{
 			var m = new ModelParams { ModelKey = key, ModelName = name };
@@ -104,6 +105,7 @@ namespace Config
 		public static string Dir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "ModelParams");
 		public string FilePath => Path.Combine(Dir, ModelKey + ".json");
 
+		/// <summary>保存参数到Config/ModelParams/{key}.json → 保留旧文件中的注释字段(_开头)</summary>
 		public void Save()
 		{
 			try
@@ -144,6 +146,7 @@ namespace Config
 			}
 			catch { }
 		}
+		/// <summary>从Config/ModelParams/{key}.json加载参数 → 文件不存在返回默认值</summary>
 		public static ModelParams Load(string key)
 		{
 			try { var p = Path.Combine(Dir, key + ".json"); if (File.Exists(p)) return JsonConvert.DeserializeObject<ModelParams>(File.ReadAllText(p)) ?? CreateDefault(key, key); }

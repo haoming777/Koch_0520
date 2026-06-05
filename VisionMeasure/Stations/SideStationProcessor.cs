@@ -24,39 +24,56 @@ using static CommonLib.Class_Config;
 
 namespace Stations
 {
-	/// <summary>拍照模式</summary>
+	/// <summary>拍照模式: FlyCapture=飞拍(运动中拍照), StopCapture=停拍(到位后拍照)</summary>
 	public enum CaptureMode { FlyCapture = 0, StopCapture = 1 }
-	/// <summary>推理模式</summary>
+	/// <summary>推理模式: PerImage=逐张推理, Batch=批量推理</summary>
 	public enum InferenceMode { PerImage = 0, Batch = 1 }
-	/// <summary>IN12边缘→相机映射</summary>
+	/// <summary>IN12边缘→相机映射: RisingLeftFallingRight=↑→左↓→右, RisingRightFallingLeft=↑→右↓→左</summary>
 	public enum In12EdgeMap { RisingLeftFallingRight = 0, RisingRightFallingLeft = 1 }
 
+	/// <summary>
+	/// 侧面工位处理器 — 系统中最复杂的工位
+	/// 核心职责:
+	///   1. 运动轴控制: 从起点到终点往复运动, 3段(起点→终点→起点)
+	///   2. 实时推理: 运动中每收到一张图即刻推理+实时显示 (InferSingle: 头尾裁剪→YOLO)
+	///   3. 安全锁双层防护: 硬件ALM_IN + 软件5ms轮询, 支持继续/返回两种恢复模式
+	///   4. 图像管理: ConcurrentQueue收集→ProcessStream实时消费→FinalizeResults汇总
+	/// 触发流程: IN13↓ → MainFrm.OnCameraTriggered → StartDetection()
+	///   并行启动: ProcessStream(推理线程) + StartMotion(运动线程)
+	/// 安全锁: IN8=0(门开)→EmergencyStop(mode=0)→等待恢复→
+	///   Continue模式: ClearHardwareAlarm+MoveAbs(目标) 继续执行
+	///   ReturnToStart: ClearHardwareAlarm+MoveAbs(起点)→return false 中止本周期
+	/// </summary>
 	public class SideStationProcessor : IDisposable
 	{
-		private readonly AiModelManager _models;
-		private readonly string _savePath;
-		private SkuData _sku;
-		private readonly MotionControlManager _motion;
-		private readonly HighSpeedImageSaver _imageSaver;
-		private readonly PerformanceMonitor _perfMonitor;
+		// ── 依赖注入 ──
+		private readonly AiModelManager _models;          // AI模型(侧面缺陷YOLO)
+		private readonly string _savePath;                 // 图片保存根目录
+		private SkuData _sku;                              // 当前SKU(提供P值)
+		private readonly MotionControlManager _motion;     // 运动控制卡(轴运动+安全锁)
+		private readonly HighSpeedImageSaver _imageSaver;  // 高速后台存图
+		private readonly PerformanceMonitor _perfMonitor;  // 性能监控
 
-		// 队列
+		// ── 图像队列(线程安全) ──
+		// 生产者: OnCam7/OnCam8(相机回调线程)  消费者: ProcessStream(推理线程)
 		private readonly ConcurrentQueue<SideImageCtx> _leftQueue = new ConcurrentQueue<SideImageCtx>();
 		private readonly ConcurrentQueue<SideImageCtx> _rightQueue = new ConcurrentQueue<SideImageCtx>();
-		private int _leftCount, _rightCount;
+		private int _leftCount, _rightCount;  // 队列计数(用于调试, 不入锁)
 		private readonly object _countLock = new object();
 
-		// 结果缓存
+		// ── 推理结果缓存 ──
 		private readonly List<SideResult> _leftResults = new List<SideResult>();
 		private readonly List<SideResult> _rightResults = new List<SideResult>();
+		// ── 显示缓存 ──
 		private readonly List<Mat> _displayImages = new List<Mat>();
 		private readonly List<Bitmap> _displayBitmaps = new List<Bitmap>();  // Bitmap缓存，避免Mat→Bitmap往返转换
 		private int _displayIndex;
 		private readonly object _resultLock = new object();
 
+		// ── 统计计数 ──
 		private long _totalCount, _okCount, _ngCount;
 		private bool _disposed;
-		private CancellationTokenSource _motionCts;
+		private CancellationTokenSource _motionCts;  // 运动周期取消令牌
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
@@ -167,6 +184,7 @@ namespace Stations
 		public void OnCam7(Bitmap bmp, long pid) { if (bmp != null) AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); }
 		public void OnCam8(Bitmap bmp, long pid) { if (bmp != null) AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); }
 
+		/// <summary>图像入队: ConcurrentQueue原子入队→Interlocked计数, 生产者=相机回调, 消费者=ProcessStream</summary>
 		private void AddImage(ConcurrentQueue<SideImageCtx> q, ref int count, Bitmap bmp, long pid, Side side)
 		{
 			q.Enqueue(new SideImageCtx { Image = bmp, ProductId = pid, Side = side });
@@ -174,6 +192,7 @@ namespace Stations
 		}
 
 		// 从模型best.json加载阈值
+		/// <summary>从模型best.json加载侧面缺陷检测的Conf/Iou阈值(覆盖默认值)</summary>
 		public void InitThresholdsFromModel() {
 			if (_models.SideDefectModel != null) {
 				ConfThreshold = _models.SideDefectModel.DefaultConfThres;
@@ -206,7 +225,11 @@ namespace Stations
 			});
 		}
 
-		/// <summary>IN13下降沿触发 → MainFrm调用此方法</summary>
+		/// <summary>
+		/// ★ IN13下降沿触发 → MainFrm.OnCameraTriggered调用此方法
+		/// 流程: 安全锁等待→ClearBatch→并行ProcessStream+StartMotion→FinalizeResults
+		/// 安全锁: 运动中门开→EmergencyStop(mode=0立即停)→等待恢复→Continue/ReturnToStart
+		/// </summary>
 		public void StartDetection()
 		{
 			if (_disposed) { Logger.Warning("[Side] 已释放，忽略StartDetection"); return; }
@@ -224,7 +247,7 @@ namespace Stations
 					{
 						Logger.Info("[Side] 安全锁未释放(门开) IN" + SafetyLockPort + "=0，等待关门...");
 						while (!CheckSafetyLock() && !cts.Token.IsCancellationRequested)
-							Thread.Sleep(10);
+							Thread.Sleep(5);
 						if (cts.Token.IsCancellationRequested) { Logger.Warning("[Side] 安全锁等待被取消"); return; }
 						Logger.Info("[Side] 安全锁已释放(门关) IN" + SafetyLockPort + "=1，继续执行");
 					}
@@ -247,7 +270,15 @@ namespace Stations
 				finally { IsMoving = false; cts.Dispose(); }
 			});
 		}
-		/// <summary>运动控制: 纯轴运动，相机触发由外部硬件控制</summary>
+		/// <summary>
+		/// 运动控制: 三段式轴运动, 相机触发由外部硬件(ZMC BASIC程序)控制
+		/// 流程:
+		///   1. 到起点: WaitForSafetyLock → MoveAbs(起点) → WaitForMove(10s超时)
+		///   2. 前进: WaitForSafetyLock → SetAxisSpeed(ForwardSpeed) → MoveAbs(终点) → WaitForMove(60s超时)
+		///      ★ 前进阶段中ProcessStream同时进行推理
+		///   3. 返回: SetAxisSpeed(ReturnSpeed) → MoveAbs(起点) → WaitForMove(10s超时)
+		/// 每段运动中WaitForMove内部5ms安全锁轮询, 门开→EmergencyStop→恢复→Continue/Return
+		/// </summary>
 		private void StartMotion(CancellationToken cancel)
 		{
 			int p = _sku.P;
@@ -278,12 +309,26 @@ namespace Stations
 			if (CheckSafetyLock()) return;
 			Logger.Info("[Side] 安全锁触发(门开) IN" + SafetyLockPort + "=0，等待关门...");
 			while (!CheckSafetyLock() && !cancel.IsCancellationRequested)
-				Thread.Sleep(10);
+				Thread.Sleep(5);
 			if (!cancel.IsCancellationRequested)
 				Logger.Info("[Side] 安全锁已释放(门关) IN" + SafetyLockPort + "=1，继续运动");
 		}
 
-		/// <summary>等待轴运动到位，支持安全锁暂停/恢复。返回true=正常到位，false=ReturnToStart模式已中止</summary>
+		/// <summary>
+		/// ★ 等待轴运动到位(每5ms轮询)，支持安全锁暂停/恢复
+		/// 安全锁触发流程:
+		///   1. CheckSafetyLock()=false → EmergencyStop(axis, mode=0立即停) → stopped=true
+		///   2. 等待安全锁恢复(持续5ms轮询)
+		///   3. 恢复后:
+		///      RecoveryMode.Continue: ClearHardwareAlarm + MoveAbs(目标) → 继续等待到位
+		///      RecoveryMode.ReturnToStart: ClearHardwareAlarm + MoveAbs(起点) → return false
+		///        (返回途中也有安全锁监控, 再次触发会递归处理)
+		/// 返回值: true=正常到位 | false=ReturnToStart已中止(外部应终止当前周期)
+		/// </summary>
+		/// <param name="axis">轴号</param>
+		/// <param name="targetPos">目标位置</param>
+		/// <param name="timeoutMs">超时时间(ms)</param>
+		/// <param name="cancel">取消令牌(运动周期被取消时抛出)</param>
 		private bool WaitForMove(int axis, float targetPos, int timeoutMs, CancellationToken cancel)
 		{
 			var sw = Stopwatch.StartNew();
@@ -299,7 +344,7 @@ namespace Stations
 						_motion.EmergencyStop(axis);
 						stopped = true;
 					}
-					Thread.Sleep(10);
+					Thread.Sleep(5);
 					continue;
 				}
 
@@ -310,6 +355,7 @@ namespace Stations
 					if (RecoveryMode == SafetyRecovery.ReturnToStart)
 					{
 						Logger.Info("[Side] 安全锁已释放，模式=返回起始位，中止当前运动→回起点");
+					_motion.ClearHardwareAlarm(axis);
 						_motion.MoveAbs(axis, StartPosition);
 						bool returnStopped = false;
 						while (_motion.IsMoving(axis) && !cancel.IsCancellationRequested)
@@ -317,32 +363,36 @@ namespace Stations
 							if (!CheckSafetyLock())
 							{
 								if (!returnStopped) { Logger.Warning("[Side] 回归途中安全锁触发! 急停轴" + axis); _motion.EmergencyStop(axis); returnStopped = true; }
-								Thread.Sleep(10); continue;
+								Thread.Sleep(5); continue;
 							}
-							if (returnStopped) { Logger.Info("[Side] 安全锁恢复，继续回归起点"); _motion.MoveAbs(axis, StartPosition); returnStopped = false; }
-							Thread.Sleep(10);
+							_motion.ClearHardwareAlarm(axis); if (returnStopped) { Logger.Info("[Side] 安全锁恢复，继续回归起点"); _motion.MoveAbs(axis, StartPosition); returnStopped = false; }
+							Thread.Sleep(5);
 						}
 						return false;
 					}
 					else
 					{
 						Logger.Info("[Side] 安全锁已释放，恢复运动→目标" + targetPos);
+					_motion.ClearHardwareAlarm(axis);
 						_motion.MoveAbs(axis, targetPos);
 					}
 				}
 
 				// 正常等待到位
 				if (!_motion.IsMoving(axis)) return true;
-				Thread.Sleep(10);
+				Thread.Sleep(5);
 			}
 			cancel.ThrowIfCancellationRequested();
 			return false;
 		}
 
-	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } }
+	/// <summary>设置轴限位IO+硬件安全锁告警: SetLimitIn(正限/负限/原点) + SetHardwareSafetyAlarm(IN8安全锁→ALM_IN硬件急停)</summary>
+	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort); }
+	/// <summary>设置轴运行参数: 速度+加速度+减速度, 每次运动段切换前调用(前进/返回各自速度)</summary>
 		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
 
 		/// <summary>检查安全锁传感器: true=安全可运动, false=不安全阻止运动</summary>
+	/// <summary>★ 安全锁检查: 读IN8硬件IO → true=安全可运动 | false=不安全</summary>
 		private bool CheckSafetyLock()
 		{
 			return _motion.CheckSafetyLock(SafetyLockPort, SafetyLockActiveHigh);
@@ -352,6 +402,7 @@ namespace Stations
 		private List<SideImageCtx> _processedLeftImgs = new List<SideImageCtx>();
 		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
 
+	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出</summary>
 		private void ProcessStream(CancellationToken cancel)
 		{
 			int p = _sku.P, processed = 0;
@@ -394,6 +445,7 @@ namespace Stations
 			Logger.Info($"[Side] ProcessStream结束 processed={processed} 总推理={totalInferMs:F0}ms 平均={(processed > 0 ? totalInferMs / processed : 0):F0}ms 总耗时={swTotal.Elapsed.TotalMilliseconds:F0}ms");
 		}
 
+	/// <summary>实时推送部分结果: 取左右结果最大数量, 逐索引合并左右状态→OnStatusUpdate通知UI更新轮播图索引</summary>
 		private void EmitPartial(int p)
 		{
 			lock (_resultLock)
@@ -410,6 +462,7 @@ namespace Stations
 			}
 		}
 
+	/// <summary>最终汇总: 填充缺失图片(按MissingAsNg)、合并左右状态→mergedStatus、统计OK/NG、BuildDisplayImages→SaveImages→OnResultReady</summary>
 		private void FinalizeResults()
 		{
 			int p = _sku.P;
@@ -444,10 +497,8 @@ namespace Stations
 			var lStats2 = new Dictionary<string, int>(); var rStats2 = new Dictionary<string, int>();
 			foreach (var sr in _leftResults) { if (sr.Status != "OK") { if (lStats2.ContainsKey(sr.Status)) lStats2[sr.Status]++; else lStats2[sr.Status] = 1; } }
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats2.ContainsKey(sr.Status)) rStats2[sr.Status]++; else rStats2[sr.Status] = 1; } }
-			string defStr2 = "";
-			if (lStats2.Count > 0) defStr2 += " 左侧面:" + string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value));
-			if (rStats2.Count > 0) defStr2 += " 右侧面:" + string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value));
-			if (defStr2.Length > 0) defStr2 = " |" + defStr2;
+			string defStr2 = " | 左侧面:" + (lStats2.Count > 0 ? string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value)) : "0");
+			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr2}");
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
@@ -504,16 +555,15 @@ namespace Stations
 				var lStats = new Dictionary<string, int>(); var rStats = new Dictionary<string, int>();
 				foreach (var sr in _leftResults) { if (sr.Status != "OK") { if (lStats.ContainsKey(sr.Status)) lStats[sr.Status]++; else lStats[sr.Status] = 1; } }
 				foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats.ContainsKey(sr.Status)) rStats[sr.Status]++; else rStats[sr.Status] = 1; } }
-				string defStr = "";
-				if (lStats.Count > 0) defStr += " 左侧面:" + string.Join(" ", lStats.Select(kv => kv.Key + kv.Value));
-				if (rStats.Count > 0) defStr += " 右侧面:" + string.Join(" ", rStats.Select(kv => kv.Key + kv.Value));
-				if (defStr.Length > 0) defStr = " |" + defStr;
+				string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
+				defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
 				Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr} | 耗时={sw.Elapsed.TotalMilliseconds:F0}ms");
 
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
 		}
 
+		/// <summary>逐张推理模式: 遍历左右列表→每张InferSingle→结果存入_leftResults/_rightResults</summary>
 		private void ProcessPerImageInference(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
 			// 左图逐张推理
@@ -530,6 +580,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>批量推理模式: 所有图头尾裁剪→拼接→一次性PredictBatch→解析映射回原图坐标</summary>
 		private void ProcessBatchInference(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
 			var allCrops = new List<Mat>();
@@ -577,6 +628,7 @@ namespace Stations
 			foreach (var m in allCrops) m.Dispose();
 		}
 
+	/// <summary>		/// 单张侧面图像推理 — 头尾裁剪+YOLO批推理(2张)		/// head=左边cropW像素, tail=右边cropW像素 (cropW=h*CropRatio)		/// 头尾两段→YOLO批量推理→坐标映射回原图		/// EnableSideDefectCheck=false时跳过推理, 直接OK		/// </summary>
 		private SideResult InferSingle(SideImageCtx ctx, int idx)
 		{
 			var result = new SideResult { Index = idx, Side = ctx.Side, Status = "OK" };
@@ -627,6 +679,7 @@ namespace Stations
 			return result;
 		}
 
+	/// <summary>构建轮播图: 左侧渲染(leftImages→RenderSideImage→_displayBitmaps) + 右侧渲染(rightImages→RenderSideImage→_displayBitmaps), 缺图生成Missing占位</summary>
 		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
 			lock (_resultLock)
@@ -657,6 +710,7 @@ namespace Stations
 			}
 		}
 
+		/// <summary>创建缺图占位Bitmap: 深灰底色+"N/总数 缺少"文字, 用于不满P张时的显示补位</summary>
 		private Bitmap CreateMissingBmp(int i, int total)
 		{
 			var bmp = new Bitmap(800, 600);
@@ -668,6 +722,7 @@ namespace Stations
 			}
 			return bmp;
 		}
+	/// <summary>渲染单张侧面图: 1.裁图区半透明橙色覆盖+边界线 2.缺陷红框+标签 3.旋转(左-90°/右+90°) 4.状态文字+序号(图片正中)</summary>
 		private Bitmap RenderSideImage(SideImageCtx ctx, int index, int total, List<SideResult> results)
 		{
 			try
@@ -769,15 +824,19 @@ namespace Stations
 			catch (Exception ex) { Logger.Error("[Side] 渲染异常: " + ex.Message); return null; }
 		}
 
+		/// <summary>获取当前显示的Mat图像(Clone副本, 线程安全)</summary>
 		public Mat GetDisplayImage()
 		{
 			lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; }
 		}
+		/// <summary>轮播上一张: _displayIndex循环递减</summary>
 		public void NavigatePrev() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex - 1 + _displayImages.Count) % _displayImages.Count; } }
+		/// <summary>轮播下一张: _displayIndex循环递增</summary>
 		public void NavigateNext() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex + 1) % _displayImages.Count; } }
 		public Mat GetCurrentLeftImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
 		public Mat GetCurrentRightImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
 
+	/// <summary>保存侧面工位图片: 左/右原图+渲染图 → JPEG 85% → Images/{日期}/{班次}/侧面工位/{OK|NG}/{左/右侧面}/</summary>
 		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk)
 		{
 			try
@@ -795,16 +854,16 @@ namespace Stations
 				long pid = DateTime.Now.Ticks; string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
 				string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 				// 左侧原图
-				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); }
+				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) { bool ln = isOk || (j < _leftResults.Count && _leftResults[j].Status != "OK"); if (ln) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); } }
 				// 右侧原图
-				for (int j = 0; j < rightImages.Count; j++) { if (rightImages[j].Image != null) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), rightImages[j].Image.ToJpegBytesFast(85), true, 85); }
+				for (int j = 0; j < rightImages.Count; j++) { if (rightImages[j].Image != null) { bool rn = isOk || (j < _rightResults.Count && _rightResults[j].Status != "OK"); if (rn) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), rightImages[j].Image.ToJpegBytesFast(85), true, 85); } }
 				// 渲染图：左侧渲染图存左目录，右侧存右目录
 				int savedRender = 0;
 				lock (_resultLock)
 				{
 					int lc = leftImages.Count;
 					for (int i = 0; i < _displayBitmaps.Count; i++) {
-						if (_displayBitmaps[i] == null) continue;
+						if (_displayBitmaps[i] == null) continue; int boxIdx = i < lc ? i : (i - lc); { bool isLeft = i < lc; bool ng = isOk || (isLeft ? (boxIdx < _leftResults.Count && _leftResults[boxIdx].Status != "OK") : (boxIdx < _rightResults.Count && _rightResults[boxIdx].Status != "OK")); if (!ng) continue; }
 						var d = i < lc ? leftDir : rightDir;
 						int idx = i < lc ? (i + 1) : (i - lc + 1);
 						_imageSaver.AddSaveTask(Path.Combine(d, ts + "_渲染_" + idx + "_" + nt + ".jpg"), _displayBitmaps[i].ToJpegBytesFast(85), true, 85);
@@ -815,6 +874,7 @@ namespace Stations
 			}
 			catch (Exception ex) { Logger.Error("[Side] 存图异常: " + ex.Message); }
 		}
+	/// <summary>清空本批数据: 清空左右队列+清零计数+清空结果+释放DisplayBitmaps, 每个周期开始前调用</summary>
 		private void ClearBatch() { lock (_countLock) { while (_leftQueue.TryDequeue(out _)) ; while (_rightQueue.TryDequeue(out _)) ; _leftCount = 0; _rightCount = 0; } _leftResults.Clear(); _rightResults.Clear(); lock (_resultLock) { foreach (var b in _displayBitmaps) b?.Dispose(); _displayBitmaps.Clear(); } }
 		private string GetShift() { var n = DateTime.Now.TimeOfDay; if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "晚班"; if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "早班"; return "中班"; }
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }

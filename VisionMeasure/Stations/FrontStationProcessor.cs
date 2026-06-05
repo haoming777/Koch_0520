@@ -22,6 +22,7 @@ using CvSize = OpenCvSharp.Size;
 
 namespace VisionMeasure.Stations
 {
+/// <summary>	/// 正面工位处理器 — 左右图配对后并行推理(P号OCR+盒子破损YOLO)	/// 触发: Camera1/Camera2的OnImage回调 → OnCam1/OnCam2 → 配对缓冲 → 异步处理	/// 推理: Task.Run并行: RecognizePNumber(ViMo OCR逐盒ROI) + DetectBoxDamage(YOLO分盒映射)	/// 汇总: 逐盒合并P号结果+破损结果 → statusList(OK/NG) → 按盒粒度计数	/// 显示: 合并渲染图 → OnResultReady → MainFrm.OnStationResult → xlPictureBox1	/// 存图: 渲染图+左原图+右原图 → JPEG(yyyyMMdd_HHmmss_fff_渲染_OK/NG类型.jpg)	/// </summary>
 	public class FrontStationProcessor : IDisposable
 	{
 		private static readonly Regex PNumberRegex = new Regex(@"P\d+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -80,6 +81,7 @@ namespace VisionMeasure.Stations
 		}
 
 		// 从模型best.json加载阈值
+		/// <summary>初始化模型阈值: 从FrontBoxBreakModel加载Conf/Iou阈值覆盖默认值</summary>
 		public void InitThresholdsFromModel() {
 			if (_models.FrontBoxBreakModel != null) {
 				if (_models.FrontBoxBreakModel != null) { ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres; IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres; }
@@ -92,6 +94,7 @@ namespace VisionMeasure.Stations
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; }
 		public void ClearCounters() { _okCount = 0; _ngCount = 0; }
 
+		/// <summary>相机1(正面左)图像回调 — 图像→Mat→Flip(XY翻转)→配对缓冲→CheckAndProcessAsync</summary>
 		public void OnCam1(Bitmap leftImg, object extraArg = null)
 		{
 			if (leftImg == null) return;
@@ -101,6 +104,7 @@ namespace VisionMeasure.Stations
 			CheckAndProcessAsync();
 		}
 
+		/// <summary>相机2(正面右)图像回调 — 图像→Mat→Flip(XY翻转)→配对缓冲→CheckAndProcessAsync</summary>
 		public void OnCam2(Bitmap rightImg, object extraArg = null)
 		{
 			if (rightImg == null) return;
@@ -110,6 +114,7 @@ namespace VisionMeasure.Stations
 			CheckAndProcessAsync();
 		}
 
+	/// <summary>		/// 配对+异步处理: 左右图都到达→Flip(XY翻转)→裁图→2路并行推理→汇总→绘制→保存		/// 并行: Task.Run(P号OCR) + Task.Run(盒子破损YOLO) → await Task.WhenAll		/// P号: 逐盒ROI→ViMo OCR→正则匹配Pd+→与参考P号比对(EnablePNumberCheck开关)		/// 破损: YOLO → ProcessYoloResults(按中心X坐标分配盒索引)		/// 统计: OK/NG按单盒粒度计数(非按排)		/// </summary>
 		private async void CheckAndProcessAsync()
 		{
 			Mat leftToProcess = null, rightToProcess = null;
@@ -197,9 +202,26 @@ namespace VisionMeasure.Stations
 				// 缺陷统计
 				var defStats = new Dictionary<string, int>();
 				foreach (var s in statusList) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (defStats.ContainsKey(k)) defStats[k]++; else defStats[k] = 1; } } }
-				string defStr = defStats.Count > 0 ? " | " + string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value)) : "";
+				string defStr = defStats.Count > 0 ? string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value))
+					: "盒子破损:0 P号错误:0";
+				defStr = " | " + defStr;
 				double elapsed = swTotal.Elapsed.TotalMilliseconds;
 				Logger.Info($"[Front] 完成 P={pCount} OK={pCount - currentNgCount} NG={currentNgCount}{defStr} | 耗时={elapsed:F0}ms");
+
+				// 步骤3: 绘制+合并渲染图
+				Logger.Debug("[Front] 步骤3: 绘制+合并...");
+				var sw3 = System.Diagnostics.Stopwatch.StartNew();
+				var merged = DrawAndMergeResults(leftProc, rightProc, pNumberResults, damageResults, statusList, halfP, isOk);
+				Logger.Info($"[Front] 步骤3完成: {sw3.Elapsed.TotalMilliseconds:F1}ms {merged.Width}x{merged.Height}");
+
+				// 步骤4: 保存图片
+				Logger.Debug("[Front] 步骤4: 保存...");
+				var sw4 = System.Diagnostics.Stopwatch.StartNew();
+				SaveImages(leftProc, rightProc, merged, ngArray);
+				Logger.Info($"[Front] 步骤4完成: 保存={sw4.Elapsed.TotalMilliseconds:F1}ms");
+
+				// 步骤5: 发射结果事件(更新UI)
+				OnResultReady?.Invoke(merged, ngArray, _okCount, _ngCount);
 			}
 			catch (Exception ex) { Logger.Error($"[Front] 处理异常: {ex.Message}\r\n{ex.StackTrace}"); }
 			finally
@@ -213,6 +235,7 @@ namespace VisionMeasure.Stations
 		/// <summary>
 		/// P号码识别: 逐盒ROI运行Vimo OCR, 返回所有识别结果(含OK的用于显示框)
 		/// </summary>
+	/// <summary>P号码OCR识别: 逐盒ROI裁剪(左图前halfP盒+右图后halfP盒, 取下方1/3区域)→ViMo OCR→正则匹配Pd+→与参考P号比对→返回缺陷(P号:xxx/P号错误/P号缺少)</summary>
 		private Dictionary<int, List<BoxDefect>> RecognizePNumber(Mat left, Mat right, int pCount, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -233,6 +256,7 @@ namespace VisionMeasure.Stations
 			return results;
 		}
 
+	/// <summary>处理单盒P号ROI: ViMo OCR→遍历Blocks→PNumberRegex匹配→过滤碎片(长度<PNumberMinLength)→与参考比对→画框(OK绿/NG橙)</summary>
 		private void ProcessPNumberRoi(Mat roi, int boxIdx, string refPNumber, bool hasRef,
 			int fullW, int fullH, int offsetX, int offsetY, Dictionary<int, List<BoxDefect>> results)
 		{
@@ -278,6 +302,7 @@ namespace VisionMeasure.Stations
 				AddDefect(results, boxIdx, "P号缺少", new float[] { 0, (float)offsetY / fullH, 0.1f, (float)(offsetY + roi.Height) / fullH });
 		}
 
+	/// <summary>计算归一化包围框: TextBlock.Polygon→min/max→(x/fullW, y/fullH)归一化→[x1,y1,x2,y2]</summary>
 		private float[] ComputeNormBBox(TextBlock block, int fullW, int fullH, int offsetX, int offsetY)
 		{
 			if (block.Polygon == null || !block.Polygon.Any()) return new float[] { 0, 0, 0.1f, 0.1f };
@@ -286,12 +311,14 @@ namespace VisionMeasure.Stations
 			return new float[] { minX / fullW, minY / fullH, maxX / fullW, maxY / fullH };
 		}
 
+	/// <summary>添加缺陷到字典: 若key不存在则创建List→添加BoxDefect(盒索引+缺陷类型+归一化坐标)</summary>
 		private void AddDefect(Dictionary<int, List<BoxDefect>> dict, int idx, string type, float[] box)
 		{
 			if (!dict.ContainsKey(idx)) dict[idx] = new List<BoxDefect>();
 			dict[idx].Add(new BoxDefect(idx, type, box));
 		}
 
+	/// <summary>盒子破损检测: YOLO Predict(左右图各一次)→ProcessYoloResults(BoxesN归一化坐标→按centerX分配到盒索引)→返回缺陷(盒子破损+Score)</summary>
 		private Dictionary<int, List<BoxDefect>> DetectBoxDamage(Mat left, Mat right, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -307,6 +334,7 @@ namespace VisionMeasure.Stations
 			return results;
 		}
 
+	/// <summary>YOLO结果→分盒映射: BoxesN归一化→centerX*n确定盒索引(startIdx~endIdx-1)→构建BoxDefect(归一化坐标+缺陷类型+置信度)</summary>
 		private void ProcessYoloResults(YoloResult result, Dictionary<int, List<BoxDefect>> results, int startIdx, int endIdx, string defectType)
 		{
 			if (result == null || result.BoxesN == null) return;
@@ -325,6 +353,7 @@ namespace VisionMeasure.Stations
 			}
 		}
 
+	/// <summary>绘制+合并: 左图DrawDefects(P号框/破损框/状态/序号)+右图DrawDefects→MergeImages(水平拼接+OK/NG大字)</summary>
 		private Bitmap DrawAndMergeResults(Mat left, Mat right,
 			Dictionary<int, List<BoxDefect>> pNumberResults, Dictionary<int, List<BoxDefect>> damageResults,
 			List<string> statusList, int halfP, bool isOk)
@@ -336,6 +365,7 @@ namespace VisionMeasure.Stations
 			return MergeImages(lb, rb, isOk);
 		}
 
+	/// <summary>绘制缺陷: 分区虚线→P号框(匹配绿/不匹配橙)→破损框(红)→每盒OK/NG状态标签(绿/红)→盒序号(黄色, 支持ReverseBoxOrder反转)</summary>
 		private void DrawDefects(Graphics g,
 			Dictionary<int, List<BoxDefect>> pNumberResults, Dictionary<int, List<BoxDefect>> damageResults,
 			List<string> statusList, int startIdx, int endIdx, int imgWidth, int imgHeight)
@@ -390,6 +420,7 @@ namespace VisionMeasure.Stations
 				}
 		}
 
+		/// <summary>绘制单个缺陷框(半透明填充+实线边框+分数标签) — 支持P号(绿/橙)和破损(红)两种颜色</summary>
 		private void DrawDefectBox(Graphics g, BoxDefect defect, int imgWidth, int imgHeight, Color baseColor)
 		{
 			if (defect.BoundingBox == null || defect.BoundingBox.Length < 4) return;
@@ -415,6 +446,7 @@ namespace VisionMeasure.Stations
 			}
 		}
 
+		/// <summary>合并左右渲染图: 黑底+白色分隔线+右上角OK/NG大字标签</summary>
 		private Bitmap MergeImages(Bitmap left, Bitmap right, bool isOk)
 		{
 			Bitmap merged = new Bitmap(left.Width + right.Width, Math.Max(left.Height, right.Height), PixelFormat.Format24bppRgb);
@@ -439,6 +471,7 @@ namespace VisionMeasure.Stations
 			return merged;
 		}
 
+	/// <summary>保存正面图片: 渲染图+左原图+右原图→JPEG→Images/{日期}/{班次}/正面工位/{OK|NG}/, 文件名含时间戳+NG类型</summary>
 		private void SaveImages(Mat left, Mat right, Bitmap merged, bool[] ngArray)
 		{
 			try
@@ -465,6 +498,7 @@ namespace VisionMeasure.Stations
 			catch (Exception ex) { Logger.Error($"正面工位存图异常: {ex.Message}"); }
 		}
 
+		/// <summary>获取当前班次: 00~08=晚班, 08~16=早班, 16~24=中班</summary>
 		private string GetShift()
 		{
 			var n = DateTime.Now.TimeOfDay;

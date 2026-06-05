@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 namespace VisionMeasure.Utils
 {
 	public class SkuInfo
+	/// <summary>SKU信息解析 — Parse方法从SKU字符串(PxZxMM格式)提取P/Z/MM/CodingFormat/P号码/条码</summary>
 	{
 		public string SkuCode { get; set; }
 		public int P { get; set; }
@@ -14,6 +15,7 @@ namespace VisionMeasure.Utils
 		public string StandardBarcode { get; set; }
 
 		public static SkuInfo Parse(string skuStr, string format, string pNum, string barcode)
+		/// <summary>解析SKU字符串: "PxZxMM"格式提取P/Z/MM值, Regex匹配数字部分, 同时设置CodingFormat/P号码/条码</summary>
 		{
 			var info = new SkuInfo
 			{

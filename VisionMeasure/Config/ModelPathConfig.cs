@@ -4,6 +4,7 @@ using static CommonLib.Class_Config;
 
 namespace Config
 {
+/// <summary>AI模型路径配置 — 从setup.ini[AI_Models]段读取11个模型路径+GPU设备ID, GetFullPath拼接根目录</summary>
 	public class ModelPathConfig
 	{
 		public string ModelRootPath { get; set; } = @".\AI\Models";
@@ -42,6 +43,7 @@ namespace Config
 		// ========== Yolo模型专用GPU (盒子破、挂钩、端面、侧面等) ==========
 		public int YoloGpuDeviceId { get; set; } = 0;     // Yolo模型用显卡0
 
+		/// <summary>拼接完整模型路径: ModelRootPath + 相对路径 → 绝对路径</summary>
 		public string GetFullPath(string modelFile)
 		{
 			if (string.IsNullOrEmpty(modelFile)) return null;
@@ -49,6 +51,7 @@ namespace Config
 			return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ModelRootPath, modelFile);
 		}
 
+		/// <summary>从setup.ini [AI_Models]段加载所有模型路径+GPU配置 → 返回ModelPathConfig</summary>
 		public static ModelPathConfig LoadFromSysConfig()
 		{
 			var config = new ModelPathConfig();
@@ -88,6 +91,7 @@ namespace Config
 			return config;
 		}
 
+		/// <summary>保存模型路径配置回setup.ini → 反向写入各字段</summary>
 		public void SaveToConfig()
 		{
 			_Config.ModelRootPath = ModelRootPath;
