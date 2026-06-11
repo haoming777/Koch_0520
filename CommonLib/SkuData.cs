@@ -121,9 +121,11 @@ namespace CommonLib
 		/// <summary>安全锁输入端口(IN8)，0=禁用</summary>
 		public int SafetyLockPort = 8;
 		/// <summary>true=高电平有效(IN8=1→安全), false=低电平有效</summary>
-		public bool SafetyLockActiveHigh = true;
+		public bool SafetyLockActiveHigh = false; // SetInvertIn(8,1)反转后, GetIn(8)=0才是关门安全
 		/// <summary>安全锁恢复模式: 0=继续执行, 1=返回起始位</summary>
 		public int SafetyLockRecovery = 0;
+		/// <summary>侧面工位启用(ControlFrm初始化完成后可设置, 不持久化)</summary>
+		public static bool SideEnabledOverride = false;
 
 		/// <summary>JSON配置文件路径: Config/AxisParams.json</summary>
 		private static string _jsonPath => System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "AxisParams.json");

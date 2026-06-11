@@ -74,6 +74,7 @@ namespace Stations
 		private long _totalCount, _okCount, _ngCount;
 		private bool _disposed;
 		private CancellationTokenSource _motionCts;  // 运动周期取消令牌
+		private long _cycleId;                       // ★ 代际号: 防止旧批次的finally覆盖新批次IsMoving
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
@@ -88,7 +89,7 @@ namespace Stations
 		public In12EdgeMap EdgeMapping { get; set; } = In12EdgeMap.RisingLeftFallingRight;
 		// 安全锁: 读取传感器信号，不安全时阻止运动轴移动
 		public int SafetyLockPort { get; set; } = 8;  // IN8=安全锁, 1=关门安全, 0=开门禁止
-		public bool SafetyLockActiveHigh { get; set; } = true;
+		public bool SafetyLockActiveHigh { get; set; } = false; // 反转后读0才是关门
 	// 兼容旧接口
 		public TriggerEdgeMode EdgeMode { get { return (TriggerEdgeMode)(int)EdgeMapping; } set { EdgeMapping = (In12EdgeMap)(int)value; } }
 		public bool UseContinuousMode { get { return CaptureMode == CaptureMode.StopCapture; } set { CaptureMode = value ? CaptureMode.StopCapture : CaptureMode.FlyCapture; } }
@@ -226,23 +227,25 @@ namespace Stations
 		}
 
 		/// <summary>
-		/// ★ IN13下降沿触发 → MainFrm.OnCameraTriggered调用此方法
+		/// ★ IN13↓触发 → 启动侧面检测(调用者已保证!IsMoving)
 		/// 流程: 安全锁等待→ClearBatch→并行ProcessStream+StartMotion→FinalizeResults
-		/// 安全锁: 运动中门开→EmergencyStop(mode=0立即停)→等待恢复→Continue/ReturnToStart
+		/// ★ 调用约定: MainFrm轮询循环确保IsMoving=false后才调用, 不会并发
+		///   _cycleId代际号防止旧批次finally覆盖新批次IsMoving
 		/// </summary>
 		public void StartDetection()
 		{
-			if (_disposed) { Logger.Warning("[Side] 已释放，忽略StartDetection"); return; }
-			if (IsMoving) { Logger.Warning("[Side] 上一批未完成，强制中断回起点"); _motionCts?.Cancel(); _motion.StopAxis(SideAxis); _motion.SetSpeed(SideAxis, ReturnSpeed); _motion.MoveAbs(SideAxis, StartPosition); }
+			if (_disposed) { Logger.Warning("[Side] 已释放"); return; }
+
+			long myCycleId = Interlocked.Increment(ref _cycleId);
 			IsMoving = true;
 			SetLimitSwitches();
 			_motionCts = new CancellationTokenSource();
-			var cts = _motionCts; // 捕获当前令牌，防止被后续周期覆盖
+			var cts = _motionCts;
 			Task.Run(() =>
 			{
 				try
 				{
-					// 等待安全锁释放（门关上），在Task内等待不阻塞相机回调线程
+					// 等待安全锁释放
 					if (!CheckSafetyLock())
 					{
 						Logger.Info("[Side] 安全锁未释放(门开) IN" + SafetyLockPort + "=0，等待关门...");
@@ -256,18 +259,17 @@ namespace Stations
 					lock (_resultLock) { _leftResults.Clear(); _rightResults.Clear(); }
 					var streamTask = Task.Run(() => ProcessStream(cts.Token));
 					StartMotion(cts.Token);
-					// 不提前取消ProcessStream，等待它自然处理完所有图片（最多10秒）
-					if (!streamTask.Wait(10000))
-					{
-						Logger.Warning("[Side] ProcessStream超时(10s)，强制取消");
-						cts.Cancel();
-						streamTask.Wait(2000);
-					}
+					streamTask.Wait(2000);  // ProcessStream内部有3s无图超时, 这里给2s兜底
 					FinalizeResults();
 				}
-				catch (OperationCanceledException) { Logger.Warning("[Side] 运动被取消(安全锁/超时)"); }
+				catch (OperationCanceledException) { Logger.Warning("[Side] 运动被取消(安全锁)"); FinalizeResults(); }
 				catch (Exception ex) { Logger.Error("[Side] 异常: " + ex.Message); }
-				finally { IsMoving = false; cts.Dispose(); }
+				finally
+				{
+					if (Interlocked.Read(ref _cycleId) == myCycleId)
+						IsMoving = false;
+					cts.Dispose();
+				}
 			});
 		}
 		/// <summary>
@@ -284,8 +286,9 @@ namespace Stations
 			int p = _sku.P;
 			Logger.Info("[Side] 运动开始: 轴" + SideAxis + " " + StartPosition + "→" + EndPosition + " 前进速度=" + ForwardSpeed + " 回程速度=" + ReturnSpeed + " 安全锁模式=" + (RecoveryMode == SafetyRecovery.Continue ? "继续执行" : "返回起始位"));
 
-			// 到起点
+			// 到起点 — 使用回程速度快速就位(首次必须设置速度, 否则沿用上次未知值)
 			WaitForSafetyLock(cancel);
+			SetAxisSpeed(ReturnSpeed);
 			_motion.MoveAbs(SideAxis, StartPosition);
 			if (!WaitForMove(SideAxis, StartPosition, 10000, cancel)) return;
 
@@ -323,6 +326,7 @@ namespace Stations
 		///      RecoveryMode.Continue: ClearHardwareAlarm + MoveAbs(目标) → 继续等待到位
 		///      RecoveryMode.ReturnToStart: ClearHardwareAlarm + MoveAbs(起点) → return false
 		///        (返回途中也有安全锁监控, 再次触发会递归处理)
+		/// ★ 位置验证: 轴停止后必须验证实际位置≈目标位置(±0.5容差), 防止被外部MoveAbs打断后误判到位
 		/// 返回值: true=正常到位 | false=ReturnToStart已中止(外部应终止当前周期)
 		/// </summary>
 		/// <param name="axis">轴号</param>
@@ -333,6 +337,7 @@ namespace Stations
 		{
 			var sw = Stopwatch.StartNew();
 			bool stopped = false;
+			int reissueCount = 0;  // 重新发送指令计数器，防止无限循环
 			while (!cancel.IsCancellationRequested && sw.ElapsedMilliseconds < timeoutMs)
 			{
 				// ── 安全锁检查(硬件IO读取，不受PC CPU影响) ──
@@ -378,16 +383,36 @@ namespace Stations
 					}
 				}
 
-				// 正常等待到位
-				if (!_motion.IsMoving(axis)) return true;
+				// ★ 位置验证: 轴停止后检查实际位置是否到达目标
+				//    仅检查IsMoving不够——外部MoveAbs可能让轴在其他位置停下
+				if (!_motion.IsMoving(axis))
+				{
+					float curPos = _motion.GetPosition(axis);
+					if (Math.Abs(curPos - targetPos) <= 0.5f)
+						return true;  // 已到达目标位置
+
+					// 轴停了但不在目标位置(被外部指令打断)，重新发送MoveAbs
+					if (reissueCount < 3)
+					{
+						reissueCount++;
+						Logger.Warning($"[Side] 轴未到目标位置(cur={curPos:F1}, tgt={targetPos:F1})，第{reissueCount}次重发运动指令");
+						_motion.MoveAbs(axis, targetPos);
+						continue;
+					}
+					else
+					{
+						Logger.Error($"[Side] 轴{reissueCount}次重发仍未到达目标，放弃等待");
+						return false;
+					}
+				}
 				Thread.Sleep(5);
 			}
 			cancel.ThrowIfCancellationRequested();
 			return false;
 		}
 
-	/// <summary>设置轴限位IO+硬件安全锁告警: SetLimitIn(正限/负限/原点) + SetHardwareSafetyAlarm(IN8安全锁→ALM_IN硬件急停)</summary>
-	private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort); }
+		/// <summary>设置轴限位IO+限位IO设置(硬件ALM_IN已禁用, 仅用软件安全锁)</summary>
+		private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort); }
 	/// <summary>设置轴运行参数: 速度+加速度+减速度, 每次运动段切换前调用(前进/返回各自速度)</summary>
 		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
 
@@ -402,13 +427,15 @@ namespace Stations
 		private List<SideImageCtx> _processedLeftImgs = new List<SideImageCtx>();
 		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
 
-	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出</summary>
+	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出
+	/// ★ 防止死等: 连续3秒无新图片到达则退出(运动可能已提前结束或被中断)</summary>
 		private void ProcessStream(CancellationToken cancel)
 		{
 			int p = _sku.P, processed = 0;
 			var swTotal = Stopwatch.StartNew();
 			double totalInferMs = 0;
 			bool tryLeftFirst = true;  // 交替优先，无偏处理：按收到顺序
+			int noImgCount = 0;        // 连续无图计数(每1ms+1, 超3000即3秒退出)
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
 			while (!cancel.IsCancellationRequested && processed < p * 2)
 			{
@@ -421,7 +448,23 @@ namespace Stations
 					gotOne = _rightQueue.TryDequeue(out ctx) || _leftQueue.TryDequeue(out ctx);
 				tryLeftFirst = !tryLeftFirst;
 
-				if (!gotOne) { Thread.Sleep(1); continue; }
+				if (!gotOne) {
+					Thread.Sleep(1);
+					noImgCount++;
+					// ★ Cancel或连续3秒无新图片 → 退出等待(缺失由FinalizeResults→MissingAsNg填NG)
+					if (cancel.IsCancellationRequested)
+					{
+						Logger.Info($"[Side] ProcessStream 收到取消信号，退出(已处理{processed}/期望{p*2})");
+						break;
+					}
+					if (noImgCount > 3000)
+					{
+						Logger.Warning($"[Side] ProcessStream {noImgCount}ms无新图片，退出等待(已处理{processed}/期望{p*2})");
+						break;
+					}
+					continue;
+				}
+				noImgCount = 0;  // 有图就重置计数
 
 				bool isLeft = ctx.Side == Side.Left;
 				var targetResults = isLeft ? _leftResults : _rightResults;
@@ -462,10 +505,15 @@ namespace Stations
 			}
 		}
 
-	/// <summary>最终汇总: 填充缺失图片(按MissingAsNg)、合并左右状态→mergedStatus、统计OK/NG、BuildDisplayImages→SaveImages→OnResultReady</summary>
+	/// <summary>最终汇总(两阶段):
+	/// ★ 阶段1(同步~1ms): 填充缺失→合并状态→更新计数器→日志→触发事件(无渲染图)
+	/// ★ 阶段2(后台Task): BuildDisplayImages→渲染→存图, 数据已Copy不依赖共享列表
+	///   阶段2完成后再通过OnResultReady补发渲染图</summary>
 		private void FinalizeResults()
 		{
 			int p = _sku.P;
+
+			// ─── 阶段1: 快速汇总(同步, 不渲染) ───
 			while (_leftResults.Count < p) _leftResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Left, Index = _leftResults.Count });
 			while (_rightResults.Count < p) _rightResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Right, Index = _rightResults.Count });
 			var mergedStatus = new List<string>();
@@ -478,30 +526,49 @@ namespace Stations
 			bool isOk = mergedStatus.All(s => s == "OK");
 			Interlocked.Increment(ref _totalCount);
 			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
+
 			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
-			// 生成轮播显示图
-				BuildDisplayImages(_processedLeftImgs, _processedRightImgs, p);
-				// 左右分别渲染显示图（xlPictureBox5=左侧面, xlPictureBox6=右侧面）
-				Bitmap leftRender = null, rightRender = null;
-				lock (_resultLock)
-				{
-					if (_processedLeftImgs.Count > 0)
-						leftRender = RenderSideImage(_processedLeftImgs[0], 0, p, _leftResults);
-					if (_processedRightImgs.Count > 0)
-						rightRender = RenderSideImage(_processedRightImgs[0], 0, p, _rightResults);
-				}
-				result.SideRenderImage = leftRender;
-				result.SideLeftRenderImage = leftRender;
-				result.SideRightRenderImage = rightRender;
-				SaveImages(_processedLeftImgs, _processedRightImgs, mergedStatus, isOk);
+
+			// 日志
 			var lStats2 = new Dictionary<string, int>(); var rStats2 = new Dictionary<string, int>();
 			foreach (var sr in _leftResults) { if (sr.Status != "OK") { if (lStats2.ContainsKey(sr.Status)) lStats2[sr.Status]++; else lStats2[sr.Status] = 1; } }
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats2.ContainsKey(sr.Status)) rStats2[sr.Status]++; else rStats2[sr.Status] = 1; } }
 			string defStr2 = " | 左侧面:" + (lStats2.Count > 0 ? string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr2}");
+
+			// 立即触发事件(统计+状态, 渲染图稍后由阶段2补充)
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
+
+			// ─── 阶段2: 后台渲染+存图(Copy数据避免被下一批ClearBatch清空) ───
+			var savedLeftImgs = _processedLeftImgs.ToList();
+			var savedRightImgs = _processedRightImgs.ToList();
+			var savedLeftRes = _leftResults.ToList();
+			var savedRightRes = _rightResults.ToList();
+			var savedMerged = mergedStatus.ToList();
+			bool savedIsOk = isOk;
+
+			Task.Run(() =>
+			{
+				try
+				{
+					BuildDisplayImages(savedLeftImgs, savedRightImgs, p);
+					Bitmap leftRender = null, rightRender = null;
+					lock (_resultLock)
+					{
+						if (savedLeftImgs.Count > 0)
+							leftRender = RenderSideImage(savedLeftImgs[0], 0, p, savedLeftRes);
+						if (savedRightImgs.Count > 0)
+							rightRender = RenderSideImage(savedRightImgs[0], 0, p, savedRightRes);
+					}
+					result.SideRenderImage = leftRender;
+					result.SideLeftRenderImage = leftRender;
+					result.SideRightRenderImage = rightRender;
+					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk);
+				}
+				catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
+			});
 		}
 
 		/// <summary>保存渲染图（带文字+缺陷框）</summary>
@@ -540,27 +607,28 @@ namespace Stations
 			Interlocked.Increment(ref _totalCount);
 			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
 
-			// 绘制显示图
-			BuildDisplayImages(leftImages, rightImages, p);
-
-			Bitmap leftRender = null, rightRender = null;
-				lock (_resultLock) { if (_displayBitmaps.Count > 0) leftRender = (Bitmap)_displayBitmaps[0].Clone(); }
-				var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList(), SideRenderImage = leftRender, SideLeftRenderImage = leftRender, SideRightRenderImage = rightRender };
-
-			// 存图
-			var swSave = Stopwatch.StartNew();
-			SaveImages(leftImages, rightImages, mergedStatus, isOk);
-			var saveMs = swSave.Elapsed.TotalMilliseconds;
-
-				var lStats = new Dictionary<string, int>(); var rStats = new Dictionary<string, int>();
-				foreach (var sr in _leftResults) { if (sr.Status != "OK") { if (lStats.ContainsKey(sr.Status)) lStats[sr.Status]++; else lStats[sr.Status] = 1; } }
-				foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats.ContainsKey(sr.Status)) rStats[sr.Status]++; else rStats[sr.Status] = 1; } }
-				string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
-				defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
-				Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr} | 耗时={sw.Elapsed.TotalMilliseconds:F0}ms");
-
+			// ☆ 阶段1: 快速汇总(同步)
+			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
+			var lStats = new Dictionary<string, int>(); var rStats = new Dictionary<string, int>();
+			foreach (var sr in _leftResults) { if (sr.Status != "OK") { if (lStats.ContainsKey(sr.Status)) lStats[sr.Status]++; else lStats[sr.Status] = 1; } }
+			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats.ContainsKey(sr.Status)) rStats[sr.Status]++; else rStats[sr.Status] = 1; } }
+			string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
+			defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
+			Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr} | 耗时={sw.Elapsed.TotalMilliseconds:F0}ms");
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
+
+			// ☆ 阶段2: 后台渲染+存图
+			var pli = leftImages.ToList(); var pri = rightImages.ToList();
+			var plr = _leftResults.ToList(); var prr = _rightResults.ToList();
+			var pms = mergedStatus.ToList(); bool pisOk = isOk;
+			Task.Run(() => {
+				try {
+					BuildDisplayImages(pli, pri, p);
+					lock (_resultLock) { if (_displayBitmaps.Count > 0) { result.SideRenderImage = (Bitmap)_displayBitmaps[0].Clone(); result.SideLeftRenderImage = result.SideRenderImage; } }
+					SaveImages(pli, pri, pms, pisOk);
+				} catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
+			});
 		}
 
 		/// <summary>逐张推理模式: 遍历左右列表→每张InferSingle→结果存入_leftResults/_rightResults</summary>

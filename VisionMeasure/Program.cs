@@ -14,19 +14,18 @@ namespace VisionMeasure
 	{
 		/// <summary>USB加密狗验证类实例</summary>
 		private static XLUsbDogClass UsbDogClass;
+		private static System.Threading.Mutex _singleInstanceMutex;
 
 		[STAThread]
 		static void Main()
 		{
-			// 单实例互斥
+			// 单实例互斥(全程持有Mutex不释放, 防止重复打开)
 			bool createdNew;
-			using (System.Threading.Mutex mtx = new System.Threading.Mutex(false, "Global\\KochVisionMeasure_SingleInstance", out createdNew))
+			_singleInstanceMutex = new System.Threading.Mutex(false, "Global\\KochVisionMeasure_SingleInstance", out createdNew);
+			if (!createdNew)
 			{
-				if (!createdNew)
-				{
-					MessageBox.Show("程序已在运行中，无法重复打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-					return;
-				}
+				MessageBox.Show("程序已在运行中，无法重复打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+				return;
 			}
 
 			// ================================================================

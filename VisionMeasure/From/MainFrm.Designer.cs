@@ -35,6 +35,7 @@
 			this.panel1 = new System.Windows.Forms.Panel();
 			this.mainTitleBar1 = new CrsdetSoft.UIControls.MainTitleBar();
 			this.panel2 = new System.Windows.Forms.Panel();
+			this.SafetyDoorState = new Sunny.UI.UILight();
 			this.PlcState = new Sunny.UI.UILight();
 			this.InitState = new Sunny.UI.UILight();
 			this.MotionState = new Sunny.UI.UILight();
@@ -45,8 +46,6 @@
 			this.camera4State = new Sunny.UI.UILight();
 			this.camera3State = new Sunny.UI.UILight();
 			this.panel62 = new System.Windows.Forms.Panel();
-			this.versionNum = new Sunny.UI.UILabel();
-			this.uiLabel4 = new Sunny.UI.UILabel();
 			this.panel36 = new System.Windows.Forms.Panel();
 			this.tableLayoutPanel21 = new System.Windows.Forms.TableLayoutPanel();
 			this.panel56 = new System.Windows.Forms.Panel();
@@ -232,7 +231,6 @@
 			this.tableLayoutPanel1.SuspendLayout();
 			this.panel1.SuspendLayout();
 			this.panel2.SuspendLayout();
-			this.panel62.SuspendLayout();
 			this.panel36.SuspendLayout();
 			this.tableLayoutPanel21.SuspendLayout();
 			this.panel56.SuspendLayout();
@@ -402,6 +400,7 @@
 			// panel2
 			// 
 			this.panel2.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(47)))), ((int)(((byte)(60)))), ((int)(((byte)(76)))));
+			this.panel2.Controls.Add(this.SafetyDoorState);
 			this.panel2.Controls.Add(this.PlcState);
 			this.panel2.Controls.Add(this.InitState);
 			this.panel2.Controls.Add(this.MotionState);
@@ -422,6 +421,27 @@
 			this.panel2.Padding = new System.Windows.Forms.Padding(10, 7, 10, 7);
 			this.panel2.Size = new System.Drawing.Size(1711, 35);
 			this.panel2.TabIndex = 1;
+			// 
+			// SafetyDoorState
+			// 
+			this.SafetyDoorState.CenterColor = System.Drawing.Color.PaleGreen;
+			this.SafetyDoorState.Dock = System.Windows.Forms.DockStyle.Left;
+			this.SafetyDoorState.Font = new System.Drawing.Font("微软雅黑", 12F);
+			this.SafetyDoorState.ForeColor = System.Drawing.Color.White;
+			this.SafetyDoorState.Location = new System.Drawing.Point(1225, 7);
+			this.SafetyDoorState.MinimumSize = new System.Drawing.Size(1, 1);
+			this.SafetyDoorState.Name = "SafetyDoorState";
+			this.SafetyDoorState.OffCenterColor = System.Drawing.Color.Salmon;
+			this.SafetyDoorState.OffColor = System.Drawing.Color.Red;
+			this.SafetyDoorState.OnCenterColor = System.Drawing.Color.PaleGreen;
+			this.SafetyDoorState.OnColor = System.Drawing.Color.ForestGreen;
+			this.SafetyDoorState.Radius = 21;
+			this.SafetyDoorState.ShowText = true;
+			this.SafetyDoorState.Size = new System.Drawing.Size(82, 21);
+			this.SafetyDoorState.State = Sunny.UI.UILightState.Off;
+			this.SafetyDoorState.TabIndex = 38;
+			this.SafetyDoorState.Text = "安全门";
+			this.SafetyDoorState.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
 			// 
 			// PlcState
 			// 
@@ -598,40 +618,11 @@
 			// 
 			// panel62
 			// 
-			this.panel62.Controls.Add(this.versionNum);
-			this.panel62.Controls.Add(this.uiLabel4);
 			this.panel62.Dock = System.Windows.Forms.DockStyle.Right;
-			this.panel62.Location = new System.Drawing.Point(1220, 7);
+			this.panel62.Location = new System.Drawing.Point(1361, 7);
 			this.panel62.Name = "panel62";
-			this.panel62.Size = new System.Drawing.Size(243, 21);
+			this.panel62.Size = new System.Drawing.Size(102, 21);
 			this.panel62.TabIndex = 20;
-			// 
-			// versionNum
-			// 
-			this.versionNum.Cursor = System.Windows.Forms.Cursors.SizeNS;
-			this.versionNum.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.versionNum.Font = new System.Drawing.Font("微软雅黑", 12F);
-			this.versionNum.ForeColor = System.Drawing.Color.Orange;
-			this.versionNum.Location = new System.Drawing.Point(128, 0);
-			this.versionNum.Name = "versionNum";
-			this.versionNum.Size = new System.Drawing.Size(115, 21);
-			this.versionNum.TabIndex = 1;
-			this.versionNum.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-			this.versionNum.Visible = false;
-			// 
-			// uiLabel4
-			// 
-			this.uiLabel4.Dock = System.Windows.Forms.DockStyle.Left;
-			this.uiLabel4.Font = new System.Drawing.Font("微软雅黑", 12F);
-			this.uiLabel4.ForeColor = System.Drawing.Color.Orange;
-			this.uiLabel4.Location = new System.Drawing.Point(0, 0);
-			this.uiLabel4.Margin = new System.Windows.Forms.Padding(80, 0, 3, 0);
-			this.uiLabel4.Name = "uiLabel4";
-			this.uiLabel4.Size = new System.Drawing.Size(128, 21);
-			this.uiLabel4.TabIndex = 0;
-			this.uiLabel4.Text = "当前检测型号：";
-			this.uiLabel4.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-			this.uiLabel4.Visible = false;
 			// 
 			// panel36
 			// 
@@ -3258,7 +3249,6 @@
 			this.tableLayoutPanel1.ResumeLayout(false);
 			this.panel1.ResumeLayout(false);
 			this.panel2.ResumeLayout(false);
-			this.panel62.ResumeLayout(false);
 			this.panel36.ResumeLayout(false);
 			this.tableLayoutPanel21.ResumeLayout(false);
 			this.panel56.ResumeLayout(false);
@@ -3391,8 +3381,6 @@
 		private MyPictureBox.MyPictureBoxM myPictureBoxM1;
 		private System.Windows.Forms.Panel panel36;
 		private System.Windows.Forms.Panel panel62;
-		private Sunny.UI.UILabel versionNum;
-		private Sunny.UI.UILabel uiLabel4;
 		private Sunny.UI.UILight camera5State;
 		private Sunny.UI.UILight camera4State;
 		private Sunny.UI.UILight camera3State;
@@ -3579,6 +3567,7 @@
 		private Sunny.UI.UITextBox Z_Lb;
 		private Sunny.UI.UITextBox P_Lb;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel34;
+		private Sunny.UI.UILight SafetyDoorState;
 		// private Sunny.UI.UITextBox Result2;
 	}
 }

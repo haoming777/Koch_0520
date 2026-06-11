@@ -118,8 +118,10 @@ namespace Hardware
 			if (_simulateMode || !IsConnected || port <= 0) return;
 			try
 			{
-				int ret = ZAux_Direct_SetAlmIn(_handle, axis, port);
-				Logger.Info($"[安全锁] 硬件告警已绑定: 轴{axis} ← IN{port} (门开=急停) ret={ret}");
+				// ALM_IN=1触发告警, IN8=1(关门)→需反转→ALM_IN=0(不告警); IN8=0(开门)→反转=1→急停
+				int retAlm = ZAux_Direct_SetAlmIn(_handle, axis, port);
+				int retInv = ZAux_Direct_SetInvertIn(_handle, port, 1);
+				Logger.Info($"[安全锁] 硬件告警: 轴{axis}←IN{port}(反转) SetAlmIn={retAlm} SetInvertIn={retInv}");
 			}
 			catch (Exception ex) { Logger.Error($"[安全锁] 硬件告警设置失败: {ex.Message}"); }
 		}
@@ -484,7 +486,8 @@ namespace Hardware
 			{
 				uint val = 0;
 				ZAux_Direct_GetIn(_handle, port, ref val);
-				return activeHigh ? (val == 1) : (val == 0);
+				bool safe = activeHigh ? (val == 1) : (val == 0);
+				return safe;
 			}
 			catch (Exception ex)
 			{

@@ -38,7 +38,8 @@ namespace Stations
 		private int _lowerCount = 0;
 		private readonly object _countLock = new object();
 			private DateTime _lastEnqueueTime = DateTime.MinValue;
-			private const int QueueTimeoutMs = 5000;
+			private const int QueueTimeoutMs = 2000;  // ★ 降为2秒(新批次ProductId检测是主力, 超时兜底)
+			private long _firstBatchProductId = -1;  // ★ 本批次第一个ProductId, 用于检测新批次到达
 
 		private readonly BlockingCollection<(List<ImageContext> upper, List<ImageContext> lower)> _batchQueue;
 
@@ -129,12 +130,33 @@ namespace Stations
 		/// <summary>相机4(下端面)图像回调 — 入队到_lowerQueue, 计数到P→触发批次</summary>
 		public void OnCam6(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgLowerCount); EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower"); }
 
-	/// <summary>入队图像: ConcurrentQueue原子入队→计数累加→上下各P张触发批次→DequeueBatch取P张→BlockingCollection.Add入处理队列, 超时5s防呆强制处理</summary>
+	/// <summary>入队图像: ConcurrentQueue原子入队→计数累加→上下各P张触发批次→DequeueBatch取P张→BlockingCollection.Add入处理队列
+	/// ★ 新批次检测: 当ProductId跳变超过P*3(即新一批产品到达), 立即强制结束当前不完整批次→清理残留→开始新批次</summary>
 		private void EnqueueImage(ConcurrentQueue<ImageContext> queue, ref int count, Bitmap bitmap, long productId, string name)
 		{
 			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
 			lock (_countLock)
 			{
+				// ★ 新批次检测: 第一次入队记录firstProductId, 后续ProductId跳变>P*3视为新批次
+				if (_firstBatchProductId < 0) _firstBatchProductId = productId;
+				if (productId - _firstBatchProductId > _pCount * 3)
+				{
+					Logger.Info($"[EndFace] 新批次到达 ProductId={productId}(首={_firstBatchProductId}), 强制结束当前批次 Upper={_upperCount} Lower={_lowerCount}");
+					// 取出当前不完整批次并送入处理队列
+					int partialP = Math.Min(_upperCount, _lowerCount);
+					if (partialP > 0)
+					{
+						var upperList = DequeueBatchN(_upperQueue, ref _upperCount, partialP);
+						var lowerList = DequeueBatchN(_lowerQueue, ref _lowerCount, partialP);
+						if (upperList.Count > 0 && lowerList.Count > 0)
+							_batchQueue.Add((upperList, lowerList));
+					}
+					// 清空残留(新旧批次混杂的图像全部丢弃, 下一张开始新批次)
+					while (_upperQueue.TryDequeue(out var _)) _upperCount--;
+					while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
+					_firstBatchProductId = productId;  // 重置为新批次首ID
+				}
+
 				queue.Enqueue(ctx);
 					_lastEnqueueTime = DateTime.Now;
 				count++;
@@ -145,6 +167,7 @@ namespace Stations
 					var upperList = DequeueBatch(_upperQueue, ref _upperCount);
 					var lowerList = DequeueBatch(_lowerQueue, ref _lowerCount);
 					_batchQueue.Add((upperList, lowerList));
+					_firstBatchProductId = -1;  // 正常批次完成后重置
 				}
 			}
 		}
@@ -218,6 +241,7 @@ namespace Stations
 								while (_upperQueue.TryDequeue(out var _)) _upperCount--;
 								while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
 							}
+							_firstBatchProductId = -1;  // ★ 超时清空后重置, 下一批重新开始
 						}
 				}
 				{
@@ -241,6 +265,7 @@ namespace Stations
 			if (actualP == 0) { Logger.Error("端面图片为空"); return; }
 			if (actualP < _pCount)
 				Logger.Warning($"[EndFace] 部分批次: Upper={upperImages.Count}, Lower={lowerImages.Count}, 预期P={_pCount}, 实际={actualP}");
+			int p = Math.Max(actualP, _pCount);  // ★ 显示总是用_pCount, 缺失位填"缺少"
 
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			long firstProductId = upperImages.FirstOrDefault()?.ProductId ?? 0;
@@ -283,6 +308,16 @@ namespace Stations
 					lowerStatus.Add(lStatus);
 					mergedStatus.Add((uStatus == "OK" && lStatus == "OK") ? "OK" : (uStatus != "OK" ? uStatus : lStatus));
 				}
+				// ★ 不完整批次: 缺失位置标记"缺少"→NG, 在汇总中显式标识
+				int missingCount = _pCount - actualP;
+				for (int i = 0; i < missingCount; i++)
+				{
+					upperStatus.Add("缺少");
+					lowerStatus.Add("缺少");
+					mergedStatus.Add("缺少");
+				}
+				if (missingCount > 0)
+					Logger.Warning($"[EndFace] 缺失{missingCount}个工件位 → 标记为缺少");
 
 				bool isOk = mergedStatus.All(s => s == "OK");
 				var result = new ProductResult
@@ -294,11 +329,11 @@ namespace Stations
 				};
 
 				int boxOk = mergedStatus.Count(s => s == "OK");
-				Logger.Info("[EndFace]    " + string.Join(" ", Enumerable.Range(1,upperStatus.Count).Select(i => i.ToString().PadLeft(3))));
+				Logger.Info("[EndFace]    " + string.Join(" ", Enumerable.Range(1, _pCount).Select(i => i.ToString().PadLeft(3))));
 				// alignment done
-				Logger.Info("[EndFace]上 " + string.Join(" ", upperStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
-				Logger.Info("[EndFace]下 " + string.Join(" ", lowerStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
-				Logger.Info("[EndFace]总 " + string.Join(" ", mergedStatus.Select(s => (s == "OK" ? "  O" : "  X"))));
+				Logger.Info("[EndFace]上 " + string.Join(" ", upperStatus.Select(s => (s == "OK" ? "  O" : (s == "缺少" ? "  M" : "  X")))));
+				Logger.Info("[EndFace]下 " + string.Join(" ", lowerStatus.Select(s => (s == "OK" ? "  O" : (s == "缺少" ? "  M" : "  X")))));
+				Logger.Info("[EndFace]总 " + string.Join(" ", mergedStatus.Select(s => (s == "OK" ? "  O" : (s == "缺少" ? "  M" : "  X")))));
 				Interlocked.Add(ref _totalCount, mergedStatus.Count);
 				Interlocked.Add(ref _okCount, boxOk);
 				Interlocked.Add(ref _ngCount, mergedStatus.Count - boxOk);

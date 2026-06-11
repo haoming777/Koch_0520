@@ -113,6 +113,8 @@ namespace AI
 		public string DefectType { get; set; }
 		public float[] BoundingBox { get; set; }  // [x1, y1, x2, y2] 归一化
 		public float Score { get; set; }
+		/// <summary>内切圆信息 [centerX_norm, centerY_norm, radius_norm], 仅轻微挂钩错位使用</summary>
+		public float[] CircleInfo { get; set; }
 
 		public BoxDefect(int index, string type, float[] box, float score = 1.0f)
 		{

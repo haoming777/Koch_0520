@@ -49,7 +49,9 @@ namespace PLC监控
 			this.btnAlarmClear.Click += new System.EventHandler(this.btnAlarmClear_Click);
 			this.gbStatus.Controls.Add(lblDpos); this.gbStatus.Controls.Add(lblMpos); this.gbStatus.Controls.Add(lblCurSpeed);
 			this.gbStatus.Controls.Add(lblAxisStatus); this.gbStatus.Controls.Add(lblIdle); this.gbStatus.Controls.Add(lblFe);
+			this.lblInitState = Label("初始化: 检测中...", PAD, 130, 395, 22, f10); this.lblInitState.ForeColor = System.Drawing.Color.Gray;
 			this.gbStatus.Controls.Add(btnServoOn); this.gbStatus.Controls.Add(btnServoOff); this.gbStatus.Controls.Add(btnAlarmClear);
+			this.gbStatus.Controls.Add(lblInitState);
 
 			// ====== 回零面板 ======
 			this.gbHome = new Sunny.UI.UIPanel() { FillColor = pc, RectColor = rc, Radius = R, Size = new System.Drawing.Size(445, 210), Location = new System.Drawing.Point(475, 115) };
@@ -70,6 +72,10 @@ namespace PLC监控
 			this.gbHome.Controls.Add(txtHomeSpeed); this.gbHome.Controls.Add(lblCreepLabel); this.gbHome.Controls.Add(txtCreep);
 			this.gbHome.Controls.Add(lblHomeOffset); this.gbHome.Controls.Add(txtHomeOffset);
 			this.gbHome.Controls.Add(btnHome); this.gbHome.Controls.Add(btnHomeStop);
+			this.cbHomeMode.Visible = false; this.lblHomeMode.Visible = false;
+			this.txtHomeSpeed.Visible = false; this.lblHomeSpeed.Visible = false;
+			this.txtCreep.Visible = false; this.lblCreepLabel.Visible = false;
+			this.txtHomeOffset.Visible = false; this.lblHomeOffset.Visible = false;
 
 			// ====== 轴参数面板 ======
 			this.gbParams = new Sunny.UI.UIPanel() { FillColor = pc, RectColor = rc, Radius = R, Size = new System.Drawing.Size(435, 218), Location = new System.Drawing.Point(20, 340) };
@@ -213,7 +219,7 @@ namespace PLC监控
 		Sunny.UI.UIComboBox Combo(int x, int y, int w) { return new Sunny.UI.UIComboBox() { Location = new System.Drawing.Point(x, y), Size = new System.Drawing.Size(w, 26), Radius = 10 }; }
 
 		private Sunny.UI.UIPanel gbConn, gbStatus, gbHome, gbParams, gbPhoto, gbMotion, gbSim, gbIO;
-		private Sunny.UI.UILabel lblStatus, lblDpos, lblMpos, lblCurSpeed, lblAxisStatus, lblIdle, lblFe;
+		private Sunny.UI.UILabel lblStatus, lblDpos, lblMpos, lblCurSpeed, lblAxisStatus, lblIdle, lblFe, lblInitState;
 		private Sunny.UI.UIButton btnConnect, btnDisconnect, btnServoOn, btnServoOff, btnAlarmClear;
 		private Sunny.UI.UITextBox txtIP;
 		private Sunny.UI.UILabel lblHomeMode, lblHomeSpeed, lblCreepLabel, lblHomeOffset;

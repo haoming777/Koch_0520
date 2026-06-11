@@ -39,7 +39,7 @@ namespace Stations
 	///   5. 结果绘制(分盒框, 虚线分区, OK/NG标签)
 	///   6. 图像保存(渲染图 + 原图)
 	/// </summary>
-/// <summary>	/// 背面工位处理器 — 左右图配对后3路并行推理	/// 检测项:	///   1. 条码识别: ZXing.Net + OpenCV预处理管线(对比度/直方图/高斯/中值/阈值/形态学)	///      逐盒ROI解码 → 与参考条码比对(完全匹配=OK, 不匹配=条码错, 未识别=条码缺少)	///   2. 日期码识别: 三步流水线(C1 ViMo分割→C2 ViMo分类重影→C3 ViMo OCR校验)	///      支持MFG/LOT/双排三种格式, 校验日期是否等于当天	///   3. 挂钩错位: YOLO检测(classId=1→明显暗红) + 分割厚度计算(classId=0→分割→DistanceTransform)	/// 汇总: 3路结果合并 → 逐盒status → OK/NG计数(按盒粒度) → 渲染+保存	/// </summary>
+	/// <summary>	/// 背面工位处理器 — 左右图配对后3路并行推理	/// 检测项:	///   1. 条码识别: ZXing.Net + OpenCV预处理管线(对比度/直方图/高斯/中值/阈值/形态学)	///      逐盒ROI解码 → 与参考条码比对(完全匹配=OK, 不匹配=条码错, 未识别=条码缺少)	///   2. 日期码识别: 三步流水线(C1 ViMo分割→C2 ViMo分类重影→C3 ViMo OCR校验)	///      支持MFG/LOT/双排三种格式, 校验日期是否等于当天	///   3. 挂钩错位: YOLO检测(classId=1→明显暗红) + 分割厚度计算(classId=0→分割→DistanceTransform)	/// 汇总: 3路结果合并 → 逐盒status → OK/NG计数(按盒粒度) → 渲染+保存	/// </summary>
 	public class BackStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -203,7 +203,7 @@ namespace Stations
 				int bc = 0, ho = 0, hs = 0, dc = 0;
 				if (barcodeDict != null) { var its = barcodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); bc = its.Count(d => !d.DefectType.StartsWith("条码:")); }
 				if (dateCodeDict != null) { var its = dateCodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); dc = its.Count(d => !d.DefectType.StartsWith("日期:") && !d.DefectType.StartsWith("双排:")); }
-				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType == "轻微挂钩错位"); }
+				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType.Contains("轻微挂钩错位")); }
 				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
 				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
 				foreach (var d in all)
@@ -271,12 +271,14 @@ namespace Stations
 		}
 
 		// ====== 条形码识别 (ZXing.Net, 逐盒ROI, 无图像预处理仅灰度) ======
-	/// <summary>条码识别: 逐盒ROI裁剪→ApplyBarcodePreprocess(对比度/直方图/高斯/中值/阈值/形态学)→ZXing解码→与参考条码比对</summary>
+		/// <summary>条码识别: 逐盒ROI裁剪→ApplyBarcodePreprocess(对比度/直方图/高斯/中值/阈值/形态学)→ZXing解码→与参考条码比对</summary>
 		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int hp)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			if (!EnableBarcodeCheck) { Logger.Debug("[Back] 条码检测已停用，跳过"); return r; }
 			string refBarcode = _sku?.BackBarcode;
+			// 去除参考条码首位0(防止识别/配置的首位0不匹配)
+			refBarcode = StripLeadingZero(refBarcode);
 			// 即使无参考条码也继续解码（仅显示识别结果，不做比对）
 			try
 			{
@@ -312,7 +314,7 @@ namespace Stations
 			return r;
 		}
 
-	/// <summary>单盒条码解码: 预处理管线→BarcodeReader.DecodeMultiple→多结果选优(参考条码匹配/编辑距离)→返回缺陷(条码:xxx/条码错:xxx/条码缺少)</summary>
+		/// <summary>单盒条码解码: 预处理管线→BarcodeReader.DecodeMultiple→多结果选优(参考条码匹配/编辑距离)→返回缺陷(条码:xxx/条码错:xxx/条码缺少)</summary>
 		private BoxDefect DecodeBarcodeZxing(Mat roi, string refBarcode, int ox, int oy, int fw, int fh, int boxIdx)
 		{
 			try
@@ -353,25 +355,24 @@ namespace Stations
 						return new BoxDefect(boxIdx, "条码缺少", defBox);
 					string bestText = null;
 					ResultPoint[] bestPts = null;
-					if (results.Length == 1) { bestText = results[0].Text; bestPts = results[0].ResultPoints; }
+					if (results.Length == 1) { bestText = StripLeadingZero(results[0].Text); bestPts = results[0].ResultPoints; }
 					else if (!string.IsNullOrEmpty(refBarcode))
 					{
-						if (results.Any(res => res.Text == refBarcode))
-						{ bestText = refBarcode; bestPts = results.First(res => res.Text == refBarcode).ResultPoints; }
+						if (results.Any(res => StripLeadingZero(res.Text) == refBarcode))
+						{ bestText = refBarcode; bestPts = results.First(res => StripLeadingZero(res.Text) == refBarcode).ResultPoints; }
 						else
 						{
 							int bestDist = int.MaxValue;
 							foreach (var res in results)
 							{
 								if (string.IsNullOrEmpty(res.Text)) continue;
-								int dist = LevenshteinDistance(res.Text, refBarcode);
-								if (dist < bestDist) { bestDist = dist; bestText = res.Text; bestPts = res.ResultPoints; }
+								int dist = LevenshteinDistance(StripLeadingZero(res.Text), refBarcode);
+								if (dist < bestDist) { bestDist = dist; bestText = StripLeadingZero(res.Text); bestPts = res.ResultPoints; }
 							}
 						}
 					}
-					else { bestText = results[0].Text; bestPts = results[0].ResultPoints; }
+					else { bestText = StripLeadingZero(results[0].Text); bestPts = results[0].ResultPoints; }
 
-					// 条码框直接覆盖整个搜索区域（每盒区完整宽度 × 下1/3高度），确保框大而可见
 					float[] normBox = defBox;
 
 					bool hasRef = !string.IsNullOrEmpty(refBarcode);
@@ -387,7 +388,7 @@ namespace Stations
 			catch (Exception ex) { Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message); float pad2 = roi.Width * 0.03f; return new BoxDefect(boxIdx, "条码缺少", new float[] { (float)(ox + pad2) / fw, (float)oy / fh, (float)(ox + roi.Width - pad2) / fw, (float)(oy + roi.Height) / fh }); }
 		}
 
-	/// <summary>条码OpenCV预处理管线: 1.对比度亮度调整 2.灰度化 3.直方图均衡 4.高斯/中值滤波 5.自适应/Otsu/固定阈值 6.反转 7.形态学(闭/开/膨胀/腐蚀)</summary>
+		/// <summary>条码OpenCV预处理管线: 1.对比度亮度调整 2.灰度化 3.直方图均衡 4.高斯/中值滤波 5.自适应/Otsu/固定阈值 6.反转 7.形态学(闭/开/膨胀/腐蚀)</summary>
 		private static Mat ApplyBarcodePreprocess(Mat src, Config.ModelParams p)
 		{
 			if (!p.BcEnablePreprocess) { var g2 = new Mat(); Cv2.CvtColor(src, g2, ColorConversionCodes.BGR2GRAY); return g2; }
@@ -412,6 +413,7 @@ namespace Stations
 		}
 
 		/// <summary>计算编辑距离(Levenshtein) — 用于条码模糊匹配, 在多个解码结果中选最优</summary>
+		/// <summary>去除条码首位0: 第一位是'0'则Substring(1)移除, 单字符判断O(1)无GC压力</summary>
 		private static int LevenshteinDistance(string a, string b)
 		{
 			if (string.IsNullOrEmpty(a)) return b == null ? 0 : b.Length;
@@ -424,6 +426,13 @@ namespace Stations
 				for (int j = 1; j <= lb; j++)
 					dp[i, j] = Math.Min(Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1), dp[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
 			return dp[la, lb];
+		}
+
+		/// <summary>去除条码首位0: 第一位是'0'则Substring(1)移除, 单字符判断O(1)无GC压力</summary>
+		private static string StripLeadingZero(string s)
+		{
+			if (!string.IsNullOrEmpty(s) && s[0] == '0') return s.Substring(1);
+			return s ?? "";
 		}
 
 		// ====== 日期码识别 (C1分割+C2分类+C3 OCR, 合并左右图后推理) ======
@@ -641,15 +650,27 @@ namespace Stations
 								{
 									var thick = CalcThickness(cropImg.Size(), inner, outer);
 									if (thick.Item1 > HookThicknessThreshold)
-										AddDefect(results, gi, "轻微挂钩错位",
-											new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) }, score);
+									{
+										// 圆心坐标: 裁剪区域内的局部坐标 + 裁剪原点 → 全局坐标 → 归一化
+										float circCxN = (float)(x1 + thick.Item2.X) / imgW;
+										float circCyN = (float)(y1 + thick.Item2.Y) / imgH;
+										float circRN = (float)(thick.Item1 / 2.0) / imgW;  // 半径归一化
+										var def = new BoxDefect(gi, $"轻微挂钩错位 {thick.Item1:F1}px",
+											new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) },
+											score);
+										def.CircleInfo = new float[] { circCxN, circCyN, circRN };
+										if (!results.ContainsKey(gi)) results[gi] = new List<BoxDefect>();
+										results[gi].Add(def);
+									}
+									else
+										Logger.Debug($"[Back] 盒{gi+1}厚度={thick.Item1:F1}px ≤ 阈值{HookThicknessThreshold:F0}, 未判NG");
 								}
 							}
 						}
 					}
 				}
 				int oc = results.Values.SelectMany(v => v).Count(d => d.DefectType == "挂钩明显错位");
-				int sc = results.Values.SelectMany(v => v).Count(d => d.DefectType == "轻微挂钩错位");
+				int sc = results.Values.SelectMany(v => v).Count(d => d.DefectType.Contains("轻微挂钩错位"));
 				Logger.Info("[Back] 挂钩结果: 明显=" + oc + " 轻微=" + sc);
 			}
 			catch (Exception ex) { Logger.Error("挂钩异常: " + ex.Message); }
@@ -722,14 +743,33 @@ namespace Stations
 					bool borderOnly = isBcOrDc || d.DefectType.Contains("缺少");
 					if (!borderOnly) using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
 					using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
-					bool isBarcode = d.DefectType.StartsWith("条码") || d.DefectType.Contains("条码");
+					// ★ 轻微挂钩错位: 绘制内切圆
+				if (d.DefectType.Contains("轻微挂钩错位") && d.CircleInfo != null && d.CircleInfo.Length >= 3)
+				{
+					int cxPx = (int)(d.CircleInfo[0] * w);
+					int cyPx = (int)(d.CircleInfo[1] * h);
+					int rPx = (int)(d.CircleInfo[2] * w);
+					using (var circlePen = new Pen(Color.Cyan, 3))
+						g.DrawEllipse(circlePen, cxPx - rPx, cyPx - rPx, rPx * 2, rPx * 2);
+					// 圆心十字标记
+					int cs = 8;
+					using (var crossPen = new Pen(Color.Cyan, 2))
+					{
+						g.DrawLine(crossPen, cxPx - cs, cyPx, cxPx + cs, cyPx);
+						g.DrawLine(crossPen, cxPx, cyPx - cs, cxPx, cyPx + cs);
+					}
+				}
+
+				bool isBarcode = d.DefectType.StartsWith("条码") || d.DefectType.Contains("条码");
 					int labelFont = isBarcode ? ((_barcodeParams != null && _barcodeParams.DrawFontBarcode > 0) ? _barcodeParams.DrawFontBarcode : 28)
 						: ((_barcodeParams != null && _barcodeParams.DrawFontDefect > 0) ? _barcodeParams.DrawFontDefect : 18);
 					using (var f = new Font("微软雅黑", labelFont, FontStyle.Bold))
 					{
 						string label = d.DefectType;
 						bool isDisplayOnly = label.StartsWith("条码:") || label.StartsWith("日期:") || label.StartsWith("双排:");
-						if (!isDisplayOnly && d.Score > 0 && d.Score < 1.0f)
+						bool isHook = label.Contains("挂钩");
+						// ★ 挂钩类缺陷不显示模型得分(日志中已有)
+						if (!isDisplayOnly && !isHook && d.Score > 0 && d.Score < 1.0f)
 							label = label + " " + d.Score.ToString("F2");
 						if (label.Length > 30) label = label.Substring(0, 30);
 						var sz = g.MeasureString(label, f);

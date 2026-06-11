@@ -65,7 +65,7 @@ namespace VisionMeasure
 		private EndFaceStationProcessor _endFaceStation;
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
-		private volatile bool _sideTriggerPending;
+		private long _sidePendingCount;  // ★ IN13↓排队计数器(Interlocked操作, 替代旧的bool)
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -79,6 +79,9 @@ namespace VisionMeasure
 
 		// ========== 产品ID计数器 ==========
 		private long _productIdCounter = 0;
+
+		// ========== BGR/RGB通道验证(仅首帧) ==========
+		private static bool _bgrVerifyDone = false;
 
 		// ========== 状态灯控件 ==========
 		private List<UILight> _frontStatusLights = new List<UILight>();
@@ -99,13 +102,14 @@ namespace VisionMeasure
 		private string _currentShift = "";
 		private DateTime _shiftStartTime;
 		private System.Timers.Timer _shiftCheckTimer;
+		private System.Windows.Forms.Timer _statusPollTimer;
 
 		// ========== 工具类 ==========
 		private bool _isClosing = false;
 		private Loading _loadingForm;
 
 		// ========== 公共成员（供其他窗体访问）==========
-		public IntPtr g_handle = IntPtr.Zero;
+		public IntPtr g_handle => _motionMgr?.Handle ?? IntPtr.Zero;
 		public HCModbusClass modbusClass = new HCModbusClass();
 
 		public DaHuaSDK camera1SDK, camera2SDK, camera3SDK, camera4SDK;
@@ -235,6 +239,10 @@ namespace VisionMeasure
 				// 启动班次检查
 				StartShiftCheckTimer();
 
+			_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 };
+			_statusPollTimer.Tick += StatusPollTick;
+			_statusPollTimer.Start();
+
 				// 刷新显示
 				RefreshCarouselDisplays();
 				// 验证数据是否正确加载
@@ -299,6 +307,8 @@ namespace VisionMeasure
 				_motionMgr.InitAxes();
 				var axisCfg = CommonLib.AxisParamConfig.Load();
 				_motionMgr.ApplyAxisParams(axisCfg);
+				cszmcaux.zmcaux.ZAux_Direct_SetInvertIn(_motionMgr.Handle, 8, 1);
+				_motionMgr.SetHardwareSafetyAlarm(0, 8);
 				Logger.Info("轴" + axisCfg.Axis + "参数已从本地加载并应用");
 				if (MotionState != null) MotionState.State = UILightState.On;
 				Logger.Info("运动控制卡初始化成功");
@@ -509,12 +519,32 @@ namespace VisionMeasure
 		/// 参数: cameraId = 被触发的相机ID(7或8)
 		/// 注意事项: 在MonitorLoop线程(Highest+CPU绑定)中执行, 耗时操作全部Task.Run异步
 		/// </summary>
+
+		private bool IsAxisInitialized()
+		{
+			try
+			{
+				if (_motionMgr == null || !_motionMgr.IsConnected) return false;
+				ushort[] mbArr = { 0 };
+				cszmcaux.zmcaux.ZAux_Modbus_Get4x(_motionMgr.Handle, 100, 1, mbArr);
+				return mbArr[0] == 1;
+			}
+			catch { return false; }
+		}
 		private void OnCameraTriggered(int cameraId)
 		{
 			// 侧面工位：
 				// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
-				if (cameraId == 7 && SideEnabled && _sideStation != null && _sideStation.MotionEnabled && _motionMgr != null && _motionMgr.IsConnected)
+				// ★ 注意: 侧面工位正在执行检测时(_sideStation.IsMoving=true)不干涉轴运动
+				//    因为StartMotion正在控制轴从起点→终点→起点，中途IN13↑是正常现象
+				if (cameraId == 7 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled && _motionMgr != null && _motionMgr.IsConnected)
 				{
+					// ★ 侧面工位正在检测中，不干涉运动控制
+					if (_sideStation.IsMoving)
+					{
+						// 不记录日志（正常现象，IN13上升沿是轴经过传感器位置时的正常信号）
+						return;
+					}
 					float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
 					float startPos = _sideStation.StartPosition;
 					if (Math.Abs(curPos - startPos) > 0.5f)
@@ -559,33 +589,42 @@ namespace VisionMeasure
 						});
 					}
 				}
-			// IN13下降沿(Camera8) → 启动检测（此时轴已在起点）
-			if (cameraId == 8 && SideEnabled && _sideStation != null && _sideStation.MotionEnabled)
+			// IN13下降沿(Camera8) → 启动检测
+			// ★ 使用计数器+轮询机制: 忙时排队pendingCount, 空闲时立即启动
+			//    避免中间IN13↓误触发取消当前批次
+			if (cameraId == 8 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled)
 			{
-				if (!_sideStation.IsMoving)
+				Logger.Info("[Side] IN13↓ 检测到工件");
+				long pending = Interlocked.Increment(ref _sidePendingCount);
+				if (pending == 1)  // 第一个pending → 检查是否可立即启动
 				{
-					Logger.Info("[Side] IN13↓ 检测到工件，启动侧面运动控制");
-					_sideTriggerPending = false;
-					Task.Factory.StartNew(() => _sideStation.StartDetection(), TaskCreationOptions.LongRunning);
-				}
-				else if (!_sideTriggerPending)
-				{
-					Logger.Info("[Side] IN13↓ 侧面正忙，标记待触发（当前周期结束后自动启动）");
-					_sideTriggerPending = true;
-					Task.Run(() =>
+					if (!_sideStation.IsMoving)
 					{
-						while (_sideTriggerPending && _sideStation != null)
+						Interlocked.Decrement(ref _sidePendingCount);
+						Logger.Info("[Side] 立即启动侧面运动控制");
+						_sideStation.StartDetection();
+					}
+					else
+					{
+						Logger.Info($"[Side] 侧面正忙(pending={pending})，排队等待...");
+						Task.Run(() =>
 						{
-							Thread.Sleep(10);
-							if (!_sideStation.IsMoving)
+							while (_sideStation != null)
 							{
-								Logger.Info("[Side] 待触发IN13↓ 上一批已完成，启动新的侧面运动控制");
-								_sideTriggerPending = false;
-								_sideStation.StartDetection();
-								break;
+								Thread.Sleep(10);
+								if (!_sideStation.IsMoving && Interlocked.Read(ref _sidePendingCount) > 0)
+								{
+									Interlocked.Decrement(ref _sidePendingCount);
+									Logger.Info($"[Side] 排队触发(pending剩余={Interlocked.Read(ref _sidePendingCount)})，启动新的侧面运动控制");
+									_sideStation.StartDetection();
+								}
 							}
-						}
-					});
+						});
+					}
+				}
+				else
+				{
+					Logger.Info($"[Side] IN13↓ 排队(pending={pending})");
 				}
 			}
 		}
@@ -691,7 +730,7 @@ namespace VisionMeasure
 			_sideStation.MotionEnabled = _detectionParams.Side.MotionEnabled;
 			_sideStation.EnableSideDefectCheck = _detectionParams.Side.EnableSideDefectCheck;
 			_sideStation.SafetyLockPort = _detectionParams.Side.SafetyLockPort;
-			_sideStation.SafetyLockActiveHigh = _detectionParams.Side.SafetyLockActiveHigh;
+			_sideStation.SafetyLockActiveHigh = false; // SetInvertIn(8,1)反转后强制=false
 			_sideStation.RecoveryMode = (SideStationProcessor.SafetyRecovery)_detectionParams.Side.SafetyLockRecovery;
 			Logger.Info($"侧面工位配置: Axis={_sideStation.SideAxis} Pos={_sideStation.StartPosition}~{_sideStation.EndPosition} FwdSpd={_sideStation.ForwardSpeed} RetSpd={_sideStation.ReturnSpeed} Acc={_sideStation.Accel}/{_sideStation.Decel} 限位IN{_sideStation.FwdInPort}/{_sideStation.RevInPort}/{_sideStation.DatumInPort} EdgeMode={_sideStation.EdgeMode} Pulse={_sideStation.TriggerPulseMs}ms 安全锁IN={(_sideStation.SafetyLockPort > 0 ? _sideStation.SafetyLockPort.ToString() : "禁用")} 恢复模式={(_sideStation.RecoveryMode == SideStationProcessor.SafetyRecovery.ReturnToStart ? "返回起始位" : "继续执行")}");
 
@@ -767,6 +806,35 @@ namespace VisionMeasure
 			try
 			{
 				if (_isClosing || bitmap == null) return;
+
+				// ★ 首帧BGR/RGB通道验证(仅执行一次)
+				if (!_bgrVerifyDone)
+				{
+					_bgrVerifyDone = true;
+					try
+					{
+						var bmpClr = bitmap.GetPixel(0, 0);
+						using (var mat = OpenCvSharp.Extensions.BitmapConverter.ToMat(bitmap))
+						{
+							var vec = mat.At<OpenCvSharp.Vec3b>(0, 0);
+							Logger.Info("========== BGR/RGB 通道验证 ==========");
+							Logger.Info($"[验证] Bitmap.GetPixel(0,0): B={bmpClr.B} G={bmpClr.G} R={bmpClr.R}");
+							Logger.Info($"[验证] Mat[0,0] 通道:    [0]={vec[0]} [1]={vec[1]} [2]={vec[2]}");
+							bool isBgr = (vec[0] == bmpClr.B && vec[1] == bmpClr.G && vec[2] == bmpClr.R);
+							bool isRgb = (vec[0] == bmpClr.R && vec[1] == bmpClr.G && vec[2] == bmpClr.B);
+							string result = isBgr ? "✓ Mat是BGR格式, swapRB:true正确" :
+											isRgb ? "✗ Mat是RGB格式! swapRB:true会导致R/B颠倒！请改swapRB:false" :
+											"? 通道不完全匹配，需人工判断";
+							Logger.Info($"[验证] 结论: {result}");
+							Logger.Info("========================================");
+						}
+					}
+					catch (Exception vex)
+					{
+						Logger.Error($"[验证] BGR检查异常: {vex.Message}");
+					}
+				}
+
 				long pid = Interlocked.Increment(ref _productIdCounter);
 				//				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[1]);
@@ -1651,7 +1719,7 @@ namespace VisionMeasure
 							_sideStation.MotionEnabled = _detectionParams.Side.MotionEnabled;
 							_sideStation.EnableSideDefectCheck = _detectionParams.Side.EnableSideDefectCheck;
 							_sideStation.SafetyLockPort = _detectionParams.Side.SafetyLockPort;
-							_sideStation.SafetyLockActiveHigh = _detectionParams.Side.SafetyLockActiveHigh;
+							_sideStation.SafetyLockActiveHigh = false; // SetInvertIn(8,1)反转后强制=false
 							_sideStation.RecoveryMode = (SideStationProcessor.SafetyRecovery)_detectionParams.Side.SafetyLockRecovery;
 						}
 						Logger.Info("所有工位ModelParams已重新加载，无需重启");
@@ -1768,16 +1836,41 @@ namespace VisionMeasure
 			Logger.Info($"当前班次: {_currentShift}");
 		}
 
-		/// <summary>检查班次是否切换: 比对_currentShift→切换时保存上一班数据→更新班次+起始时间</summary>
+		/// <summary>检查班次是否切换: 比对_currentShift→切换时保存上一班数据→清零所有计数器→更新班次+起始时间</summary>
 		private void CheckShiftChange()
 		{
 			string newShift = GetCurrentShift();
 			if (_currentShift != newShift)
 			{
-				Logger.Info($"班次切换: {_currentShift} -> {newShift}");
+				Logger.Info($"班次切换: {_currentShift} -> {newShift}，保存统计并清零计数器");
 				SaveCurrentShiftStatistics();
+
+				// ★ 清零4工位内部计数器
+				_frontStation?.ClearCounters();
+				_backStation?.ClearCounters();
+				_endFaceStation?.ClearCounters();
+				_sideStation?.ClearCounters();
+
+				// ★ 重置UI标签（定时器在线程池回调，需BeginInvoke回UI线程）
+				this.BeginInvoke(new Action(() =>
+				{
+					if (OK_zheng_Lb != null)   OK_zheng_Lb.Text = "0";
+					if (NG_zheng_Lb != null)   NG_zheng_Lb.Text = "0";
+					if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = "0%";
+					if (OK_fan_Lb != null)     OK_fan_Lb.Text = "0";
+					if (NG_fan_Lb != null)     NG_fan_Lb.Text = "0";
+					if (Yield_fan_Lb != null)   Yield_fan_Lb.Text = "0%";
+					if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = "0";
+					if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = "0";
+					if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = "0%";
+					if (OK_cemian_Lb != null)  OK_cemian_Lb.Text = "0";
+					if (NG_cemian_Lb != null)  NG_cemian_Lb.Text = "0";
+					if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = "0%";
+				}));
+
 				_currentShift = newShift;
 				_shiftStartTime = DateTime.Now;
+				Logger.Info($"新班次 {_currentShift} 计数器已清零");
 			}
 		}
 
@@ -1825,6 +1918,28 @@ namespace VisionMeasure
 		/// ★ 程序关闭流程(按依赖顺序释放所有资源)
 		/// SaveCounts→SaveShift→_sideTriggerPending=false→工位Dispose→触发管理器→8相机Close→硬件Disconnect→性能/保存器/计时器→AI→Logger
 		/// </summary>
+
+		private void StatusPollTick(object sender, EventArgs e)
+		{
+			try
+			{
+				if (_motionMgr == null || !_motionMgr.IsConnected) return;
+				var h = _motionMgr.Handle;
+				if (h == IntPtr.Zero) return;
+
+				ushort[] mbArr = { 0 };
+				cszmcaux.zmcaux.ZAux_Modbus_Get4x(h, 100, 1, mbArr);
+				float initVal = mbArr[0];
+				if (InitState != null)
+					InitState.State = (initVal == 1f) ? UILightState.On : UILightState.Off;
+
+				uint val = 0;
+				cszmcaux.zmcaux.ZAux_Direct_GetIn(h, 8, ref val);
+				if (SafetyDoorState != null)
+					SafetyDoorState.State = (val == 0) ? UILightState.On : UILightState.Off; // SetInvertIn后GetIn返回反转值
+			}
+			catch { }
+		}
 		private void MainFrm_FormClosing(object sender, FormClosingEventArgs e)
 		{
 			try
@@ -1835,7 +1950,7 @@ namespace VisionMeasure
 				SaveCounts();
 				SaveCurrentShiftStatistics();
 
-				_sideTriggerPending = false;	// 终止待触发轮询任务
+				Interlocked.Exchange(ref _sidePendingCount, 0);  // 清零排队计数
 				_frontStation?.Dispose();
 				_backStation?.Dispose();
 				_endFaceStation?.Dispose();
@@ -1848,6 +1963,7 @@ namespace VisionMeasure
 				_plcComm?.Disconnect();
 				_perfMonitor?.Dispose();
 				_imageSaver?.Dispose();
+			_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
 				_shiftCheckTimer?.Stop();
 				_shiftCheckTimer?.Dispose();
 				_aiModels?.Dispose();

@@ -18,6 +18,11 @@ namespace YoloInference
 	// ==========================================
 	// 0. 模型元数据映射类 (对接 meta.json)
 	// ==========================================
+	/// <summary>BlobFromImages swapRB验证(仅首次)</summary>
+	internal static class BlobVerify
+	{
+		public static bool Done;
+	}
 	public class YoloMetadata
 	{
 		[JsonProperty("dynamic_axes")]
@@ -317,6 +322,40 @@ namespace YoloInference
 			using (Mat blob = CvDnn.BlobFromImages(processedImgs, 1.0 / 255.0,
 				new Size(_inputW, _inputH), new Scalar(0, 0, 0), swapRB: true, crop: false))
 			{
+				// ★ BlobFromImages 通道验证(仅首次)
+				if (!BlobVerify.Done && processedImgs.Count > 0)
+				{
+					BlobVerify.Done = true;
+					try
+					{
+						var srcMat = processedImgs[0];
+						var srcVec = srcMat.At<Vec3b>(0, 0);
+						// blob格式: [batch=0, ch, y=0, x=0], At<float>按 NCHW 顺序索引
+						float ch0 = blob.At<float>(0, 0, 0, 0); // swapRB后应为R/255
+						float ch1 = blob.At<float>(0, 1, 0, 0); // G/255
+						float ch2 = blob.At<float>(0, 2, 0, 0); // swapRB后应为B/255
+						Logger.Info("======== BlobFromImages 通道验证 ========");
+						Logger.Info($"[验证] 输入Mat(0,0) BGR: B={srcVec[0]} G={srcVec[1]} R={srcVec[2]}");
+						Logger.Info($"[验证] Blob CHW(0,0) 归一化: ch0={ch0:F4} ch1={ch1:F4} ch2={ch2:F4}");
+						float rNorm = srcVec[2] / 255f, gNorm = srcVec[1] / 255f, bNorm = srcVec[0] / 255f;
+						bool ch0IsR = Math.Abs(ch0 - rNorm) < 0.01f;
+						bool ch1IsG = Math.Abs(ch1 - gNorm) < 0.01f;
+						bool ch2IsB = Math.Abs(ch2 - bNorm) < 0.01f;
+						bool ch0IsB = Math.Abs(ch0 - bNorm) < 0.01f;
+						bool ch2IsR = Math.Abs(ch2 - rNorm) < 0.01f;
+						string result = (ch0IsR && ch1IsG && ch2IsB) ? "✓ swapRB生效: BGR→RGB, ch0=R ch1=G ch2=B 正确" :
+										(ch0IsB && ch1IsG && ch2IsR) ? "✗ swapRB未生效! ch0=B ch2=R, 可能是swapRB:false" :
+										"? 通道不匹配, 请人工判断";
+						Logger.Info($"[验证] 期望(swapRB后): ch0=R/{rNorm:F4} ch1=G/{gNorm:F4} ch2=B/{bNorm:F4}");
+						Logger.Info($"[验证] 结论: {result}");
+						Logger.Info("==========================================");
+					}
+					catch (Exception vex)
+					{
+						Logger.Error($"[验证] Blob检查异常: {vex.Message}");
+					}
+				}
+
 				// Step 3: Marshal.Copy — 单次非托管→托管内存拷贝，无比C# for循环
 				int tensorSize = batchSize * 3 * _inputH * _inputW;
 				float[] tensorData = new float[tensorSize];

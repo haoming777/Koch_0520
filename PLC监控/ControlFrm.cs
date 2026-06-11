@@ -16,6 +16,7 @@ namespace PLC监控
 		private AxisParamConfig _axisCfg;
 		private IntPtr _handle = IntPtr.Zero;
 		private bool _connected;
+		private bool _sharedHandle;  // 与主程序共享连接(不允许多次连接/断开)
 		private bool _in12ManualMode, _in12Prev;
 		private Thread _in12Thread;
 		private bool _simRunning, _simLoop, _simLoopFlag;
@@ -25,11 +26,12 @@ namespace PLC监控
 		public static bool IsManualIn12Mode { get; private set; }
 
 		public ControlFrm() { InitializeComponent(); }
-		public ControlFrm(IntPtr handle) { InitializeComponent(); _handle = handle; _connected = handle != IntPtr.Zero; }
+		public ControlFrm(IntPtr handle) { InitializeComponent(); _handle = handle; _sharedHandle = true; _connected = handle != IntPtr.Zero; }
 
 		private void ControlFrm_Load(object sender, EventArgs e)
 		{
 			_axisCfg = AxisParamConfig.Load();
+			_axisCfg.SafetyLockActiveHigh = false;  // SetInvertIn(8,1)反转后GetIn读0才是关门
 			PopulateUIFromConfig();
 			UpdateConnUI();
 
@@ -58,7 +60,7 @@ namespace PLC监控
 
 		void OnUiTick(object sender, EventArgs e)
 		{
-			if (!_connected) return;
+			if (!_connected) { if (lblInitState != null) { lblInitState.Text = "初始化: 未连接"; lblInitState.ForeColor = System.Drawing.Color.Gray; } return; }
 			int a = cbAxis.SelectedIndex >= 0 ? cbAxis.SelectedIndex : 0;
 
 			float dpos = 0, mpos = 0, spd = 0, fe = 0;
@@ -71,10 +73,27 @@ namespace PLC监控
 			ZAux_Direct_GetAxisStatus(_handle, a, ref axisSts);
 			ZAux_Direct_GetAxisEnable(_handle, a, ref enable);
 
+			// 初始化状态: 读ZMC用户变量(断电重置, 软件重启保留)
+			if (lblInitState != null)
+			{
+				float initFlag = 0;
+				try { ushort[] mbArr = { 0 }; ZAux_Modbus_Get4x(_handle, 100, 1, mbArr); initFlag = mbArr[0]; Logger.Debug($"初始化标志 MODBUS[100]={initFlag}"); } catch { Logger.Debug("读取MODBUS[100]失败"); }
+				if (initFlag == 1)
+				{
+					lblInitState.Text = "初始化: ● 已完成(绿灯)";
+					lblInitState.ForeColor = System.Drawing.Color.LimeGreen;
+				}
+				else
+				{
+					lblInitState.Text = "初始化: ● 未完成(红灯) — 请执行回零";
+					lblInitState.ForeColor = System.Drawing.Color.Red;
+				}
+			}
+
 			lblDpos.Text = "DPOS: " + dpos.ToString("F3");
 			lblMpos.Text = "MPOS: " + mpos.ToString("F3");
 			lblCurSpeed.Text = "速度: " + spd.ToString("F2");
-			lblAxisStatus.Text = "轴状态: 0x" + axisSts.ToString("X4") + (enable == 1 ? " [使能]" : " [未使能]");
+			lblAxisStatus.Text = "轴状态: 0x" + axisSts.ToString("X4") + (enable == 1 ? " [使能]" : " [未使能]") + ((axisSts & 1) != 0 ? " [ALM告警!]" : "");
 			lblIdle.Text = "运动: " + (idle == -1 ? "空闲" : "运行中");
 			lblFe.Text = "跟随误差: " + fe.ToString("F3") + "  正限:-- 负限:--";
 			// 读限位状态
@@ -102,44 +121,8 @@ namespace PLC监控
 		}
 
 		// ====== 连接 ======
-		private void btnConnect_Click(object sender, EventArgs e)
-		{
-			try
-			{
-				int ret = ZAux_FastOpen(2, txtIP.Text.Trim(), 1000, out _handle);
-				if (ret == 0)
-				{
-					_connected = true; UpdateConnUI();
-					SaveParamsFromUI(); _axisCfg.Save();
-					_axisCfg = AxisParamConfig.Load();
-					PopulateUIFromConfig();
-					ApplyAll();
-
-					// 检查当前位置是否在起始位置
-					int a = _axisCfg.Axis;
-					float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
-					float startPos = _axisCfg.StartPos;
-					if (Math.Abs(dpos - startPos) > 0.5f)
-					{
-						var dr = MessageBox.Show("轴" + a + " 当前位置 " + dpos.ToString("F2") + "，不在起始位置 " + startPos.ToString("F2") + "\n\n是否自动返回起始位置？", "位置检查", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-						if (dr == DialogResult.Yes)
-						{
-							if (CheckAndWaitSafety()) { SetMotionParams(a, _axisCfg.RetSpeed); ZAux_Direct_Single_MoveAbs(_handle, a, startPos); }
-							UIMessageTip.ShowOk(this, "正在返回起始位置 " + startPos.ToString("F2"));
-						}
-					}
-					UIMessageTip.ShowOk(this, "连接成功");
-				}
-				else UIMessageTip.ShowError(this, "连接失败: 错误码" + ret);
-			}
-			catch (Exception ex) { UIMessageTip.ShowError(this, ex.Message); }
-		}
-
-		private void btnDisconnect_Click(object sender, EventArgs e)
-		{
-			if (_handle != IntPtr.Zero) { ZAux_Close(_handle); _handle = IntPtr.Zero; }
-			_connected = false; UpdateConnUI();
-		}
+		private void btnConnect_Click(object sender, EventArgs e) { if (_sharedHandle) { UIMessageTip.ShowWarning(this, "已共享主程序连接, 无需重复连接"); return; } }
+		private void btnDisconnect_Click(object sender, EventArgs e) { if (_sharedHandle) { UIMessageTip.ShowWarning(this, "共享主程序连接, 无法在此断开"); return; } }
 
 		// ====== 轴状态按钮 ======
 		private void btnServoOn_Click(object sender, EventArgs e)
@@ -160,37 +143,210 @@ namespace PLC监控
 			Logger.Info($"轴{a} 伺服OFF, ret={ret}");
 		}
 
-		private void btnAlarmClear_Click(object sender, EventArgs e)
+		/// <summary>
+	/// 报警清除: 1.清AXISSTATUS 2.清ALM 3.延时 4.重新使能 5.确认
+	/// </summary>
+	private void btnAlarmClear_Click(object sender, EventArgs e)
 		{
 			if (!_connected) return;
-			int a = SelAxis();
+			int a = 0;
+			// 1. 读取清除前状态
+			int stsBefore = 0;
+			ZAux_Direct_GetAxisStatus(_handle, a, ref stsBefore);
+			Logger.Info($"[报警清除] 清除前状态=0x{stsBefore:X4} ALM={(stsBefore & 1) != 0}");
+
+			// 2. 取消运动 + 关闭使能
+			ZAux_Direct_Single_Cancel(_handle, a, 0);
+			ZAux_Direct_SetAxisEnable(_handle, a, 0);
+			Thread.Sleep(50);
+
+			// 2. 清除轴状态寄存器
 			var sb = new StringBuilder(256);
 			int ret1 = ZAux_DirectCommand(_handle, "AXISSTATUS(" + a + ")=0", sb, 256);
-			Thread.Sleep(50);
+			int retRls = ZAux_DirectCommand(_handle, "RELEASE(" + a + ")", sb, 256);
+			Logger.Info($"[报警清除] AXISSTATUS=0 ret={ret1}, RELEASE ret={retRls}");
+
+
+			// 3. 重新使能
+			Thread.Sleep(100);
+			// 3. 重新使能
+			int ret2 = ZAux_Direct_SetAxisEnable(_handle, a, 1);
+			Logger.Info($"[报警清除] SetAxisEnable ret={ret2}");
+
+			// 5. DPOS对齐MPOS
 			float mpos = 0; ZAux_Direct_GetMpos(_handle, a, ref mpos);
-			int ret2 = ZAux_Direct_SetDpos(_handle, a, mpos);
-			Logger.Info($"轴{a} 报警清除: Cmd ret={ret1}, DPOS=MPOS={mpos} ret={ret2}");
-			UIMessageTip.ShowOk(this, ret1 == 0 ? "报警清除 已发送" : "报警清除失败:" + ret1);
+			int ret3 = ZAux_Direct_SetDpos(_handle, a, mpos);
+
+			// 6. 确认清除结果
+			int stsAfter = 0;
+			ZAux_Direct_GetAxisStatus(_handle, a, ref stsAfter);
+			bool almCleared = (stsAfter & 1) == 0;
+			Logger.Info($"[报警清除] 清除后状态=0x{stsAfter:X4} ALM={(stsAfter & 1) != 0} 清除{(almCleared ? "成功" : "失败")}");
+
+			UIMessageTip.ShowOk(this, almCleared ? $"报警已清除 状态=0x{stsAfter:X4}" : $"报警未清除! 状态=0x{stsAfter:X4}, 请检查硬件");
 		}
 
 		// ====== 回零 ======
+		/// <summary>
+		/// 轴初始化回零 — 固定模式14, 爬行速度1
+		/// 总线轴(ATYPE=65)用 ZAux_BusCmd_Datum, 普通轴用 ZAux_Direct_Single_Datum
+		/// 回零前严格确认: 正限=14/负限=15/原点=16 与期望值完全一致
+		/// 成功后写 ZMC 变量 Axis_Init_Flag=1 (断电重置, 软件重启保留)
+		/// </summary>
 		private void btnHome_Click(object sender, EventArgs e)
 		{
-			if (!_connected) return;
-			int a = SelAxis();
-			int mode = cbHomeMode.SelectedIndex;
-			float.TryParse(txtHomeSpeed.Text, out float hiSpd);
-			float.TryParse(txtCreep.Text, out float creep);
-			float.TryParse(txtHomeOffset.Text, out float offset);
-			ZAux_Direct_SetSpeed(_handle, a, hiSpd > 0 ? hiSpd : 20f);
-			ZAux_Direct_SetCreep(_handle, a, creep > 0 ? creep : 10f);
-			int ret;
-			if (Math.Abs(offset) > 0.001f)
-				ret = ZAux_Direct_UserDatum(_handle, a, mode, hiSpd, creep, offset);
-			else
-				ret = ZAux_Direct_Single_Datum(_handle, a, mode);
-			Logger.Info($"轴{a} 回零 模式{mode} 高速{hiSpd} 爬行{creep} 偏移{offset}, ret={ret}");
-			UIMessageTip.ShowOk(this, ret == 0 ? "回零已启动" : "回零失败:" + ret);
+			Logger.Info($"[回零-按钮] 被点击 connected={_connected} handle={_handle}");
+			if (!_connected || _handle == IntPtr.Zero) { Logger.Warning($"[回零-按钮] 拒绝: connected={_connected} handle={_handle}"); return; }
+			int a = 0;
+
+			// ★ 在后台线程执行，不阻塞UI
+			Task.Run(() =>
+			{
+			const int EXPECT_FWD = 14, EXPECT_REV = 15, EXPECT_DATUM = 16;
+
+			Logger.Info($"========== 轴{a} 开始初始化回零 ==========");
+
+			// 0. 打开调试界面时禁用侧面工位
+			AxisParamConfig.SideEnabledOverride = false;
+			Logger.Info("[回零] 临时禁用侧面工位(初始化期间禁止轴运动)");
+
+			// 1. 读取当前限位IO配置
+			int fwdIn = 0, revIn = 0, datumIn = 0;
+			int retFwd = ZAux_Direct_GetFwdIn(_handle, a, ref fwdIn);
+			int retRev = ZAux_Direct_GetRevIn(_handle, a, ref revIn);
+			int retDat = ZAux_Direct_GetDatumIn(_handle, a, ref datumIn);
+			Logger.Info($"[回零-步骤1] 读取限位: FwdIn={fwdIn}(ret={retFwd}) RevIn={revIn}(ret={retRev}) DatumIn={datumIn}(ret={retDat}) 期望={EXPECT_FWD}/{EXPECT_REV}/{EXPECT_DATUM}");
+
+			bool limitsOk = (fwdIn == EXPECT_FWD) && (revIn == EXPECT_REV) && (datumIn == EXPECT_DATUM);
+			if (!limitsOk)
+			{
+				string msg = $"限位不一致! FwdIn={fwdIn}(期望{EXPECT_FWD}) RevIn={revIn}(期望{EXPECT_REV}) DatumIn={datumIn}(期望{EXPECT_DATUM})\n请先点击[参数下发]设置限位后再回零";
+				UIMessageTip.ShowError(this, msg);
+				Logger.Warning($"[回零-中止] 轴{a} 限位不匹配");
+				return;
+			}
+			Logger.Info($"[回零-步骤1] 限位检查通过 ✓");
+
+			// 2. 使能检查
+			if (!CheckAxisEnable()) { Logger.Warning($"[回零-中止] 轴{a} 伺服未使能"); return; }
+			Logger.Info($"[回零-步骤2] 使能检查通过 ✓");
+
+			// 3. 安全锁检查
+			if (!CheckAndWaitSafety())
+			{
+				UIMessageTip.ShowError(this, "安全锁未释放或连接断开, 初始化中止");
+				Logger.Warning($"[回零-中止] 轴{a} 安全锁未释放");
+				return;
+			}
+			Logger.Info($"[回零-步骤3] 安全锁检查通过 ✓");
+
+			// 4. 读取当前轴状态(调试用)
+			float dposB4 = 0, mposB4 = 0;
+			int idleB4 = 0, enableB4 = 0;
+			ZAux_Direct_GetDpos(_handle, a, ref dposB4);
+			ZAux_Direct_GetMpos(_handle, a, ref mposB4);
+			ZAux_Direct_GetIfIdle(_handle, a, ref idleB4);
+			ZAux_Direct_GetAxisEnable(_handle, a, ref enableB4);
+
+			// 3.5 检查轴是否处于ALM告警状态
+			int almSts = 0;
+			ZAux_Direct_GetAxisStatus(_handle, a, ref almSts);
+			bool isAlm = (almSts & 1) != 0;
+			if (isAlm)
+			{
+				Logger.Error($"[回零-中止] 轴{a} 处于ALM告警状态(0x{almSts:X4}), 请先点击[报警清除]");
+				UIMessageTip.ShowError(this, $"轴处于ALM告警状态! 请先点击[报警清除]按钮");
+				return;
+			}
+			Logger.Info($"[回零-步骤4] 回零前状态: DPOS={dposB4:F2} MPOS={mposB4:F2} Idle={idleB4} Enable={enableB4}");
+
+			// 5. 重置初始化标志(开始前先清零, 防止上次异常残留)
+			ushort[] mb0 = { 0 }; ZAux_Modbus_Set4x(_handle, 100, 1, mb0); Logger.Info($"[回零-步骤5] 重置 MODBUS[100]=0 (开始初始化)");
+
+			// 6. 设置回零参数(速度固定30, 爬行固定1)
+			// 写死初始化参数(匹配AxisParams.json)
+			ZAux_Direct_SetAtype(_handle, a, 65);
+			ZAux_Direct_SetUnits(_handle, a, 13107.2f);
+			ZAux_Direct_SetSpeed(_handle, a, 40f);
+			ZAux_Direct_SetAccel(_handle, a, 1000f);
+			ZAux_Direct_SetDecel(_handle, a, 1000f);
+			ZAux_Direct_SetLspeed(_handle, a, 10f);
+			ZAux_Direct_SetSramp(_handle, a, 0f);
+			float creep = 1f;
+			int retCreep = ZAux_Direct_SetCreep(_handle, a, creep);
+			int mode = 14;
+			Logger.Info($"[回零-步骤6] 设置参数: mode={mode} creep={creep} SetCreep ret={retCreep}");
+
+			// 7. 执行回零
+			int retDatum = (int)ZAux_Direct_Single_Datum(_handle, a, mode);
+			Logger.Info($"[回零-步骤7] ZAux_Direct_Single_Datum(handle,{a},{mode}) ret={retDatum}");
+
+			if (retDatum != 0)
+			{
+				Logger.Error($"[回零-失败] ZAux_Direct_Single_Datum ret={retDatum}");
+				UIMessageTip.ShowError(this, $"轴{a} 回零失败 ret={retDatum}");
+				return;
+			}
+
+			// 8. 轮询等待回零完成(最多30秒)
+			Logger.Info($"[回零-步骤8] 等待回零完成...");
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+			bool homeOk = false;
+			while (sw.ElapsedMilliseconds < 30000)
+			{
+				int idle = 0, sts = 0;
+				ZAux_Direct_GetIfIdle(_handle, a, ref idle);
+				ZAux_Direct_GetAxisStatus(_handle, a, ref sts);
+				bool homeAlm = (sts & 1) != 0;
+				if (homeAlm)
+				{
+					Logger.Error($"[回零-步骤8] 回零中检测到ALM(0x{sts:X4}), 中止!");
+					UIMessageTip.ShowError(this, $"轴{a} 回零过程中ALM告警! 请先清除报警后重试");
+					return;
+				}
+				if (idle == -1) { homeOk = true; break; }
+				Thread.Sleep(100);
+			}
+
+			if (!homeOk)
+			{
+				Logger.Error($"[回零-步骤8] 回零超时(30s)");
+				UIMessageTip.ShowError(this, $"轴{a} 回零超时, 请检查轴状态");
+				return;
+			}
+			Logger.Info($"[回零-步骤8] 回零完成 ✓ 耗时={sw.ElapsedMilliseconds}ms");
+
+			// 9. 清零MPOS/DPOS
+			int mposRet = ZAux_Direct_SetMpos(_handle, a, 0f);
+			int dposRet = ZAux_Direct_SetDpos(_handle, a, 0f);
+			Logger.Info($"[回零-步骤9] SetMpos(0) ret={mposRet}, SetDpos(0) ret={dposRet}");
+
+			// 10. 写入初始化完成标志
+			int setRet = (int)ZAux_Modbus_Set4x(_handle, 100, 1, new ushort[] { 1 });
+			Thread.Sleep(100); // 等待TABLE写入生效
+			Logger.Info($"[回零-步骤10] SetTable(10000)=1 ret={setRet}");
+
+			// 11. 回读验证
+			float tblVal = -1; try { ushort[] mbVrf = { 0 }; ZAux_Modbus_Get4x(_handle, 100, 1, mbVrf); tblVal = mbVrf[0]; } catch { }
+			float dposAfter = 0, mposAfter = 0;
+			ZAux_Direct_GetDpos(_handle, a, ref dposAfter);
+			ZAux_Direct_GetMpos(_handle, a, ref mposAfter);
+			Logger.Info($"[回零-步骤11] 验证: MODBUS[100]={tblVal} DPOS={dposAfter:F2} MPOS={mposAfter:F2}");
+
+			Logger.Info($"========== 轴{a} 初始化完成 ==========");
+			UIMessageTip.ShowOk(this, $"轴{a} 初始化完成 (MODBUS[100]={tblVal})");
+
+			// 检查侧面工位是否被禁用, 提示恢复
+			if (!AxisParamConfig.SideEnabledOverride)
+			{
+				var dr = MessageBox.Show("轴初始化完成! 是否恢复侧面工位并退出调试界面?", "初始化完成", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+				if (dr == DialogResult.Yes)
+				{
+					AxisParamConfig.SideEnabledOverride = true; this.BeginInvoke(new Action(() => this.Close()));
+					Logger.Info("用户选择启用侧面工位并退出调试界面");
+				}
+			}
+			});
 		}
 
 		private void btnHomeStop_Click(object sender, EventArgs e)
@@ -283,8 +439,8 @@ namespace PLC监控
 		// ====== 运动控制 ======
 		int SelAxis() => cbAxis.SelectedIndex >= 0 ? cbAxis.SelectedIndex : 0;
 
-		private void btnMoveAbs_Click(object sender, EventArgs e) { if (!_connected || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); Task.Run(() => { int a = SelAxis(); ZAux_Direct_Single_MoveAbs(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
-		private void btnMoveRel_Click(object sender, EventArgs e) { if (!_connected || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); int a = SelAxis(); Task.Run(() => { ZAux_Direct_Single_Move(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
+		private void btnMoveAbs_Click(object sender, EventArgs e) { if (!_connected || !CheckAxisEnable() || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); Task.Run(() => { int a = SelAxis(); SetMotionParams(a, _axisCfg.Speed); ZAux_Direct_Single_MoveAbs(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
+		private void btnMoveRel_Click(object sender, EventArgs e) { if (!_connected || !CheckAxisEnable() || !CheckAndWaitSafety()) return; float.TryParse(txtTargetPos.Text, out float t); int a = SelAxis(); Task.Run(() => { SetMotionParams(a, _axisCfg.Speed); ZAux_Direct_Single_Move(_handle, a, t); MonitorSafetyDuringMove(a, _axisCfg.StartPos); }); }
 		private void btnStop_Click(object sender, EventArgs e) { if (!_connected) return; ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); }
 
 		private void btnJogN_MouseDown(object sender, MouseEventArgs e) { JogStart(-1, false); }
@@ -293,7 +449,22 @@ namespace PLC监控
 		private void btnJogFastP_MouseDown(object sender, MouseEventArgs e) { JogStart(1, true); }
 		private void btnJog_MouseUp(object sender, MouseEventArgs e) { if (!_connected) return; ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); }
 
-		void JogStart(int dir, bool fast) { if (!_connected || !CheckAndWaitSafety()) return; int a = SelAxis(); float spd = fast ? _axisCfg.Speed : (_axisCfg.Speed * 0.2f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
+
+		/// <summary>检查轴使能状态, 未使能则提示并阻止运动</summary>
+		private bool CheckAxisEnable()
+		{
+			if (!_connected) return false;
+			int a = 0;  // 固定轴0
+			int enable = 0;
+			ZAux_Direct_GetAxisEnable(_handle, a, ref enable);
+			if (enable != 1)
+			{
+				UIMessageTip.ShowError(this, "轴0 未使能(伺服OFF), 请先点击[伺服ON]");
+				return false;
+			}
+			return true;
+		}
+		void JogStart(int dir, bool fast) { if (!_connected || !CheckAxisEnable() || !CheckAndWaitSafety()) return; int a = SelAxis(); float spd = fast ? Math.Min(_axisCfg.Speed, 100f) : Math.Min(_axisCfg.Speed * 0.2f, 20f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
 
 
 		// ====== 安全锁 ======
@@ -348,7 +519,7 @@ namespace PLC监控
 				{
 					stopped = false;
 					float dpos = 0; ZAux_Direct_GetDpos(_handle, axis, ref dpos);
-					if (returnToStart) { SimUI($"安全锁恢复→回起点({startPos:F1})"); ZAux_Direct_Single_MoveAbs(_handle, axis, startPos); }
+					if (returnToStart) { SimUI($"安全锁恢复→回起点({startPos:F1})"); SafeMoveAbs(axis, startPos, 50f); }
 					else { SimUI($"安全锁恢复→继续(当前位置{dpos:F1})"); }
 				}
 				if (CheckAxisStopped(axis)) return true;
@@ -375,13 +546,16 @@ namespace PLC监控
 		private void ControlFrm_Closing(object sender, FormClosingEventArgs e)
 		{
 			_simRunning = false; _in12ManualMode = false; IsManualIn12Mode = false;
-			if (_connected && _handle != IntPtr.Zero)
+			// 共享连接不关闭(主程序还在用)
+			if (!_sharedHandle && _connected && _handle != IntPtr.Zero)
 			{
 				try { ZAux_Direct_Single_Cancel(_handle, SelAxis(), 2); } catch { }
 				Thread.Sleep(20);
 				try { ZAux_Close(_handle); } catch { }
 				_handle = IntPtr.Zero;
 			}
+			if (_sharedHandle) { _connected = false; _handle = IntPtr.Zero; } // 仅清理引用
+				AxisParamConfig.SideEnabledOverride = true;
 			_uiTimer?.Stop();
 		}
 
@@ -453,7 +627,7 @@ namespace PLC监控
 			SimUI("回起点(" + retSpd + "mm/s) → " + startPos.ToString("F1"));
 			if (!CheckAndWaitSafety()) { SimUI("安全锁-连接断开"); _simRunning = false; EnableSimBtn(); return; }
 			SetMotionParams(a, retSpd);
-			ZAux_Direct_Single_MoveAbs(_handle, a, startPos);
+			SafeMoveAbs(a, startPos, retSpd);
 			if (!WaitArriveNoPhoto(a, startPos, 120, startPos)) { SimUI("超时: 未到达起点"); _simRunning = false; EnableSimBtn(); return; }
 
 			do
@@ -463,7 +637,7 @@ namespace PLC监控
 				SimUI("前进(" + fwdSpd + "mm/s) → " + endPos.ToString("F1") + "  总计:" + totalPhoto);
 				if (!CheckAndWaitSafety()) { SimUI("安全锁-中止"); break; }
 				SetMotionParams(a, fwdSpd);
-				ZAux_Direct_Single_MoveAbs(_handle, a, endPos);
+				SafeMoveAbs(a, endPos, fwdSpd);
 				bool prevIn12 = false;
 				float prevDpos = startPos;
 				while (_simRunning)
@@ -473,8 +647,8 @@ namespace PLC监控
 					{
 						ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 前进暂停");
 						if (!WaitForSafetyRestore()) break;
-						if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); ZAux_Direct_Single_MoveAbs(_handle, a, startPos); break; }
-						SimUI("安全锁恢复→继续前进"); ZAux_Direct_Single_MoveAbs(_handle, a, endPos);
+						if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); SafeMoveAbs(a, startPos, retSpd); break; }
+						SimUI("安全锁恢复→继续前进"); SafeMoveAbs(a, endPos, fwdSpd);
 					}
 					float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
 					bool arrived = fwd ? (dpos >= endPos - 0.1f) : (dpos <= endPos + 0.1f);
@@ -511,7 +685,7 @@ namespace PLC监控
 				SimUI("返回起点(" + retSpd + "mm/s) → " + startPos.ToString("F1"));
 				if (!CheckAndWaitSafety()) { SimUI("安全锁-中止返回"); if (loopMode) continue; else break; }
 				SetMotionParams(a, retSpd);
-				ZAux_Direct_Single_MoveAbs(_handle, a, startPos);
+				SafeMoveAbs(a, startPos, retSpd);
 				if (!WaitArriveNoPhoto(a, startPos, 120, startPos)) { if (!_simRunning) break; SimUI("超时: 未回到起点"); break; }
 				if (!_simRunning) break;
 				SimUI("已回到起点  总计:" + totalPhoto + " ↑" + cntRise + "↓" + cntFall);
@@ -538,7 +712,7 @@ namespace PLC监控
 			{
 				if (!_simRunning) return false;
 				// 安全锁检查：不安全→急停→等待→恢复
-				if (!PollSafety()) { ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 暂停"); if (!WaitForSafetyRestore()) return false; if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); ZAux_Direct_Single_MoveAbs(_handle, a, startRefPos); return false; } SimUI("安全锁恢复→继续"); ZAux_Direct_Single_MoveAbs(_handle, a, target); i = 0; continue; }
+				if (!PollSafety()) { ZAux_Direct_Single_Cancel(_handle, a, 0); SimUI("安全锁! 暂停"); if (!WaitForSafetyRestore()) return false; if (_axisCfg.SafetyLockRecovery == 1) { SimUI("安全锁恢复→回起点"); SafeMoveAbs(a, startRefPos, 100f); return false; } SimUI("安全锁恢复→继续"); SafeMoveAbs(a, target, 100f); i = 0; continue; }
 				float dpos = 0; ZAux_Direct_GetDpos(_handle, a, ref dpos);
 				if (Math.Abs(dpos - target) < tol) return true;
 				Thread.Sleep(5);
@@ -560,6 +734,14 @@ namespace PLC监控
 
 		void SimUI(string msg) { this.BeginInvoke(new Action(() => lblSimStatus.Text = msg)); }
 		void EnableSimBtn() { this.BeginInvoke(new Action(() => { btnSimRun.Enabled = true; btnSimStop.Enabled = false; })); }
+
+		/// <summary>安全运动: 先设速度再MoveAbs, 防止速度残留导致窜出限位</summary>
+		void SafeMoveAbs(int a, float pos, float spd)
+		{
+			ZAux_Direct_SetSpeed(_handle, a, spd);
+			Thread.Sleep(5);
+			ZAux_Direct_Single_MoveAbs(_handle, a, pos);
+		}
 		void SetMotionParams(int a, float spd)
 		{
 			// 运动时只改速度，其他参数(限位/加减速/S曲线/最高速)在ApplyAll已设好

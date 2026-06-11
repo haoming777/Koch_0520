@@ -326,7 +326,8 @@ namespace CommonLib
 			if (g_handle == (IntPtr)0)
 				return;
 
-			if (postion == GetLocation(g_handle, 0))
+			// ★ Bug修复: 原代码硬编码 GetLocation(g_handle, 0) 只查轴0, 现改为参数axis
+			if (postion == GetLocation(g_handle, axis))
 				return;
 
 			int res = -1;

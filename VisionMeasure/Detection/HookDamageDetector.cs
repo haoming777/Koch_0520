@@ -157,7 +157,7 @@ namespace Detection
 
 									if (maxWidth > thicknessThreshold)
 									{
-										hookStatus[globalIndex] = "轻微挂钩错位";
+										hookStatus[globalIndex] = $"轻微挂钩错位 {maxWidth:F1}px";
 
 										double globalCenterX = localCenterPt.X + x1;
 										double globalCenterY = localCenterPt.Y + y1;

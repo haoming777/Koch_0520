@@ -85,6 +85,7 @@ namespace VisionMeasure.From
 						break;
 
 					case "手动调试":
+						if (MainFrm.SideEnabled) { if (MessageBox.Show("打开调试界面将暂停侧面工位检测, 确定继续吗?", "提示", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) break; }
 						var controlFrm = new PLC监控.ControlFrm(_mainFrm.GetMotionHandle());
 						controlFrm.ShowDialog();
 						break;
