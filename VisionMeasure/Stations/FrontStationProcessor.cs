@@ -177,7 +177,7 @@ namespace VisionMeasure.Stations
 				// 步骤1: 并行推理
 				var sw1 = System.Diagnostics.Stopwatch.StartNew();
 				var pNumberTask = Task.Run(() => RecognizePNumber(leftProc, rightProc, pCount, halfP));
-				var damageTask = Task.Run(() => DetectBoxDamage(leftProc, rightProc, halfP));
+				var damageTask = Task.Run(() => DetectBoxDamage(leftProc, rightProc));
 				await Task.WhenAll(pNumberTask, damageTask);
 				var pNumberResults = pNumberTask.Result;
 				var damageResults = damageTask.Result;
@@ -331,17 +331,83 @@ namespace VisionMeasure.Stations
 			dict[idx].Add(new BoxDefect(idx, type, box));
 		}
 
-		/// <summary>盒子破损检测: YOLO Predict(左右图各一次)→ProcessYoloResults(BoxesN归一化坐标→按centerX分配到盒索引)→返回缺陷(盒子破损+Score)</summary>
-		private Dictionary<int, List<BoxDefect>> DetectBoxDamage(Mat left, Mat right, int halfP)
+		/// <summary>盒子破损检测: 按SKU.P切分左右图为子图→左右各自PredictBatch批量推理→子图索引=盒索引→返回缺陷(盒子破损+Score)</summary>
+		private Dictionary<int, List<BoxDefect>> DetectBoxDamage(Mat left, Mat right)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
 			if (!EnableBoxBreakCheck || _models.FrontBoxBreakModel == null) return results;
+
+			int pCount = _currentSku?.P ?? 8;
+			int halfP = pCount / 2;
+
 			try
 			{
-				var lr = _models.FrontBoxBreakModel.Predict(left, ConfThreshold, IouThreshold);
-				var rr = _models.FrontBoxBreakModel.Predict(right, ConfThreshold, IouThreshold);
-				ProcessYoloResults(lr, results, 0, halfP, "盒子破损");
-				ProcessYoloResults(rr, results, halfP, _currentSku?.P ?? 8, "盒子破损");
+				// 1. 按halfP等宽切分左图 (每子图对应一个盒子)
+				int lw = left.Width, lh = left.Height;
+				var leftSubs = new List<Mat>();
+				for (int i = 0; i < halfP; i++)
+				{
+					int x = i * lw / halfP;
+					int w = (i == halfP - 1) ? (lw - x) : (lw / halfP);
+					leftSubs.Add(new Mat(left, new CvRect(x, 0, w, lh)).Clone());
+				}
+
+				// 2. 按halfP等宽切分右图 (每子图对应一个盒子)
+				int rw = right.Width, rh = right.Height;
+				var rightSubs = new List<Mat>();
+				for (int i = 0; i < halfP; i++)
+				{
+					int x = i * rw / halfP;
+					int w = (i == halfP - 1) ? (rw - x) : (rw / halfP);
+					rightSubs.Add(new Mat(right, new CvRect(x, 0, w, rh)).Clone());
+				}
+
+				Logger.Debug($"[Front] 盒子破损: 左{leftSubs.Count}张+右{rightSubs.Count}张子图(P={pCount})");
+
+				// 3. 左右各自批量推理
+				var lr = _models.FrontBoxBreakModel.PredictBatch(leftSubs, ConfThreshold, IouThreshold);
+				var rr = _models.FrontBoxBreakModel.PredictBatch(rightSubs, ConfThreshold, IouThreshold);
+
+				// 4. 映射左图结果: 子图索引i → 盒索引i (0~halfP-1)
+				//    ★ BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)
+				for (int i = 0; i < lr.Count && i < halfP; i++)
+				{
+					var result = lr[i];
+					if (result == null || result.BoxesN == null) continue;
+					for (int j = 0; j < result.BoxesN.Length; j++)
+					{
+						var box = result.BoxesN[j];
+						float score = (result.Scores != null && j < result.Scores.Length) ? result.Scores[j] : 1.0f;
+						if (!results.ContainsKey(i)) results[i] = new List<BoxDefect>();
+						float fullX1 = (i + box.X) / halfP;
+						float fullX2 = (i + box.X + box.Width) / halfP;
+						results[i].Add(new BoxDefect(i, "盒子破损",
+							new float[] { fullX1, box.Y, fullX2, box.Y + box.Height }, score));
+					}
+				}
+
+				// 5. 映射右图结果: 子图索引i → 盒索引i+halfP (halfP~pCount-1)
+				//    ★ BoxesN转换同上, i为右图内子图索引(0~halfP-1)
+				for (int i = 0; i < rr.Count && i < halfP; i++)
+				{
+					int boxIdx = halfP + i;
+					var result = rr[i];
+					if (result == null || result.BoxesN == null) continue;
+					for (int j = 0; j < result.BoxesN.Length; j++)
+					{
+						var box = result.BoxesN[j];
+						float score = (result.Scores != null && j < result.Scores.Length) ? result.Scores[j] : 1.0f;
+						if (!results.ContainsKey(boxIdx)) results[boxIdx] = new List<BoxDefect>();
+						float fullX1 = (i + box.X) / halfP;
+						float fullX2 = (i + box.X + box.Width) / halfP;
+						results[boxIdx].Add(new BoxDefect(boxIdx, "盒子破损",
+							new float[] { fullX1, box.Y, fullX2, box.Y + box.Height }, score));
+					}
+				}
+
+				// 释放子图
+				foreach (var img in leftSubs) img?.Dispose();
+				foreach (var img in rightSubs) img?.Dispose();
 			}
 			catch (Exception ex) { Logger.Error($"盒子破损检测异常: {ex.Message}"); }
 			return results;

@@ -64,10 +64,14 @@ namespace Stations
 		// ── 推理结果缓存 ──
 		private readonly List<SideResult> _leftResults = new List<SideResult>();
 		private readonly List<SideResult> _rightResults = new List<SideResult>();
-		// ── 显示缓存 ──
+		// ── 显示缓存(左右独立, 避免串显) ──
 		private readonly List<Mat> _displayImages = new List<Mat>();
-		private readonly List<Bitmap> _displayBitmaps = new List<Bitmap>();  // Bitmap缓存，避免Mat→Bitmap往返转换
-		private int _displayIndex;
+		private readonly List<Bitmap> _displayBitmaps = new List<Bitmap>();  // 合并列表(仅存图用)
+		private readonly List<Bitmap> _leftDisplayBitmaps = new List<Bitmap>();
+		private readonly List<Bitmap> _rightDisplayBitmaps = new List<Bitmap>();
+		private int _leftDisplayIndex;
+		private int _rightDisplayIndex;
+		private int _displayIndex;  // 保留兼容
 		private readonly object _resultLock = new object();
 
 		// ── 统计计数 ──
@@ -93,8 +97,10 @@ namespace Stations
 	// 兼容旧接口
 		public TriggerEdgeMode EdgeMode { get { return (TriggerEdgeMode)(int)EdgeMapping; } set { EdgeMapping = (In12EdgeMap)(int)value; } }
 		public bool UseContinuousMode { get { return CaptureMode == CaptureMode.StopCapture; } set { CaptureMode = value ? CaptureMode.StopCapture : CaptureMode.FlyCapture; } }
-		public int CurrentIndex => _displayIndex;
+		public int CurrentIndex => _leftDisplayIndex;
 		public Bitmap GetCurrentDisplayImage() { lock (_resultLock) { if (_displayBitmaps.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayBitmaps.Count) return (Bitmap)_displayBitmaps[_displayIndex].Clone(); return null; } }
+		public Bitmap GetCurrentLeftImage() { lock (_resultLock) { if (_leftDisplayBitmaps.Count > 0 && _leftDisplayIndex >= 0 && _leftDisplayIndex < _leftDisplayBitmaps.Count) return (Bitmap)_leftDisplayBitmaps[_leftDisplayIndex].Clone(); return null; } }
+		public Bitmap GetCurrentRightImage() { lock (_resultLock) { if (_rightDisplayBitmaps.Count > 0 && _rightDisplayIndex >= 0 && _rightDisplayIndex < _rightDisplayBitmaps.Count) return (Bitmap)_rightDisplayBitmaps[_rightDisplayIndex].Clone(); return null; } }
 
 		public enum TriggerEdgeMode { RisingLeftFallingRight = 0, RisingRightFallingLeft = 1 }
 		/// <summary>安全锁恢复模式：Continue=继续执行, ReturnToStart=返回起始位</summary>
@@ -747,33 +753,42 @@ namespace Stations
 			return result;
 		}
 
-	/// <summary>构建轮播图: 左侧渲染(leftImages→RenderSideImage→_displayBitmaps) + 右侧渲染(rightImages→RenderSideImage→_displayBitmaps), 缺图生成Missing占位</summary>
+	/// <summary>构建左右独立显示图: 左侧→_leftDisplayBitmaps, 右侧→_rightDisplayBitmaps, 同时填充合并列表(存图用)</summary>
 		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
 			lock (_resultLock)
 			{
+				// 释放旧Bitmap
+				foreach (var oldBmp in _leftDisplayBitmaps) oldBmp?.Dispose();
+				foreach (var oldBmp in _rightDisplayBitmaps) oldBmp?.Dispose();
 				foreach (var oldBmp in _displayBitmaps) oldBmp?.Dispose();
 				_displayImages.Clear();
+				_leftDisplayBitmaps.Clear();
+				_rightDisplayBitmaps.Clear();
 				_displayBitmaps.Clear();
 				int count = Math.Max(leftImages.Count, rightImages.Count);
-				// 左侧渲染
+				// 左侧渲染 → _leftDisplayBitmaps(显示用) + _displayBitmaps(存图用)
 				for (int i = 0; i < count; i++)
 				{
 					Bitmap bmp = i < leftImages.Count
 						? RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults)
 						: CreateMissingBmp(i, count);
+					_leftDisplayBitmaps.Add(bmp);
 					_displayBitmaps.Add(bmp);
 					_displayImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
 				}
-				// 右侧渲染
+				// 右侧渲染 → _rightDisplayBitmaps(显示用) + _displayBitmaps(存图用)
 				for (int i = 0; i < count; i++)
 				{
 					Bitmap bmp = i < rightImages.Count
 						? RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults)
 						: CreateMissingBmp(i, count);
+					_rightDisplayBitmaps.Add(bmp);
 					_displayBitmaps.Add(bmp);
 					_displayImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
 				}
+				_leftDisplayIndex = Math.Max(0, count - 1);
+				_rightDisplayIndex = Math.Max(0, count - 1);
 				_displayIndex = Math.Max(0, _displayImages.Count - 1);
 			}
 		}
@@ -897,12 +912,9 @@ namespace Stations
 		{
 			lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; }
 		}
-		/// <summary>轮播上一张: _displayIndex循环递减</summary>
-		public void NavigatePrev() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex - 1 + _displayImages.Count) % _displayImages.Count; } }
-		/// <summary>轮播下一张: _displayIndex循环递增</summary>
-		public void NavigateNext() { lock (_resultLock) { if (_displayImages.Count > 0) _displayIndex = (_displayIndex + 1) % _displayImages.Count; } }
-		public Mat GetCurrentLeftImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
-		public Mat GetCurrentRightImage() { lock (_resultLock) { if (_displayImages.Count > 0 && _displayIndex >= 0 && _displayIndex < _displayImages.Count) return _displayImages[_displayIndex].Clone(); return null; } }
+		/// <summary>轮播已禁用 — 左右独立固定显示, 不再循环切换</summary>
+		public void NavigatePrev() { }
+		public void NavigateNext() { }
 
 	/// <summary>保存侧面工位图片: 左/右原图+渲染图 → JPEG 85% → Images/{日期}/{班次}/侧面工位/{OK|NG}/{左/右侧面}/</summary>
 		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk)
@@ -943,11 +955,11 @@ namespace Stations
 			catch (Exception ex) { Logger.Error("[Side] 存图异常: " + ex.Message); }
 		}
 	/// <summary>清空本批数据: 清空左右队列+清零计数+清空结果+释放DisplayBitmaps, 每个周期开始前调用</summary>
-		private void ClearBatch() { lock (_countLock) { while (_leftQueue.TryDequeue(out _)) ; while (_rightQueue.TryDequeue(out _)) ; _leftCount = 0; _rightCount = 0; } _leftResults.Clear(); _rightResults.Clear(); lock (_resultLock) { foreach (var b in _displayBitmaps) b?.Dispose(); _displayBitmaps.Clear(); } }
+		private void ClearBatch() { lock (_countLock) { while (_leftQueue.TryDequeue(out _)) ; while (_rightQueue.TryDequeue(out _)) ; _leftCount = 0; _rightCount = 0; } _leftResults.Clear(); _rightResults.Clear(); lock (_resultLock) { foreach (var b in _leftDisplayBitmaps) b?.Dispose(); foreach (var b in _rightDisplayBitmaps) b?.Dispose(); foreach (var b in _displayBitmaps) b?.Dispose(); _leftDisplayBitmaps.Clear(); _rightDisplayBitmaps.Clear(); _displayBitmaps.Clear(); } }
 		private string GetShift() { var n = DateTime.Now.TimeOfDay; if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "晚班"; if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "早班"; return "中班"; }
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
 		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
-		public void Dispose() { if (_disposed) return; _disposed = true; _motionCts?.Cancel(); lock (_resultLock) { foreach (var b in _displayBitmaps) b?.Dispose(); _displayBitmaps.Clear(); _displayImages.Clear(); } }
+		public void Dispose() { if (_disposed) return; _disposed = true; _motionCts?.Cancel(); lock (_resultLock) { foreach (var b in _leftDisplayBitmaps) b?.Dispose(); foreach (var b in _rightDisplayBitmaps) b?.Dispose(); foreach (var b in _displayBitmaps) b?.Dispose(); _leftDisplayBitmaps.Clear(); _rightDisplayBitmaps.Clear(); _displayBitmaps.Clear(); _displayImages.Clear(); } }
 	}
 
 	public enum Side { Left, Right }

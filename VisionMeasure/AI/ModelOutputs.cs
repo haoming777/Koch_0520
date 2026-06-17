@@ -106,7 +106,7 @@ namespace AI
 	/// <summary>
 	/// 单个盒子缺陷
 	/// </summary>
-/// <summary>缺陷检测结果 — BoxIndex(盒序号) + DefectType(缺陷类型) + BoundingBox(归一化坐标) + Score</summary>
+	/// <summary>缺陷检测结果 — BoxIndex(盒序号) + DefectType(缺陷类型) + BoundingBox(归一化坐标) + Score</summary>
 	public class BoxDefect
 	{
 		public int BoxIndex { get; set; }

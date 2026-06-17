@@ -693,7 +693,7 @@ namespace VisionMeasure.From
 				var axisCfg = AxisParamConfig.Load();
 				axisCfg.StartPos = (float)_numStartPos.Value;
 				axisCfg.EndPos = (float)_numEndPos.Value;
-				axisCfg.FwdSpeed = (int)_numMoveSpeed.Value;
+				// FwdSpeed/RetSpeed 仅通过调试界面(ControlFrm)修改，此处不再覆盖
 				axisCfg.Accel = (int)_numMoveAccel.Value;
 				axisCfg.SafetyLockPort = (int)_numSafetyLockPort.Value;
 				axisCfg.SafetyLockActiveHigh = _chkSafetyLockActiveHigh.Checked;

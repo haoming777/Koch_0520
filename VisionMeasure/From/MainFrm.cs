@@ -1615,7 +1615,7 @@ namespace VisionMeasure
 			}
 		}
 
-		/// <summary>刷新轮播图: 端面(上→xlPic3/下→xlPic4)+侧面(xlPic5)</summary>
+		/// <summary>刷新工位显示: 端面(上→xlPic3/下→xlPic4)+侧面(左→xlPic5/右→xlPic6), 左右独立不再轮播</summary>
 		private void RefreshCarouselDisplays()
 		{
 			try
@@ -1639,13 +1639,18 @@ namespace VisionMeasure
 					}
 				}
 
-				// 侧面轮播图 — 左侧面→xlPictureBox5
+				// 侧面显示 — 左侧面→xlPictureBox5, 右侧面→xlPictureBox6 (左右独立, 不混显)
 				if (_sideStation != null)
 				{
-					var displayBitmap = _sideStation.GetCurrentDisplayImage();
-					if (displayBitmap != null)
+					var leftBmp = _sideStation.GetCurrentLeftImage();
+					if (leftBmp != null)
 					{
-						UpdatePictureBox(xlPictureBox5, displayBitmap);
+						UpdatePictureBox(xlPictureBox5, leftBmp);
+					}
+					var rightBmp = _sideStation.GetCurrentRightImage();
+					if (rightBmp != null)
+					{
+						UpdatePictureBox(xlPictureBox6, rightBmp);
 					}
 				}
 			}
@@ -1742,6 +1747,8 @@ namespace VisionMeasure
 				if (BackBarcode_Lb != null && !string.IsNullOrWhiteSpace(BackBarcode_Lb.Text)) _currentSku.BackBarcode = BackBarcode_Lb.Text.Trim();
 				if (CodingFormat_Lb != null && !string.IsNullOrWhiteSpace(CodingFormat_Lb.Text)) _currentSku.CodingFormat = CodingFormat_Lb.Text.Trim();
 				if (_currentSku.P <= 0) _currentSku.P = 12;
+				// ★ 根据最新P值重新匹配裁图比例.csv中的裁图像素
+				_skuDb.ApplyCropData(_currentSku);
 				UpdateSkuDisplay();
 				// 生成变更摘要
 				var changes = new List<string>();
