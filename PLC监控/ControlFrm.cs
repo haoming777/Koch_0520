@@ -36,7 +36,7 @@ namespace PLC监控
 			PopulateUIFromConfig();
 			UpdateConnUI();
 
-			// ★ 用System.Threading.Timer替代WinForms Timer:
+			// 用System.Threading.Timer替代WinForms Timer:
 			//    ZAux读取全部在后台线程执行，不阻塞UI消息泵，避免白屏/未响应
 			_uiTimer = new System.Threading.Timer(OnUiTimerCallback, null, 100, 60);
 		}
@@ -214,7 +214,7 @@ namespace PLC监控
 			if (!_connected || _handle == IntPtr.Zero) { Logger.Warning($"[回零-按钮] 拒绝: connected={_connected} handle={_handle}"); return; }
 			int a = 0;
 
-			// ★ 在后台线程执行，不阻塞UI
+			// 在后台线程执行，不阻塞UI
 			Task.Run(() =>
 			{
 			const int EXPECT_FWD = 14, EXPECT_REV = 15, EXPECT_DATUM = 16;
@@ -483,7 +483,7 @@ namespace PLC监控
 			}
 			return true;
 		}
-		void JogStart(int dir, bool fast) { if (!_connected || !CheckAxisEnable() || !CheckSafety()) return; }  // ★ CheckSafety非阻塞, 不卡UI int a = SelAxis(); float spd = fast ? Math.Min(_axisCfg.Speed, 100f) : Math.Min(_axisCfg.Speed * 0.2f, 20f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
+		void JogStart(int dir, bool fast) { if (!_connected || !CheckAxisEnable() || !CheckSafety()) return; }  // CheckSafety非阻塞, 不卡UI int a = SelAxis(); float spd = fast ? Math.Min(_axisCfg.Speed, 100f) : Math.Min(_axisCfg.Speed * 0.2f, 20f); if (spd <= 0) spd = fast ? 50 : 10; ZAux_Direct_SetSpeed(_handle, a, spd); ZAux_Direct_Single_Vmove(_handle, a, dir); }
 
 
 		// ====== 安全锁 ======

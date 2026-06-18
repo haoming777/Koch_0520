@@ -246,9 +246,9 @@ namespace VisionMeasure.Stations
 		}
 
 		/// <summary>
-		/// P号码识别: 逐盒ROI运行Vimo OCR, 返回所有识别结果(含OK的用于显示框)
-		/// </summary>
-		/// <summary>P号码OCR识别: 逐盒ROI裁剪(左图前halfP盒+右图后halfP盒, 取下方1/3区域)→ViMo OCR→正则匹配Pd+→与参考P号比对→返回缺陷(P号:xxx/P号错误/P号缺少)</summary>
+/// P号码OCR识别: 逐盒ROI裁剪(左halfP+右halfP, 取下方1/3),
+/// ViMo OCR -> 正则匹配 -> 与参考P号比对, 返回缺陷列表.
+/// </summary>
 		private Dictionary<int, List<BoxDefect>> RecognizePNumber(Mat left, Mat right, int pCount, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -369,7 +369,7 @@ namespace VisionMeasure.Stations
 				var rr = _models.FrontBoxBreakModel.PredictBatch(rightSubs, ConfThreshold, IouThreshold);
 
 				// 4. 映射左图结果: 子图索引i → 盒索引i (0~halfP-1)
-				//    ★ BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)
+				//    BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)
 				for (int i = 0; i < lr.Count && i < halfP; i++)
 				{
 					var result = lr[i];
@@ -387,7 +387,7 @@ namespace VisionMeasure.Stations
 				}
 
 				// 5. 映射右图结果: 子图索引i → 盒索引i+halfP (halfP~pCount-1)
-				//    ★ BoxesN转换同上, i为右图内子图索引(0~halfP-1)
+				//    BoxesN转换同上, i为右图内子图索引(0~halfP-1)
 				for (int i = 0; i < rr.Count && i < halfP; i++)
 				{
 					int boxIdx = halfP + i;

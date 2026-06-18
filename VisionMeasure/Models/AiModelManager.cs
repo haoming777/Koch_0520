@@ -9,7 +9,13 @@ using CommonLib;
 
 namespace Models
 {
-/// <summary>	/// AI模型管理器 — 统一加载/管理所有AI模型(共11个), 分配GPU资源	/// GPU分配策略: 显卡0=YOLO模型(目标检测), 显卡1=ViMo模型(OCR/分割/分类)	/// 模型清单: FrontOcrModel(正面P号), FrontBoxBreakModel(盒子破),	///   EndFaceUpperModel(上端面), EndFaceLowerModel(下端面),	///   BackBarcodeModel(条码), BackDateCodeSeg/Cls/OcrModel(日期码3子模型),	///   BackHookModel(挂钩明显), HookSlightModel(挂钩轻微分割),	///   SideDefectModel(侧面缺陷)	/// 加载顺序: Front → EndFace → Back → Side	/// ViMo模型优先GPU, 失败自动降级CPU	/// </summary>
+/// <summary>
+/// AI模型管理器, 统一加载所有AI模型(11个), 分配GPU资源.
+/// GPU分配: 显卡0=YOLO目标检测, 显卡1=ViMo(OCR/分割/分类).
+/// 模型: FrontOcr/FrontBoxBreak/EndFaceUpper/EndFaceLower/BackBarcode/
+///   BackDateCodeSeg/Cls/Ocr/BackHook/HookSlight/SideDefect.
+/// 加载顺序: Front->EndFace->Back->Side. ViMo优先GPU, 失败降级CPU.
+/// </summary>
 	public class AiModelManager : IDisposable
 	{
 		private readonly ModelPathConfig _config;
@@ -183,7 +189,10 @@ namespace Models
 		}
 
 		private bool LoadBackModels()
-		/// <summary>加载背面模型: 条码(YoloOnnx/GPU0) + 日期码分割/分类/OCR×3(ViMo/GPU1) + 挂钩明显(YoloOnnx/GPU0) + 挂钩轻微分割(YoloSeg/GPU0) + 切字(ViMo/GPU1)</summary>
+	/// <summary>
+	/// 加载背面模型: 条码(YoloOnnx/GPU0), 日期码分割/分类/OCR(ViMo/GPU1),
+	/// 挂钩明显(YoloOnnx/GPU0), 挂钩轻微分割(YoloSeg/GPU0), 切字(ViMo/GPU1).
+	/// </summary>
 		{
 			try
 			{

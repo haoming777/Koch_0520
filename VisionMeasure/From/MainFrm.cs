@@ -65,7 +65,7 @@ namespace VisionMeasure
 		private EndFaceStationProcessor _endFaceStation;
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
-		private long _sidePendingCount;  // ★ IN13↓排队计数器(Interlocked操作, 替代旧的bool)
+		private long _sidePendingCount;  // IN13↓排队计数器(Interlocked操作, 替代旧的bool)
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -239,9 +239,9 @@ namespace VisionMeasure
 				// 启动班次检查
 				StartShiftCheckTimer();
 
-			_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 };
-			_statusPollTimer.Tick += StatusPollTick;
-			_statusPollTimer.Start();
+				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 };
+				_statusPollTimer.Tick += StatusPollTick;
+				_statusPollTimer.Start();
 
 				// 刷新显示
 				RefreshCarouselDisplays();
@@ -513,7 +513,7 @@ namespace VisionMeasure
 		/// </summary>
 		/// <param name="cameraId">被触发的相机ID</param>
 		/// <summary>
-		/// ★ 相机触发回调(CameraTriggerManager线程)
+		/// 相机触发回调(CameraTriggerManager线程)
 		/// Camera7(IN13↑): 检查侧面轴位置→不在起点则预归位(带安全锁监控)→超时15s
 		/// Camera8(IN13↓): 空闲→StartDetection | 正忙→标记_sideTriggerPending→后台轮询等完成后自动启动
 		/// 参数: cameraId = 被触发的相机ID(7或8)
@@ -534,63 +534,63 @@ namespace VisionMeasure
 		private void OnCameraTriggered(int cameraId)
 		{
 			// 侧面工位：
-				// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
-				// ★ 注意: 侧面工位正在执行检测时(_sideStation.IsMoving=true)不干涉轴运动
-				//    因为StartMotion正在控制轴从起点→终点→起点，中途IN13↑是正常现象
-				if (cameraId == 7 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled && _motionMgr != null && _motionMgr.IsConnected)
+			// IN13上升沿(Camera7) → 检查轴位置，不在起点则预归位
+			// 注意: 侧面工位正在执行检测时(_sideStation.IsMoving=true)不干涉轴运动
+			//    因为StartMotion正在控制轴从起点→终点→起点，中途IN13↑是正常现象
+			if (cameraId == 7 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled && _motionMgr != null && _motionMgr.IsConnected)
+			{
+				// 侧面工位正在检测中，不干涉运动控制
+				if (_sideStation.IsMoving)
 				{
-					// ★ 侧面工位正在检测中，不干涉运动控制
-					if (_sideStation.IsMoving)
+					// 不记录日志（正常现象，IN13上升沿是轴经过传感器位置时的正常信号）
+					return;
+				}
+				float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
+				float startPos = _sideStation.StartPosition;
+				if (Math.Abs(curPos - startPos) > 0.5f)
+				{
+					Logger.Info($"[Side] IN13↑ 轴不在起点(cur={curPos:F1}, target={startPos:F1})，预归位");
+					int axis = _sideStation.SideAxis;
+					int lockPort = _sideStation.SafetyLockPort;
+					bool lockHigh = _sideStation.SafetyLockActiveHigh;
+					bool returnToStart = _sideStation.RecoveryMode == SideStationProcessor.SafetyRecovery.ReturnToStart;
+					Task.Run(() =>
 					{
-						// 不记录日志（正常现象，IN13上升沿是轴经过传感器位置时的正常信号）
-						return;
-					}
-					float curPos = _motionMgr.GetPosition(_sideStation.SideAxis);
-					float startPos = _sideStation.StartPosition;
-					if (Math.Abs(curPos - startPos) > 0.5f)
-					{
-						Logger.Info($"[Side] IN13↑ 轴不在起点(cur={curPos:F1}, target={startPos:F1})，预归位");
-						int axis = _sideStation.SideAxis;
-						int lockPort = _sideStation.SafetyLockPort;
-						bool lockHigh = _sideStation.SafetyLockActiveHigh;
-						bool returnToStart = _sideStation.RecoveryMode == SideStationProcessor.SafetyRecovery.ReturnToStart;
-						Task.Run(() =>
+						// 安全锁检查
+						if (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
 						{
-							// 安全锁检查
+							Logger.Info($"[Side] 预归位等待安全锁 IN{lockPort}=0...");
+							while (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
+								Thread.Sleep(10);
+							Logger.Info($"[Side] 安全锁释放，开始预归位");
+						}
+						_motionMgr.SetSpeed(axis, _sideStation.ReturnSpeed);
+						_motionMgr.MoveAbs(axis, startPos);
+						// 运动中监控安全锁
+						bool stopped = false;
+						var sw = System.Diagnostics.Stopwatch.StartNew();
+						while (sw.ElapsedMilliseconds < 15000)
+						{
+							if (!_motionMgr.IsMoving(axis)) break;
 							if (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
 							{
-								Logger.Info($"[Side] 预归位等待安全锁 IN{lockPort}=0...");
-								while (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
-									Thread.Sleep(10);
-								Logger.Info($"[Side] 安全锁释放，开始预归位");
+								if (!stopped) { Logger.Warning("[Side] 预归位中安全锁触发! 急停"); _motionMgr.EmergencyStop(axis); stopped = true; }
+								Thread.Sleep(10); continue;
 							}
-							_motionMgr.SetSpeed(axis, _sideStation.ReturnSpeed);
-							_motionMgr.MoveAbs(axis, startPos);
-							// 运动中监控安全锁
-							bool stopped = false;
-							var sw = System.Diagnostics.Stopwatch.StartNew();
-							while (sw.ElapsedMilliseconds < 15000)
+							if (stopped)
 							{
-								if (!_motionMgr.IsMoving(axis)) break;
-								if (!_motionMgr.CheckSafetyLock(lockPort, lockHigh))
-								{
-									if (!stopped) { Logger.Warning("[Side] 预归位中安全锁触发! 急停"); _motionMgr.EmergencyStop(axis); stopped = true; }
-									Thread.Sleep(10); continue;
-								}
-								if (stopped)
-								{
-									stopped = false;
-									Logger.Info("[Side] 安全锁恢复，继续预归位");
-									_motionMgr.MoveAbs(axis, startPos);
-								}
-								Thread.Sleep(10);
+								stopped = false;
+								Logger.Info("[Side] 安全锁恢复，继续预归位");
+								_motionMgr.MoveAbs(axis, startPos);
 							}
-							Logger.Info($"[Side] 预归位完成 pos={_motionMgr.GetPosition(axis):F1}");
-						});
-					}
+							Thread.Sleep(10);
+						}
+						Logger.Info($"[Side] 预归位完成 pos={_motionMgr.GetPosition(axis):F1}");
+					});
 				}
+			}
 			// IN13下降沿(Camera8) → 启动检测
-			// ★ 使用计数器+轮询机制: 忙时排队pendingCount, 空闲时立即启动
+			// 使用计数器+轮询机制: 忙时排队pendingCount, 空闲时立即启动
 			//    避免中间IN13↓误触发取消当前批次
 			if (cameraId == 8 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled)
 			{
@@ -807,7 +807,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 
-				// ★ 首帧BGR/RGB通道验证(仅执行一次)
+				// 首帧BGR/RGB通道验证(仅执行一次)
 				if (!_bgrVerifyDone)
 				{
 					_bgrVerifyDone = true;
@@ -1045,10 +1045,10 @@ namespace VisionMeasure
 			}
 			// 正面工位合并结果显示在 xlPictureBox1
 			UpdatePictureBox(xlPictureBox1, mergedImage);
-		if (OK_zheng_Lb != null) OK_zheng_Lb.Text = okCount.ToString();
-		if (NG_zheng_Lb != null) NG_zheng_Lb.Text = ngCount.ToString();
-		long ft2 = okCount + ngCount;
-		if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = ft2 > 0 ? (okCount * 100.0 / ft2).ToString("F1") + "%" : "0%";
+			if (OK_zheng_Lb != null) OK_zheng_Lb.Text = okCount.ToString();
+			if (NG_zheng_Lb != null) NG_zheng_Lb.Text = ngCount.ToString();
+			long ft2 = okCount + ngCount;
+			if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = ft2 > 0 ? (okCount * 100.0 / ft2).ToString("F1") + "%" : "0%";
 		}
 		/// <summary>
 		/// 工位检测结果→UI更新(BeginInvoke跨线程)
@@ -1087,26 +1087,31 @@ namespace VisionMeasure
 		{
 			// 更新正面统计
 			// 使用各工位累计计数，按支计算
-			this.BeginInvoke(new Action(() => {
-				if (_frontStation != null) {
+			this.BeginInvoke(new Action(() =>
+			{
+				if (_frontStation != null)
+				{
 					if (OK_zheng_Lb != null) OK_zheng_Lb.Text = _frontStation.OkCount.ToString();
 					if (NG_zheng_Lb != null) NG_zheng_Lb.Text = _frontStation.NgCount.ToString();
 					long ft = _frontStation.OkCount + _frontStation.NgCount;
 					if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = (ft > 0 ? (_frontStation.OkCount * 100.0 / ft).ToString("F1") + "%" : "0%");
 				}
-				if (_backStation != null) {
+				if (_backStation != null)
+				{
 					if (OK_fan_Lb != null) OK_fan_Lb.Text = _backStation.OkCount.ToString();
 					if (NG_fan_Lb != null) NG_fan_Lb.Text = _backStation.NgCount.ToString();
 					long bt = _backStation.OkCount + _backStation.NgCount;
 					if (Yield_fan_Lb != null) Yield_fan_Lb.Text = (bt > 0 ? (_backStation.OkCount * 100.0 / bt).ToString("F1") + "%" : "0%");
 				}
-				if (_endFaceStation != null) {
+				if (_endFaceStation != null)
+				{
 					if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = _endFaceStation.OkCount.ToString();
 					if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = _endFaceStation.NgCount.ToString();
 					long et = _endFaceStation.OkCount + _endFaceStation.NgCount;
 					if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = (et > 0 ? (_endFaceStation.OkCount * 100.0 / et).ToString("F1") + "%" : "0%");
 				}
-				if (_sideStation != null) {
+				if (_sideStation != null)
+				{
 					if (OK_cemian_Lb != null) OK_cemian_Lb.Text = _sideStation.OkCount.ToString();
 					if (NG_cemian_Lb != null) NG_cemian_Lb.Text = _sideStation.NgCount.ToString();
 					long st2 = _sideStation.OkCount + _sideStation.NgCount;
@@ -1179,7 +1184,7 @@ namespace VisionMeasure
 		{
 			SetupSkuSearch();
 			LoadSkuParams();
-			if (OpenNGimageBtn != null) OpenNGimageBtn.Click += (s2,e2) => { string d = Path.Combine(_detectionParams.Save.ImageSavePath, DateTime.Now.ToString("yyMMdd")); if (!Directory.Exists(d)) d = _detectionParams.Save.ImageSavePath; if (Directory.Exists(d)) Process.Start("explorer.exe", d); };
+			if (OpenNGimageBtn != null) OpenNGimageBtn.Click += (s2, e2) => { string d = Path.Combine(_detectionParams.Save.ImageSavePath, DateTime.Now.ToString("yyMMdd")); if (!Directory.Exists(d)) d = _detectionParams.Save.ImageSavePath; if (Directory.Exists(d)) Process.Start("explorer.exe", d); };
 			BindButtonEvents();
 			LoadCounts();
 			UpdateSkuDisplay();
@@ -1295,15 +1300,27 @@ namespace VisionMeasure
 
 
 		/// <summary>持久化班次计数→Config/counts.json(班次+日期+4工位OK/NG), 关闭时调用</summary>
-		private void SaveCounts() { try { var data = new Dictionary<string,string>() { {"shift",GetCurrentShift()},{"date",DateTime.Now.ToString("yyyyMMdd")},{"frontOk",_frontStation?.OkCount.ToString()??"0"},{"frontNg",_frontStation?.NgCount.ToString()??"0"},{"backOk",_backStation?.OkCount.ToString()??"0"},{"backNg",_backStation?.NgCount.ToString()??"0"},{"endOk",_endFaceStation?.OkCount.ToString()??"0"},{"endNg",_endFaceStation?.NgCount.ToString()??"0"},{"sideOk",_sideStation?.OkCount.ToString()??"0"},{"sideNg",_sideStation?.NgCount.ToString()??"0"} }; File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"), Newtonsoft.Json.JsonConvert.SerializeObject(data)); } catch {} }
+		private void SaveCounts() { try { var data = new Dictionary<string, string>() { { "shift", GetCurrentShift() }, { "date", DateTime.Now.ToString("yyyyMMdd") }, { "frontOk", _frontStation?.OkCount.ToString() ?? "0" }, { "frontNg", _frontStation?.NgCount.ToString() ?? "0" }, { "backOk", _backStation?.OkCount.ToString() ?? "0" }, { "backNg", _backStation?.NgCount.ToString() ?? "0" }, { "endOk", _endFaceStation?.OkCount.ToString() ?? "0" }, { "endNg", _endFaceStation?.NgCount.ToString() ?? "0" }, { "sideOk", _sideStation?.OkCount.ToString() ?? "0" }, { "sideNg", _sideStation?.NgCount.ToString() ?? "0" } }; File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json"), Newtonsoft.Json.JsonConvert.SerializeObject(data)); } catch { } }
 		/// <summary>恢复班次计数←Config/counts.json, 班次/日期不匹配则从0开始, BeginInvoke恢复UI</summary>
-		private void LoadCounts() { try { var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Config","counts.json"); if(!File.Exists(path)) return; var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string,string>>(File.ReadAllText(path)); if(data==null) return; this.BeginInvoke(new Action(()=>{ string savedShift = data.ContainsKey("shift") ? data["shift"] : ""; if(!string.IsNullOrEmpty(savedShift) && savedShift != GetCurrentShift() || (data.ContainsKey("date") && data["date"] != DateTime.Now.ToString("yyyyMMdd"))) { Logger.Info("计数班次不匹配("+savedShift+"!="+GetCurrentShift()+"),从0开始"); return; } if(data.ContainsKey("frontOk")){ if(OK_zheng_Lb!=null)OK_zheng_Lb.Text=data["frontOk"]; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text=data["frontNg"]; if(OK_fan_Lb!=null)OK_fan_Lb.Text=data["backOk"]; if(NG_fan_Lb!=null)NG_fan_Lb.Text=data["backNg"]; if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text=data["endOk"]; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text=data["endNg"]; if(OK_cemian_Lb!=null)OK_cemian_Lb.Text=data["sideOk"]; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text=data["sideNg"]; } long fOk = long.Parse(data.ContainsKey("frontOk")?data["frontOk"]:"0"); long fNg = long.Parse(data.ContainsKey("frontNg")?data["frontNg"]:"0");
-					long bOk = long.Parse(data.ContainsKey("backOk")?data["backOk"]:"0"); long bNg = long.Parse(data.ContainsKey("backNg")?data["backNg"]:"0");
-					long eOk = long.Parse(data.ContainsKey("endOk")?data["endOk"]:"0"); long eNg = long.Parse(data.ContainsKey("endNg")?data["endNg"]:"0");
-					long sOk = long.Parse(data.ContainsKey("sideOk")?data["sideOk"]:"0"); long sNg = long.Parse(data.ContainsKey("sideNg")?data["sideNg"]:"0");
+		private void LoadCounts()
+		{
+			try
+			{
+				var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json"); if (!File.Exists(path)) return; var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path)); if (data == null) return; this.BeginInvoke(new Action(() =>
+				{
+					string savedShift = data.ContainsKey("shift") ? data["shift"] : ""; if (!string.IsNullOrEmpty(savedShift) && savedShift != GetCurrentShift() || (data.ContainsKey("date") && data["date"] != DateTime.Now.ToString("yyyyMMdd"))) { Logger.Info("计数班次不匹配(" + savedShift + "!=" + GetCurrentShift() + "),从0开始"); return; }
+					if (data.ContainsKey("frontOk")) { if (OK_zheng_Lb != null) OK_zheng_Lb.Text = data["frontOk"]; if (NG_zheng_Lb != null) NG_zheng_Lb.Text = data["frontNg"]; if (OK_fan_Lb != null) OK_fan_Lb.Text = data["backOk"]; if (NG_fan_Lb != null) NG_fan_Lb.Text = data["backNg"]; if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = data["endOk"]; if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = data["endNg"]; if (OK_cemian_Lb != null) OK_cemian_Lb.Text = data["sideOk"]; if (NG_cemian_Lb != null) NG_cemian_Lb.Text = data["sideNg"]; }
+					long fOk = long.Parse(data.ContainsKey("frontOk") ? data["frontOk"] : "0"); long fNg = long.Parse(data.ContainsKey("frontNg") ? data["frontNg"] : "0");
+					long bOk = long.Parse(data.ContainsKey("backOk") ? data["backOk"] : "0"); long bNg = long.Parse(data.ContainsKey("backNg") ? data["backNg"] : "0");
+					long eOk = long.Parse(data.ContainsKey("endOk") ? data["endOk"] : "0"); long eNg = long.Parse(data.ContainsKey("endNg") ? data["endNg"] : "0");
+					long sOk = long.Parse(data.ContainsKey("sideOk") ? data["sideOk"] : "0"); long sNg = long.Parse(data.ContainsKey("sideNg") ? data["sideNg"] : "0");
 					_frontStation?.RestoreCounts(fOk, fNg); _backStation?.RestoreCounts(bOk, bNg);
 					_endFaceStation?.RestoreCounts(eOk, eNg); _sideStation?.RestoreCounts(sOk, sNg);
-					Logger.Info("计数已从本地恢复"); })); } catch {} }
+					Logger.Info("计数已从本地恢复");
+				}));
+			}
+			catch { }
+		}
 
 		/// <summary>持久化SKU手动参数→Config/sku_params.json(P/Z/MM/条码/日期码格式)</summary>
 		private void SaveSkuParams()
@@ -1315,7 +1332,8 @@ namespace VisionMeasure
 				foreach (var kv in new (string, Control)[] {
 					("SKU", _skuSearchCombo), ("P", P_Lb), ("Z", Z_Lb), ("MM", MM_Lb),
 					("FrontPNumber", FrontPNumber_Lb), ("BackBarcode", BackBarcode_Lb), ("CodingFormat", CodingFormat_Lb)
-				}) {
+				})
+				{
 					if (kv.Item2 == null) continue;
 					string v = kv.Item2 is ComboBox cb ? cb.Text : kv.Item2.Text;
 					if (!string.IsNullOrWhiteSpace(v)) data[kv.Item1] = v;
@@ -1335,11 +1353,13 @@ namespace VisionMeasure
 				var json = File.ReadAllText(path);
 				var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
 				if (data == null) return;
-				this.BeginInvoke(new Action(() => {
+				this.BeginInvoke(new Action(() =>
+				{
 					foreach (var kv in data)
 					{
 						Control ctrl = null;
-						switch (kv.Key) {
+						switch (kv.Key)
+						{
 							case "SKU": ctrl = _skuSearchCombo; break;
 							case "P": ctrl = P_Lb; break;
 							case "Z": ctrl = Z_Lb; break;
@@ -1348,12 +1368,14 @@ namespace VisionMeasure
 							case "BackBarcode": ctrl = BackBarcode_Lb; break;
 							case "CodingFormat": ctrl = CodingFormat_Lb; break;
 						}
-						if (ctrl != null) {
+						if (ctrl != null)
+						{
 							if (ctrl is ComboBox cb) { int idx = cb.FindStringExact(kv.Value); if (idx >= 0) cb.SelectedIndex = idx; else cb.Text = kv.Value; }
 							else ctrl.Text = kv.Value;
 						}
 					}
-					if (_currentSku != null) {
+					if (_currentSku != null)
+					{
 						if (data.TryGetValue("P", out string rp2) && int.TryParse(rp2, out int rpi) && rpi > 0) _currentSku.P = rpi;
 						if (data.TryGetValue("Z", out string rz2) && int.TryParse(rz2, out int rzi)) _currentSku.Z = rzi;
 						if (data.TryGetValue("MM", out string rm2) && int.TryParse(rm2, out int rmi)) _currentSku.MM = rmi;
@@ -1386,7 +1408,7 @@ namespace VisionMeasure
 		}
 
 		/// <summary>
-		/// ★ 创建SKU搜索控件(ComboBox替换原TextBox)
+		/// 创建SKU搜索控件(ComboBox替换原TextBox)
 		/// 流程: TextChanged→300ms防抖Timer→SkuDatabase.Search→BeginUpdate批量更新下拉→EndUpdate
 		///       选中后→更新_currentSku→推4工位→保存LastSkuNumber到DetectionParams.json
 		/// 注意事项: BeginUpdate/EndUpdate避免每次Add刷新UI; 回车键也可直接输入SKU
@@ -1710,9 +1732,11 @@ namespace VisionMeasure
 			if (clearBtn != null) clearBtn.Click += (s, e) => ClearAllStatistics();
 			// 检测参数
 			if (SetDetectionParametersBtn != null)
-				SetDetectionParametersBtn.Click += (s, e) => {
+				SetDetectionParametersBtn.Click += (s, e) =>
+				{
 					var form = new DetectionParametersForm(_detectionParams);
-					form.OnParametersChanged += (s2, e2) => {
+					form.OnParametersChanged += (s2, e2) =>
+					{
 						_frontStation?.ReloadModelParams();
 						_backStation?.ReloadModelParams();
 						_endFaceStation?.ReloadModelParams();
@@ -1720,7 +1744,8 @@ namespace VisionMeasure
 						if (_frontStation != null) { _frontStation.EnablePNumberCheck = _detectionParams.Front.EnablePNumberCheck; _frontStation.EnableBoxBreakCheck = _detectionParams.Front.EnableBoxBreakCheck; }
 						if (_backStation != null) { _backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck; _backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck; }
 						if (_endFaceStation != null) _endFaceStation.EnableUpperDefectCheck = _detectionParams.EndFace.EnableUpperDefectCheck;
-						if (_sideStation != null) {
+						if (_sideStation != null)
+						{
 							_sideStation.MotionEnabled = _detectionParams.Side.MotionEnabled;
 							_sideStation.EnableSideDefectCheck = _detectionParams.Side.EnableSideDefectCheck;
 							_sideStation.SafetyLockPort = _detectionParams.Side.SafetyLockPort;
@@ -1732,7 +1757,8 @@ namespace VisionMeasure
 					form.ShowDialog();
 				};
 			// SKU保存并立即生效（手动输入优先于CSV数据）
-			if (saveBtn != null) saveBtn.Click += (s, e) => {
+			if (saveBtn != null) saveBtn.Click += (s, e) =>
+			{
 				string sku = _skuSearchCombo?.Text?.Trim() ?? "";
 				if (string.IsNullOrWhiteSpace(sku)) return;
 				_currentSku = _skuDb.GetBySkuNumber(sku) ?? new SkuData();
@@ -1747,7 +1773,7 @@ namespace VisionMeasure
 				if (BackBarcode_Lb != null && !string.IsNullOrWhiteSpace(BackBarcode_Lb.Text)) _currentSku.BackBarcode = BackBarcode_Lb.Text.Trim();
 				if (CodingFormat_Lb != null && !string.IsNullOrWhiteSpace(CodingFormat_Lb.Text)) _currentSku.CodingFormat = CodingFormat_Lb.Text.Trim();
 				if (_currentSku.P <= 0) _currentSku.P = 12;
-				// ★ 根据最新P值重新匹配裁图比例.csv中的裁图像素
+				// 根据最新P值重新匹配裁图比例.csv中的裁图像素
 				_skuDb.ApplyCropData(_currentSku);
 				UpdateSkuDisplay();
 				// 生成变更摘要
@@ -1755,9 +1781,9 @@ namespace VisionMeasure
 				if (oldP != _currentSku.P) changes.Add("P: " + oldP + " → " + _currentSku.P);
 				if (oldZ != _currentSku.Z) changes.Add("Z: " + oldZ + " → " + _currentSku.Z);
 				if (oldMM != _currentSku.MM) changes.Add("MM: " + oldMM + " → " + _currentSku.MM);
-				if (oldFP != (_currentSku.FrontPCode??"-")) changes.Add("P号: " + oldFP + " → " + _currentSku.FrontPCode);
-				if (oldBC != (_currentSku.BackBarcode??"-")) changes.Add("条码: " + oldBC + " → " + _currentSku.BackBarcode);
-				if (oldCF != (_currentSku.CodingFormat??"-")) changes.Add("格式: " + oldCF + " → " + _currentSku.CodingFormat);
+				if (oldFP != (_currentSku.FrontPCode ?? "-")) changes.Add("P号: " + oldFP + " → " + _currentSku.FrontPCode);
+				if (oldBC != (_currentSku.BackBarcode ?? "-")) changes.Add("条码: " + oldBC + " → " + _currentSku.BackBarcode);
+				if (oldCF != (_currentSku.CodingFormat ?? "-")) changes.Add("格式: " + oldCF + " → " + _currentSku.CodingFormat);
 				string diff = changes.Count > 0 ? "\n\n变更:\n" + string.Join("\n", changes) : "";
 				_frontStation?.UpdateSku(_currentSku); _backStation?.UpdateSku(_currentSku);
 				_sideStation?.UpdateSku(_currentSku); _endFaceStation?.UpdateSku(_currentSku);
@@ -1765,12 +1791,12 @@ namespace VisionMeasure
 				_detectionParams.LastSkuNumber = sku; _detectionParams.SaveToFile();
 				SaveSkuParams(); SaveCounts();
 				MessageBox.Show("SKU【" + sku + "】保存成功！\nP=" + _currentSku.P + " Z=" + _currentSku.Z + " MM=" + _currentSku.MM + diff, "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
-		};
-		// 各工位小清空
-			if (Clear_zheng_Btn != null) Clear_zheng_Btn.Click += (ss,ee) => { _frontStation?.ClearCounters(); if(OK_zheng_Lb!=null)OK_zheng_Lb.Text="0"; if(NG_zheng_Lb!=null)NG_zheng_Lb.Text="0"; if(Yield_zheng_Lb!=null)Yield_zheng_Lb.Text="0%"; };
-			if (Clear_fan_Btn != null) Clear_fan_Btn.Click += (ss,ee) => { _backStation?.ClearCounters(); if(OK_fan_Lb!=null)OK_fan_Lb.Text="0"; if(NG_fan_Lb!=null)NG_fan_Lb.Text="0"; if(Yield_fan_Lb!=null)Yield_fan_Lb.Text="0%"; };
-			if (Clear_duanmian_Btn != null) Clear_duanmian_Btn.Click += (ss,ee) => { _endFaceStation?.ClearCounters(); if(OK_duanmian_Lb!=null)OK_duanmian_Lb.Text="0"; if(NG_duanmian_Lb!=null)NG_duanmian_Lb.Text="0"; if(Yield_duanmian_Lb!=null)Yield_duanmian_Lb.Text="0%"; };
-			if (Clear_cemian_Btn != null) Clear_cemian_Btn.Click += (ss,ee) => { _sideStation?.ClearCounters(); if(OK_cemian_Lb!=null)OK_cemian_Lb.Text="0"; if(NG_cemian_Lb!=null)NG_cemian_Lb.Text="0"; if(Yield_cemian_Lb!=null)Yield_cemian_Lb.Text="0%"; };
+			};
+			// 各工位小清空
+			if (Clear_zheng_Btn != null) Clear_zheng_Btn.Click += (ss, ee) => { _frontStation?.ClearCounters(); if (OK_zheng_Lb != null) OK_zheng_Lb.Text = "0"; if (NG_zheng_Lb != null) NG_zheng_Lb.Text = "0"; if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = "0%"; };
+			if (Clear_fan_Btn != null) Clear_fan_Btn.Click += (ss, ee) => { _backStation?.ClearCounters(); if (OK_fan_Lb != null) OK_fan_Lb.Text = "0"; if (NG_fan_Lb != null) NG_fan_Lb.Text = "0"; if (Yield_fan_Lb != null) Yield_fan_Lb.Text = "0%"; };
+			if (Clear_duanmian_Btn != null) Clear_duanmian_Btn.Click += (ss, ee) => { _endFaceStation?.ClearCounters(); if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = "0"; if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = "0"; if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = "0%"; };
+			if (Clear_cemian_Btn != null) Clear_cemian_Btn.Click += (ss, ee) => { _sideStation?.ClearCounters(); if (OK_cemian_Lb != null) OK_cemian_Lb.Text = "0"; if (NG_cemian_Lb != null) NG_cemian_Lb.Text = "0"; if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = "0%"; };
 		}
 
 		/// <summary>初始化统计标签: 4工位OK/NG/良率全部归零</summary>
@@ -1852,26 +1878,26 @@ namespace VisionMeasure
 				Logger.Info($"班次切换: {_currentShift} -> {newShift}，保存统计并清零计数器");
 				SaveCurrentShiftStatistics();
 
-				// ★ 清零4工位内部计数器
+				// 清零4工位内部计数器
 				_frontStation?.ClearCounters();
 				_backStation?.ClearCounters();
 				_endFaceStation?.ClearCounters();
 				_sideStation?.ClearCounters();
 
-				// ★ 重置UI标签（定时器在线程池回调，需BeginInvoke回UI线程）
+				// 重置UI标签（定时器在线程池回调，需BeginInvoke回UI线程）
 				this.BeginInvoke(new Action(() =>
 				{
-					if (OK_zheng_Lb != null)   OK_zheng_Lb.Text = "0";
-					if (NG_zheng_Lb != null)   NG_zheng_Lb.Text = "0";
+					if (OK_zheng_Lb != null) OK_zheng_Lb.Text = "0";
+					if (NG_zheng_Lb != null) NG_zheng_Lb.Text = "0";
 					if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = "0%";
-					if (OK_fan_Lb != null)     OK_fan_Lb.Text = "0";
-					if (NG_fan_Lb != null)     NG_fan_Lb.Text = "0";
-					if (Yield_fan_Lb != null)   Yield_fan_Lb.Text = "0%";
+					if (OK_fan_Lb != null) OK_fan_Lb.Text = "0";
+					if (NG_fan_Lb != null) NG_fan_Lb.Text = "0";
+					if (Yield_fan_Lb != null) Yield_fan_Lb.Text = "0%";
 					if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = "0";
 					if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = "0";
 					if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = "0%";
-					if (OK_cemian_Lb != null)  OK_cemian_Lb.Text = "0";
-					if (NG_cemian_Lb != null)  NG_cemian_Lb.Text = "0";
+					if (OK_cemian_Lb != null) OK_cemian_Lb.Text = "0";
+					if (NG_cemian_Lb != null) NG_cemian_Lb.Text = "0";
 					if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = "0%";
 				}));
 
@@ -1922,7 +1948,7 @@ namespace VisionMeasure
 		#region 窗体关闭
 
 		/// <summary>
-		/// ★ 程序关闭流程(按依赖顺序释放所有资源)
+		/// 程序关闭流程(按依赖顺序释放所有资源)
 		/// SaveCounts→SaveShift→_sideTriggerPending=false→工位Dispose→触发管理器→8相机Close→硬件Disconnect→性能/保存器/计时器→AI→Logger
 		/// </summary>
 
@@ -1963,14 +1989,14 @@ namespace VisionMeasure
 				_endFaceStation?.Dispose();
 				_sideStation?.Dispose();
 
-				_triggerMgr?.Dispose();			// 释放触发管理器（包含后台线程）
-										 
-				DisposeAllCameras();			// 释放所有相机SDK实例
+				_triggerMgr?.Dispose();         // 释放触发管理器（包含后台线程）
+
+				DisposeAllCameras();            // 释放所有相机SDK实例
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
 				_perfMonitor?.Dispose();
 				_imageSaver?.Dispose();
-			_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
+				_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
 				_shiftCheckTimer?.Stop();
 				_shiftCheckTimer?.Dispose();
 				_aiModels?.Dispose();

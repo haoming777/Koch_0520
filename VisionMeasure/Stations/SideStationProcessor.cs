@@ -32,53 +32,45 @@ namespace Stations
 	public enum In12EdgeMap { RisingLeftFallingRight = 0, RisingRightFallingLeft = 1 }
 
 	/// <summary>
-	/// 侧面工位处理器 — 系统中最复杂的工位
-	/// 核心职责:
-	///   1. 运动轴控制: 从起点到终点往复运动, 3段(起点→终点→起点)
-	///   2. 实时推理: 运动中每收到一张图即刻推理+实时显示 (InferSingle: 头尾裁剪→YOLO)
-	///   3. 安全锁双层防护: 硬件ALM_IN + 软件5ms轮询, 支持继续/返回两种恢复模式
-	///   4. 图像管理: ConcurrentQueue收集→ProcessStream实时消费→FinalizeResults汇总
-	/// 触发流程: IN13↓ → MainFrm.OnCameraTriggered → StartDetection()
-	///   并行启动: ProcessStream(推理线程) + StartMotion(运动线程)
-	/// 安全锁: IN8=0(门开)→EmergencyStop(mode=0)→等待恢复→
-	///   Continue模式: ClearHardwareAlarm+MoveAbs(目标) 继续执行
-	///   ReturnToStart: ClearHardwareAlarm+MoveAbs(起点)→return false 中止本周期
+	/// 侧面工位处理器. 负责运动轴控制(起点-终点往复)、实时推理(运动中每图即刻YOLO)、安全锁双层防护(硬件+软件).
+	/// 触发流程: IN13下降沿 -> MainFrm.OnCameraTriggered -> StartDetection (并行ProcessStream推理线程 + StartMotion运动线程).
+	/// 安全锁: IN8=0(门开) -> EmergencyStop -> 等待恢复 -> Continue(继续) 或 ReturnToStart(回起点).
 	/// </summary>
 	public class SideStationProcessor : IDisposable
 	{
-		// ── 依赖注入 ──
-		private readonly AiModelManager _models;          // AI模型(侧面缺陷YOLO)
+		// 依赖注入
+		private readonly AiModelManager _models;          // 侧面缺陷YOLO模型
 		private readonly string _savePath;                 // 图片保存根目录
 		private SkuData _sku;                              // 当前SKU(提供P值)
-		private readonly MotionControlManager _motion;     // 运动控制卡(轴运动+安全锁)
+		private readonly MotionControlManager _motion;     // 运动控制卡(轴运动/安全锁)
 		private readonly HighSpeedImageSaver _imageSaver;  // 高速后台存图
 		private readonly PerformanceMonitor _perfMonitor;  // 性能监控
 
-		// ── 图像队列(线程安全) ──
-		// 生产者: OnCam7/OnCam8(相机回调线程)  消费者: ProcessStream(推理线程)
+		// 图像队列(线程安全, 生产者: OnCam7/OnCam8相机回调, 消费者: ProcessStream推理线程)
 		private readonly ConcurrentQueue<SideImageCtx> _leftQueue = new ConcurrentQueue<SideImageCtx>();
 		private readonly ConcurrentQueue<SideImageCtx> _rightQueue = new ConcurrentQueue<SideImageCtx>();
-		private int _leftCount, _rightCount;  // 队列计数(用于调试, 不入锁)
+		private int _leftCount, _rightCount;               // 队列计数(调试用)
 		private readonly object _countLock = new object();
 
-		// ── 推理结果缓存 ──
+		// 推理结果缓存
 		private readonly List<SideResult> _leftResults = new List<SideResult>();
 		private readonly List<SideResult> _rightResults = new List<SideResult>();
-		// ── 显示缓存(左右独立, 避免串显) ──
+		// 显示缓存(左右独立)
 		private readonly List<Mat> _displayImages = new List<Mat>();
-		private readonly List<Bitmap> _displayBitmaps = new List<Bitmap>();  // 合并列表(仅存图用)
+		private readonly List<Bitmap> _displayBitmaps = new List<Bitmap>();  // 合并列表(存图用)
 		private readonly List<Bitmap> _leftDisplayBitmaps = new List<Bitmap>();
 		private readonly List<Bitmap> _rightDisplayBitmaps = new List<Bitmap>();
 		private int _leftDisplayIndex;
 		private int _rightDisplayIndex;
-		private int _displayIndex;  // 保留兼容
+		private int _displayIndex;                          // 保留兼容
 		private readonly object _resultLock = new object();
 
-		// ── 统计计数 ──
+		// 统计计数
 		private long _totalCount, _okCount, _ngCount;
 		private bool _disposed;
-		private CancellationTokenSource _motionCts;  // 运动周期取消令牌
-		private long _cycleId;                       // ★ 代际号: 防止旧批次的finally覆盖新批次IsMoving
+		private CancellationTokenSource _motionCts;        // 运动周期取消令牌
+		/// <summary>代际号: 防止旧批次finally覆盖新批次IsMoving</summary>
+		private long _cycleId;
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
@@ -233,10 +225,9 @@ namespace Stations
 		}
 
 		/// <summary>
-		/// ★ IN13↓触发 → 启动侧面检测(调用者已保证!IsMoving)
-		/// 流程: 安全锁等待→ClearBatch→并行ProcessStream+StartMotion→FinalizeResults
-		/// ★ 调用约定: MainFrm轮询循环确保IsMoving=false后才调用, 不会并发
-		///   _cycleId代际号防止旧批次finally覆盖新批次IsMoving
+		/// IN13下降沿触发, 启动侧面检测(调用者确保IsMoving=false).
+		/// 流程: 安全锁等待 -> ClearBatch -> 并行ProcessStream+StartMotion -> FinalizeResults.
+		/// _cycleId代际号防止旧批次finally覆盖新批次IsMoving.
 		/// </summary>
 		public void StartDetection()
 		{
@@ -283,7 +274,7 @@ namespace Stations
 		/// 流程:
 		///   1. 到起点: WaitForSafetyLock → MoveAbs(起点) → WaitForMove(10s超时)
 		///   2. 前进: WaitForSafetyLock → SetAxisSpeed(ForwardSpeed) → MoveAbs(终点) → WaitForMove(60s超时)
-		///      ★ 前进阶段中ProcessStream同时进行推理
+		///      前进阶段中ProcessStream同时进行推理
 		///   3. 返回: SetAxisSpeed(ReturnSpeed) → MoveAbs(起点) → WaitForMove(10s超时)
 		/// 每段运动中WaitForMove内部5ms安全锁轮询, 门开→EmergencyStop→恢复→Continue/Return
 		/// </summary>
@@ -324,7 +315,7 @@ namespace Stations
 		}
 
 		/// <summary>
-		/// ★ 等待轴运动到位(每5ms轮询)，支持安全锁暂停/恢复
+		/// 等待轴运动到位(每5ms轮询)，支持安全锁暂停/恢复
 		/// 安全锁触发流程:
 		///   1. CheckSafetyLock()=false → EmergencyStop(axis, mode=0立即停) → stopped=true
 		///   2. 等待安全锁恢复(持续5ms轮询)
@@ -332,7 +323,7 @@ namespace Stations
 		///      RecoveryMode.Continue: ClearHardwareAlarm + MoveAbs(目标) → 继续等待到位
 		///      RecoveryMode.ReturnToStart: ClearHardwareAlarm + MoveAbs(起点) → return false
 		///        (返回途中也有安全锁监控, 再次触发会递归处理)
-		/// ★ 位置验证: 轴停止后必须验证实际位置≈目标位置(±0.5容差), 防止被外部MoveAbs打断后误判到位
+		/// 位置验证: 轴停止后必须验证实际位置≈目标位置(±0.5容差), 防止被外部MoveAbs打断后误判到位
 		/// 返回值: true=正常到位 | false=ReturnToStart已中止(外部应终止当前周期)
 		/// </summary>
 		/// <param name="axis">轴号</param>
@@ -389,7 +380,7 @@ namespace Stations
 					}
 				}
 
-				// ★ 位置验证: 轴停止后检查实际位置是否到达目标
+				// 位置验证: 轴停止后检查实际位置是否到达目标
 				//    仅检查IsMoving不够——外部MoveAbs可能让轴在其他位置停下
 				if (!_motion.IsMoving(axis))
 				{
@@ -423,7 +414,7 @@ namespace Stations
 		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
 
 		/// <summary>检查安全锁传感器: true=安全可运动, false=不安全阻止运动</summary>
-	/// <summary>★ 安全锁检查: 读IN8硬件IO → true=安全可运动 | false=不安全</summary>
+	/// <summary>安全锁检查: 读IN8硬件IO → true=安全可运动 | false=不安全</summary>
 		private bool CheckSafetyLock()
 		{
 			return _motion.CheckSafetyLock(SafetyLockPort, SafetyLockActiveHigh);
@@ -434,7 +425,7 @@ namespace Stations
 		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
 
 	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出
-	/// ★ 防止死等: 连续3秒无新图片到达则退出(运动可能已提前结束或被中断)</summary>
+	/// 防止死等: 连续3秒无新图片到达则退出(运动可能已提前结束或被中断)</summary>
 		private void ProcessStream(CancellationToken cancel)
 		{
 			int p = _sku.P, processed = 0;
@@ -457,7 +448,7 @@ namespace Stations
 				if (!gotOne) {
 					Thread.Sleep(1);
 					noImgCount++;
-					// ★ Cancel或连续3秒无新图片 → 退出等待(缺失由FinalizeResults→MissingAsNg填NG)
+					// Cancel或连续3秒无新图片 → 退出等待(缺失由FinalizeResults→MissingAsNg填NG)
 					if (cancel.IsCancellationRequested)
 					{
 						Logger.Info($"[Side] ProcessStream 收到取消信号，退出(已处理{processed}/期望{p*2})");
@@ -512,8 +503,8 @@ namespace Stations
 		}
 
 	/// <summary>最终汇总(两阶段):
-	/// ★ 阶段1(同步~1ms): 填充缺失→合并状态→更新计数器→日志→触发事件(无渲染图)
-	/// ★ 阶段2(后台Task): BuildDisplayImages→渲染→存图, 数据已Copy不依赖共享列表
+	/// 阶段1(同步~1ms): 填充缺失→合并状态→更新计数器→日志→触发事件(无渲染图)
+	/// 阶段2(后台Task): BuildDisplayImages→渲染→存图, 数据已Copy不依赖共享列表
 	///   阶段2完成后再通过OnResultReady补发渲染图</summary>
 		private void FinalizeResults()
 		{
@@ -702,7 +693,7 @@ namespace Stations
 			foreach (var m in allCrops) m.Dispose();
 		}
 
-	/// <summary>		/// 单张侧面图像推理 — 头尾裁剪+YOLO批推理(2张)		/// head=左边cropW像素, tail=右边cropW像素 (cropW=h*CropRatio)		/// 头尾两段→YOLO批量推理→坐标映射回原图		/// EnableSideDefectCheck=false时跳过推理, 直接OK		/// </summary>
+	/// <summary>单张侧面图像推理: 头尾裁剪+YOLO批量推理(2张). head=左cropW像素, tail=右cropW像素. 头尾两段->YOLO推理->坐标映射回原图.</summary>
 		private SideResult InferSingle(SideImageCtx ctx, int idx)
 		{
 			var result = new SideResult { Index = idx, Side = ctx.Side, Status = "OK" };

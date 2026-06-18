@@ -52,7 +52,7 @@ namespace Config
 		/// IN12侧面传感器边缘模式
 		/// RisingLeftFallingRight: IN12↑→触发Camera7(左侧) / IN12↓→触发Camera8(右侧) 【默认】
 		/// RisingRightFallingLeft: IN12↑→触发Camera8(右侧) / IN12↓→触发Camera7(左侧)
-		/// ★ 可通过DetectionParametersForm→侧面Tab中的下拉框切换
+		/// 可通过DetectionParametersForm→侧面Tab中的下拉框切换
 		/// </summary>
 		public enum SideSensorEdgeMode
 		{

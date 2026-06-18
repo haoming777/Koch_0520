@@ -22,7 +22,12 @@ using static CommonLib.Class_Config;
 
 namespace Stations
 {
-/// <summary>	/// 端面工位处理器 — 批次模式(收集P张图后批量处理)	/// 入队: EnqueueImage → ConcurrentQueue(上下端面各一个队列)	/// 触发: 上下各P张图 → 批次触发 → BlockingCollection	/// 防呆: 5秒超时未满P张 → 强制处理现有图 → 清空残留队列	/// 处理: ProcessLoop后台线程 → 消费批次 → ProcessBatch(裁图→并行YOLO→解析→汇总)	/// 显示: 上下端面独立索引, 各有NG时显示第一张NG, 全OK显示最后一张	/// </summary>
+/// <summary>
+/// 端面工位处理器, 批次模式(收集P张图后批量处理).
+/// 入队: EnqueueImage -> ConcurrentQueue -> BlockingCollection.
+/// 防呆: 超时未满P张则强制处理现有图.
+/// 处理: ProcessLoop后台线程 -> ProcessBatch(裁图 -> 并行YOLO -> 汇总).
+/// </summary>
 	public class EndFaceStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -38,8 +43,8 @@ namespace Stations
 		private int _lowerCount = 0;
 		private readonly object _countLock = new object();
 			private DateTime _lastEnqueueTime = DateTime.MinValue;
-			private const int QueueTimeoutMs = 2000;  // ★ 降为2秒(新批次ProductId检测是主力, 超时兜底)
-			private long _firstBatchProductId = -1;  // ★ 本批次第一个ProductId, 用于检测新批次到达
+			private const int QueueTimeoutMs = 2000;  // 降为2秒(新批次ProductId检测是主力, 超时兜底)
+			private long _firstBatchProductId = -1;  // 本批次第一个ProductId, 用于检测新批次到达
 
 		private readonly BlockingCollection<(List<ImageContext> upper, List<ImageContext> lower)> _batchQueue;
 
@@ -131,13 +136,13 @@ namespace Stations
 		public void OnCam6(Bitmap bitmap, long productId) { Interlocked.Increment(ref _imgLowerCount); EnqueueImage(_lowerQueue, ref _lowerCount, bitmap, productId, "Lower"); }
 
 	/// <summary>入队图像: ConcurrentQueue原子入队→计数累加→上下各P张触发批次→DequeueBatch取P张→BlockingCollection.Add入处理队列
-	/// ★ 新批次检测: 当ProductId跳变超过P*3(即新一批产品到达), 立即强制结束当前不完整批次→清理残留→开始新批次</summary>
+	/// 新批次检测: 当ProductId跳变超过P*3(即新一批产品到达), 立即强制结束当前不完整批次→清理残留→开始新批次</summary>
 		private void EnqueueImage(ConcurrentQueue<ImageContext> queue, ref int count, Bitmap bitmap, long productId, string name)
 		{
 			var ctx = new ImageContext { ProductId = productId, OriginalBitmap = bitmap, ReceiveTime = DateTime.Now };
 			lock (_countLock)
 			{
-				// ★ 新批次检测: 第一次入队记录firstProductId, 后续ProductId跳变>P*3视为新批次
+				// 新批次检测: 第一次入队记录firstProductId, 后续ProductId跳变>P*3视为新批次
 				if (_firstBatchProductId < 0) _firstBatchProductId = productId;
 				if (productId - _firstBatchProductId > _pCount * 3)
 				{
@@ -214,7 +219,7 @@ namespace Stations
 
 		public void Stop() { _cts.Cancel(); _processThread?.Join(3000); }
 
-	/// <summary>		/// 后台处理循环(AboveNormal优先级线程): 消费BlockingCollection批次		/// 防呆: 每次循环前检查队列超时(5秒未满P张→强制处理+清空残留)		/// 消费: TryTake(100ms超时) → ProcessBatch → 释放ImageContext		/// </summary>
+	/// <summary>后台处理循环(AboveNormal优先级): 消费BlockingCollection批次. 超时未满P张则强制处理.</summary>
 		private void ProcessLoop()
 		{
 			while (!_cts.Token.IsCancellationRequested)
@@ -241,7 +246,7 @@ namespace Stations
 								while (_upperQueue.TryDequeue(out var _)) _upperCount--;
 								while (_lowerQueue.TryDequeue(out var _)) _lowerCount--;
 							}
-							_firstBatchProductId = -1;  // ★ 超时清空后重置, 下一批重新开始
+							_firstBatchProductId = -1;  // 超时清空后重置, 下一批重新开始
 						}
 				}
 				{
@@ -258,14 +263,14 @@ namespace Stations
 			}
 		}
 
-	/// <summary>		/// 批处理核心: 裁图→并行YOLO(上下端面各自推理)→解析缺陷→汇总状态→绘制→保存		/// 上端面裁右边(cropRight=true), 下端面裁左边(cropRight=false)		/// 汇总: upperStatus[i] &amp;&amp; lowerStatus[i] → mergedStatus[i]		/// 性能记录: PerformanceMonitor.Record (Crop/Inference/Draw/Save/Total)		/// </summary>
+	/// <summary>批处理核心: 裁图->并行YOLO(上下端面各自推理)->解析缺陷->汇总状态->绘制->保存. 上端面裁右边, 下端面裁左边.</summary>
 		private void ProcessBatch(List<ImageContext> upperImages, List<ImageContext> lowerImages)
 		{
 			int actualP = Math.Min(upperImages.Count, lowerImages.Count);
 			if (actualP == 0) { Logger.Error("端面图片为空"); return; }
 			if (actualP < _pCount)
 				Logger.Warning($"[EndFace] 部分批次: Upper={upperImages.Count}, Lower={lowerImages.Count}, 预期P={_pCount}, 实际={actualP}");
-			int p = Math.Max(actualP, _pCount);  // ★ 显示总是用_pCount, 缺失位填"缺少"
+			int p = Math.Max(actualP, _pCount);  // 显示总是用_pCount, 缺失位填"缺少"
 
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			long firstProductId = upperImages.FirstOrDefault()?.ProductId ?? 0;
@@ -308,7 +313,7 @@ namespace Stations
 					lowerStatus.Add(lStatus);
 					mergedStatus.Add((uStatus == "OK" && lStatus == "OK") ? "OK" : (uStatus != "OK" ? uStatus : lStatus));
 				}
-				// ★ 不完整批次: 缺失位置标记"缺少"→NG, 在汇总中显式标识
+				// 不完整批次: 缺失位置标记"缺少"→NG, 在汇总中显式标识
 				int missingCount = _pCount - actualP;
 				for (int i = 0; i < missingCount; i++)
 				{

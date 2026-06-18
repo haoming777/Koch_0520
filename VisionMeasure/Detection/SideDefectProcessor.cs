@@ -8,15 +8,7 @@ namespace Detection
 /// <summary>侧面缺陷处理器 — 头尾裁剪YOLO推理→坐标映射→输出缺陷</summary>
 	public class SideDefectProcessor
 	{
-		/// <summary>
-		        /// 对长宽比例夸张的图像进行头尾裁剪，使用YOLO进行批量推理，
-		        /// 并将缺陷坐标映射回原图的【相对（归一化）坐标】。
-		        /// </summary>
-		        /// <param name="image">输入的原始图像</param>
-		        /// <param name="cropRatio">裁剪比例 (宽/高)</param>
-		        /// <param name="model">已加载并初始化的 YoloOnnx 模型实例</param>
-		        /// <returns>返回包含缺陷名称列表和相对坐标列表的 Tuple</returns>
-		/// <summary>侧面缺陷检测</summary>
+	/// <summary>侧面缺陷检测: 头尾裁剪YOLO推理->坐标映射回原图归一化坐标.</summary>
 		public static Tuple<List<string>, List<float[]>> DetectSideDefects(Mat image, float cropRatio, YoloOnnx model)
 		{
 			int height = image.Height;

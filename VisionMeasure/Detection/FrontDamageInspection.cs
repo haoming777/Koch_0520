@@ -9,13 +9,11 @@ namespace Detection
 	/// <summary>正面破损检测 — YOLO推理→按中心X坐标分盒→输出每盒缺陷列表</summary>
 	public class FrontDamageInspection
 	{
-		// 模拟 Python 中 check_front_model.names 字典结构
-		// 在实际应用中，您可以通过解析 ONNX metadata 或硬编码配置注入类别映射
 		public static readonly Dictionary<int, string> ModelClassNames = new Dictionary<int, string>
 		{
 			{ 0, "damage" }
-            // { 1, "scratch" } ...
-        };
+            // { 1, "scratch" } ...
+        };
 
 		/// <summary>
 		/// 使用 C# 基础数学库向量化执行非极大值抑制 (NMS)

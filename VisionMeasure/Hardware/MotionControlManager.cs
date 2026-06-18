@@ -109,7 +109,7 @@ namespace Hardware
 		/// 设置硬件安全锁告警输入 — 门开时ZMC控制器自身立即急停
 		/// 这是双层安全防护的硬件层: ZAux_Direct_SetAlmIn将IN端口绑定为轴的硬件告警
 		/// 当IN=0时(门开)，ZMC控制器在硬件级别停止轴运动，不依赖PC CPU
-		/// ★ CPU 100%时仍然有效
+		/// CPU 100%时仍然有效
 		/// </summary>
 		/// <param name="axis">轴号</param>
 		/// <param name="port">输入端口号(IN8=安全锁), port≤0则跳过</param>
@@ -129,7 +129,7 @@ namespace Hardware
 		/// <summary>
 		/// 清除硬件告警状态 — 安全锁恢复(门关)后必须调用
 		/// 先ResetAlarm清除告警标志，再SetAxisEnable(1)重新使能轴
-		/// ★ 必须在重新MoveAbs之前调用，否则轴无法运动
+		/// 必须在重新MoveAbs之前调用，否则轴无法运动
 		/// </summary>
 		/// <param name="axis">轴号</param>
 		public void ClearHardwareAlarm(int axis)
@@ -244,7 +244,7 @@ namespace Hardware
 		/// 紧急停止 — 安全锁专用(mode=0=立即停止, 无减速)
 		/// 对比 StopAxis(减速停止)，此方法使用 ZAux_Direct_Single_Cancel(mode=0)
 		/// mode=0: 立即停止(刹车) | mode=2: 减速停止(正常停止)
-		/// ★ 安全锁触发时必须用此方法，确保轴在最短时间内停止
+		/// 安全锁触发时必须用此方法，确保轴在最短时间内停止
 		/// </summary>
 		/// <param name="axis">轴号</param>
 		/// <returns>成功返回true</returns>
@@ -425,7 +425,7 @@ namespace Hardware
 		/// <summary>
 		/// 运动到指定位置后自动脉冲输出 — 硬件级，零PC延迟
 		/// 先发MoveAbs指令，再用MoveOp2绑定输出脉冲
-		/// ★ 此方法由ZMC控制器内部执行，到达位置后自动触发脉冲，不受PC延迟影响
+		/// 此方法由ZMC控制器内部执行，到达位置后自动触发脉冲，不受PC延迟影响
 		/// </summary>
 		/// <param name="axis">轴号</param>
 		/// <param name="targetPos">目标位置</param>
@@ -445,7 +445,7 @@ namespace Hardware
 		/// <summary>
 		/// 批量读取输入端口 — 一次API调用读取 startPort~endPort 所有端口状态
 		/// 返回int位掩码: bit0=IN(startPort), bit1=IN(startPort+1), ...
-		/// ★ CameraTriggerManager.MonitorLoop使用此方法高频扫描(2000Hz)，避免逐个GetInput竞争ZMC
+		/// CameraTriggerManager.MonitorLoop使用此方法高频扫描(2000Hz)，避免逐个GetInput竞争ZMC
 		/// </summary>
 		/// <param name="startPort">起始端口号</param>
 		/// <param name="endPort">结束端口号</param>
@@ -474,7 +474,7 @@ namespace Hardware
 		/// <summary>
 		/// 安全锁检查 — 直接读取硬件IO端口状态
 		/// 这是双层安全防护的软件层，每5ms轮询
-		/// ★ 硬件层(ZMC ALM_IN)保证CPU 100%时也能急停，软件层负责恢复逻辑
+		/// 硬件层(ZMC ALM_IN)保证CPU 100%时也能急停，软件层负责恢复逻辑
 		/// </summary>
 		/// <param name="port">输入端口号(IN8=安全锁)，port≤0则跳过检查返回true</param>
 		/// <param name="activeHigh">true=高电平有效(IN8=1→安全)，false=低电平有效</param>

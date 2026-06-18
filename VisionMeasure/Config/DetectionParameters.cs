@@ -8,10 +8,11 @@ using CommonLib;
 
 namespace Config
 {
-	/// <summary>
-	/// 检测参数配置 - JSON格式存储
-	/// </summary>
-/// <summary>	/// 检测参数配置 — 单例(线程安全), JSON存储, 保存位置: Config/DetectionParams.json	/// 包含8个子参数类: Front(正面)/EndFace(端面)/Back(背面)/Side(侧面)/Camera(相机)/Motion(运动)/Save(存图)/Station(工位)	/// 所有可调参数通过检测参数按钮→DetectionParametersForm修改, 保存立即生效(无需重启)	/// 子类中的[JsonProperty]特性对应JSON字段的中文名	/// </summary>
+/// <summary>
+/// 检测参数配置(单例/线程安全), JSON存储于 Config/DetectionParams.json.
+/// 包含8个子参数: Front/EndFace/Back/Side/Camera/Motion/Save/Station.
+/// 参数通过检测参数按钮修改, 保存后立即生效无需重启.
+/// </summary>
 	public class DetectionParameters
 	{
 		private static DetectionParameters _instance;

@@ -30,16 +30,12 @@ using static CommonLib.Class_Config;
 namespace Stations
 {
 	/// <summary>
-	/// 背面工位处理器
-	/// 负责:
-	///   1. 配对左右相机图像(Camera5/Camera6 → OnCam3/OnCam4)
-	///   2. 条码检测(ZXing + OpenCV预处理管线)
-	///   3. 日期码识别(C1分割 + C2重影分类 + C3 OCR, 三步流水线)
-	///   4. 挂钩明显/轻微错位检测(YOLO + 分割厚度计算)
-	///   5. 结果绘制(分盒框, 虚线分区, OK/NG标签)
-	///   6. 图像保存(渲染图 + 原图)
-	/// </summary>
-	/// <summary>	/// 背面工位处理器 — 左右图配对后3路并行推理	/// 检测项:	///   1. 条码识别: ZXing.Net + OpenCV预处理管线(对比度/直方图/高斯/中值/阈值/形态学)	///      逐盒ROI解码 → 与参考条码比对(完全匹配=OK, 不匹配=条码错, 未识别=条码缺少)	///   2. 日期码识别: 三步流水线(C1 ViMo分割→C2 ViMo分类重影→C3 ViMo OCR校验)	///      支持MFG/LOT/双排三种格式, 校验日期是否等于当天	///   3. 挂钩错位: YOLO检测(classId=1→明显暗红) + 分割厚度计算(classId=0→分割→DistanceTransform)	/// 汇总: 3路结果合并 → 逐盒status → OK/NG计数(按盒粒度) → 渲染+保存	/// </summary>
+/// 背面工位处理器, 左右图配对后3路并行推理.
+/// 1.条码识别: ZXing + OpenCV预处理管线 -> 逐盒ROI解码 -> 与参考条码比对.
+/// 2.日期码识别: C1(ViMo分割) -> C2(ViMo分类重影) -> C3(ViMo OCR校验), 支持MFG/LOT/双排.
+/// 3.挂钩错位: YOLO检测(classId=1明显) + 分割厚度计算(classId=0轻微).
+/// 汇总: 3路结果合并 -> 逐盒status -> OK/NG计数 -> 渲染+保存.
+/// </summary>
 	public class BackStationProcessor : IDisposable
 	{
 		private readonly AiModelManager _models;
@@ -464,9 +460,11 @@ namespace Stations
 			return r;
 		}
 
-		/// <summary>三步流水线: C1全图分割→C2重影分类→C3 OCR (参考AIRunThread.cs)</summary>
-	/// <summary>日期码三步流水线: C1=ViMo分割全图→Mask→ConnectedComponents提取区域 | C2=ViMo分类逐区域判断重影 | C3=ViMo OCR识别→校验(MFG/LOT/双排→日期比对)</summary>
-		private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p, int cropY, int fullH)
+	/// <summary>
+	/// 日期码三步流水线: C1=ViMo全图分割 -> Mask -> ConnectedComponents提取区域,
+	/// C2=ViMo分类逐区域判断重影, C3=ViMo OCR识别 -> 校验(MFG/LOT/双排).
+	/// </summary>
+	private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p, int cropY, int fullH)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			int fw = img.Width, fh = img.Height, halfW = fw / 2, boxW = fw / p;
@@ -587,14 +585,23 @@ namespace Stations
 		private int CheckMFG(string text) { var m = MFG_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
 		/// <summary>校验LOT格式日期: "LOT yyyy/MM/dd"→提取日期→比对当天</summary>
 		private int CheckLOT(string text) { var m = LOT_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "yyyy/MM/dd", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
-		/// <summary>校验双排格式: 分离MFG行和EXP行→分别校验→MFG和EXP都通过才算OK</summary>
+		/// <summary>
+/// 挂钩缺陷检测: YOLO检测+分割厚度计算.
+/// 明显错位(classId=1): 直接映射到DarkRed框.
+/// 轻微错位(classId=0): 分割->DistanceTransform->厚度>阈值->OrangeRed框.
+/// 轻微检测仅在无明显错位时进行(避免重复标记).
+/// </summary>
 		private int CheckDoubleRow(List<string> lines) { if (lines.Count < 2) return 1; string mfgLine = null, expLine = null; foreach (var line in lines) { string s3 = line.Length >= 3 ? line.Substring(0, 3) : line; if (mfgLine == null && Regex.IsMatch(s3, "[MFG]")) mfgLine = line; if (expLine == null && Regex.IsMatch(s3, "[EXP]")) expLine = line; } if (mfgLine == null || expLine == null) return 1; int mfgR = CheckMFG(mfgLine); return mfgR != 0 ? mfgR : CheckEXP(expLine); }
 		/// <summary>校验EXP格式日期: "EXP dd/MM/yyyy"→提取日期→比对(加10年)</summary>
 		private int CheckEXP(string text) { var m = EXP_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.AddYears(10).Date ? 0 : 2; return 2; }
 
 		// ====== 挂钩缺陷检测 (原有代码不变) ======
-	/// <summary>		/// 挂钩缺陷检测 — YOLO检测+分割厚度计算		/// 明显错位: classId=1 → BoxesN直接映射 → DarkRed框		/// 轻微错位: classId=0 → 分割(内圈+外圈) → DistanceTransform → maxVal*2=厚度		///   厚度 > HookThicknessThreshold → OrangeRed框		/// 轻微检测仅在无明显错位时进行(避免重复标记)		/// </summary>
-		private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int p)
+	/// <summary>
+	/// 挂钩缺陷检测: YOLO + 分割厚度计算.
+	/// 明显错位(classId=1): 直接映射, DarkRed框.
+	/// 轻微错位(classId=0): 分割 -> DistanceTransform -> 厚度>阈值 -> OrangeRed框.
+	/// </summary>
+	private Dictionary<int, List<BoxDefect>> DetectHookDamage(Mat left, Mat right, int p)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
 			if (!EnableHookCheck || _models.BackHookModel == null) return results;
@@ -743,7 +750,7 @@ namespace Stations
 					bool borderOnly = isBcOrDc || d.DefectType.Contains("缺少");
 					if (!borderOnly) using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
 					using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
-					// ★ 轻微挂钩错位: 绘制内切圆
+					// 轻微挂钩错位: 绘制内切圆
 				if (d.DefectType.Contains("轻微挂钩错位") && d.CircleInfo != null && d.CircleInfo.Length >= 3)
 				{
 					int cxPx = (int)(d.CircleInfo[0] * w);
@@ -768,7 +775,7 @@ namespace Stations
 						string label = d.DefectType;
 						bool isDisplayOnly = label.StartsWith("条码:") || label.StartsWith("日期:") || label.StartsWith("双排:");
 						bool isHook = label.Contains("挂钩");
-						// ★ 挂钩类缺陷不显示模型得分(日志中已有)
+						// 挂钩类缺陷不显示模型得分(日志中已有)
 						if (!isDisplayOnly && !isHook && d.Score > 0 && d.Score < 1.0f)
 							label = label + " " + d.Score.ToString("F2");
 						if (label.Length > 30) label = label.Substring(0, 30);

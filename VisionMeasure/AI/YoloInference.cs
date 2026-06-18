@@ -18,7 +18,7 @@ namespace YoloInference
 	// ==========================================
 	// 0. 模型元数据映射类 (对接 meta.json)
 	// ==========================================
-	/// <summary>BlobFromImages swapRB验证(仅首次)</summary>
+	/// <summary>swapRB首次通道验证(只执行一次)</summary>
 	internal static class BlobVerify
 	{
 		public static bool Done;
@@ -322,7 +322,7 @@ namespace YoloInference
 			using (Mat blob = CvDnn.BlobFromImages(processedImgs, 1.0 / 255.0,
 				new Size(_inputW, _inputH), new Scalar(0, 0, 0), swapRB: true, crop: false))
 			{
-				// ★ BlobFromImages 通道验证(仅首次)
+				// BlobFromImages 通道验证(仅首次)
 				if (!BlobVerify.Done && processedImgs.Count > 0)
 				{
 					BlobVerify.Done = true;

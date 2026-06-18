@@ -2,8 +2,8 @@
 
 namespace CommonLib
 {
+	/// <summary>系统运行配置(单例), 包含图像保存开关/运动参数等, 通过SystemConfig.Instance访问.</summary>
 	public class SystemConfig
-	/// <summary>系统运行配置 — 单例, 包含图像保存开关/运动参数等, 通过SystemConfig.Instance访问</summary>
 	{
 		public static SystemConfig Instance { get; set; } = new SystemConfig();
 

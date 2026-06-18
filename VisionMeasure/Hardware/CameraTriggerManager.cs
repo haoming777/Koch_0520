@@ -66,8 +66,12 @@ namespace Hardware
 				_triggerCounts[kvp.Key] = 0;
 		}
 
-	/// <summary>启动触发管理器: 提升进程优先级到High→记录初始IO状态→启动3个线程(TrigMonitor=Highest+CPU绑定 | TrigPulseOut=AboveNormal | TrigStats=Normal)→外部触发模式下跳过PulseOut</summary>
-		public void Start()
+	/// <summary>
+	/// 启动触发管理器: 提升进程优先级到High, 记录初始IO状态.
+	/// 启动3个线程: TrigMonitor(Highest+CPU绑定), TrigPulseOut(AboveNormal), TrigStats(Normal).
+	/// 外部触发模式下跳过PulseOut线程.
+	/// </summary>
+	public void Start()
 		{
 			_isRunning = true;
 			_cts = new CancellationTokenSource();
@@ -136,8 +140,8 @@ namespace Hardware
 
 		/// <summary>
 		/// 信号监听线程 — 系统实时信号中枢 (Highest优先级, 绑定最后CPU核心)
-		/// ★ 2000Hz扫描: GetInMulti(4,13)批量读取10个端口 → 位运算边沿检测 → 入队脉冲
-		/// ★ 外部触发模式(ExternalTriggerEnabled=true): 只监听IN13, 不输出脉冲
+		/// 2000Hz扫描: GetInMulti(4,13)批量读取10个端口 → 位运算边沿检测 → 入队脉冲
+		/// 外部触发模式(ExternalTriggerEnabled=true): 只监听IN13, 不输出脉冲
 		/// </summary>
 		private void MonitorLoop()
 		{
