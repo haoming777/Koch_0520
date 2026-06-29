@@ -159,8 +159,10 @@ namespace Hardware
 
 			try
 			{
+				long tickBefore = DateTime.Now.Ticks;
 				_zmc.MoveAbs(_handle, axis, position);
-				Logger.Debug($"轴{axis}移动到位置: {position}");
+				long tickAfter = DateTime.Now.Ticks;
+				Logger.Debug($"[ZMC] MoveAbs axis={axis} target={position:F1} 耗时={(tickAfter - tickBefore) / 10000.0:F1}ms");
 				return true;
 			}
 			catch (Exception ex)
@@ -262,11 +264,11 @@ namespace Hardware
 		}
 
 		/// <summary>设置轴运行速度</summary>
-		public void SetSpeed(int axis, float speed) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetSpeed(_handle, axis, speed); } catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); } }
+		public void SetSpeed(int axis, float speed) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetSpeed(_handle, axis, speed); Logger.Debug($"[ZMC] SetSpeed axis={axis} speed={speed}"); } catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); } }
 		/// <summary>设置轴加速度</summary>
-		public void SetAccel(int axis, float accel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetAccel(_handle, axis, accel); } catch (Exception ex) { Logger.Error("SetAccel: " + ex.Message); } }
+		public void SetAccel(int axis, float accel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetAccel(_handle, axis, accel); Logger.Debug($"[ZMC] SetAccel axis={axis} accel={accel}"); } catch (Exception ex) { Logger.Error("SetAccel: " + ex.Message); } }
 		/// <summary>设置轴减速度</summary>
-		public void SetDecel(int axis, float decel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetDecel(_handle, axis, decel); } catch (Exception ex) { Logger.Error("SetDecel: " + ex.Message); } }
+		public void SetDecel(int axis, float decel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetDecel(_handle, axis, decel); Logger.Debug($"[ZMC] SetDecel axis={axis} decel={decel}"); } catch (Exception ex) { Logger.Error("SetDecel: " + ex.Message); } }
 		/// <summary>设置轴限位IO: 正限/负限/原点分别绑定到指定IN端口</summary>
 		public void SetLimitIn(int axis, int fwd, int rev, int datum) { if (_simulateMode || !IsConnected) return; try { ZAux_Direct_SetFwdIn(_handle, axis, fwd); ZAux_Direct_SetRevIn(_handle, axis, rev); ZAux_Direct_SetDatumIn(_handle, axis, datum); Logger.Info("限位设置: 轴" + axis + " FWD=IN" + fwd + " REV=IN" + rev + " DATUM=IN" + datum); } catch (Exception ex) { Logger.Error("SetLimitIn: " + ex.Message); } }
 		/// <summary>批量应用轴参数(类型/脉冲当量/速度/加速度/限位等)，从AxisParamConfig读取</summary>

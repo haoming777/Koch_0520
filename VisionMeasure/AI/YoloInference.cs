@@ -83,6 +83,8 @@ namespace YoloInference
 		// [新增] 架构路由标志：是否为 YOLO26 (端到端输出格式)
 		private readonly bool _isYolo26;
 
+		/// <summary>模型名称(日志标识用)</summary>
+		public string ModelName { get; set; }
 		// 实例绑定的默认阈值（从 json 获取）
 		public float DefaultConfThres { get; private set; }
 		public float DefaultIouThres { get; private set; }
@@ -243,6 +245,18 @@ namespace YoloInference
 			float finalConf = confThres ?? DefaultConfThres;
 			float finalIou = iouThres ?? DefaultIouThres;
 
+			// [Debug日志] 推理参数记录 — 主要关注batch_size (可通过日志级别关闭)
+			{
+				var imgSizes = origImgs.Select(m => $"{m.Width}x{m.Height}").ToList();
+				string sizesStr = string.Join(", ", imgSizes.Take(10)); // 前10张
+				if (imgSizes.Count > 10) sizesStr += $", ...(共{imgSizes.Count}张)";
+				Logger.Debug($"[YOLO PredictBatch] ──────────────────────────────────");
+				Logger.Debug($"[YOLO PredictBatch] 模型={ModelName ?? "?"} batch_size={batchSize} (expectedBatch={_expectedBatchSize})");
+				Logger.Debug($"[YOLO PredictBatch] confThres={finalConf:F3}  iouThres={finalIou:F3}");
+				Logger.Debug($"[YOLO PredictBatch] 输入尺寸={_inputW}x{_inputH}  架构={(_isYolo26 ? "YOLO26" : "Standard")}");
+				Logger.Debug($"[YOLO PredictBatch] 各图原始尺寸: {sizesStr}");
+			}
+
 			var sw = new Stopwatch();
 			float[] ratios = new float[batchSize];
 			float[] padWs = new float[batchSize];
@@ -285,6 +299,10 @@ namespace YoloInference
 					res.InferenceTimeMs = inferTimeMs / batchSize;
 					res.PostprocessTimeMs = postTimeMs / batchSize;
 				}
+
+				int totalBoxes = finalResults.Sum(r => r?.BoxesN?.Length ?? 0);
+				Logger.Debug($"[YOLO PredictBatch] 完成 batch={batchSize} | 预处理={preTimeMs:F1}ms 推理={inferTimeMs:F1}ms 后处理={postTimeMs:F1}ms 总计={(preTimeMs + inferTimeMs + postTimeMs):F1}ms | 检出框={totalBoxes}");
+				Logger.Debug($"[YOLO PredictBatch] ──────────────────────────────────");
 
 				return finalResults;
 			}

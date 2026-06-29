@@ -38,8 +38,12 @@ namespace CommonLib
 		public int FrontRight_RightPx { get; set; }
 		/// <summary>上端面-左裁边(px)</summary>
 		public int UpperEndFace_LeftPx { get; set; }
+		/// <summary>上端面-右裁边(px)</summary>
+		public int UpperEndFace_RightPx { get; set; }
 		/// <summary>下端面-左裁边(px)</summary>
 		public int LowerEndFace_LeftPx { get; set; }
+		/// <summary>下端面-右裁边(px)</summary>
+		public int LowerEndFace_RightPx { get; set; }
 		/// <summary>背面左图-左裁边(px)</summary>
 		public int BackLeft_LeftPx { get; set; }
 		/// <summary>背面左图-右裁边(px)</summary>

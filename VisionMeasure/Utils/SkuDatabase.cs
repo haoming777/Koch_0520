@@ -68,7 +68,7 @@ namespace VisionMeasure.Utils
 				var headers = lines[0].Split(',');
 				// 列索引映射
 				int idxSpec = -1, idxFL_L = -1, idxFL_R = -1, idxFR_L = -1, idxFR_R = -1;
-				int idxUp_L = -1, idxLo_L = -1, idxBL_L = -1, idxBL_R = -1, idxBR_L = -1, idxBR_R = -1;
+				int idxUp_L = -1, idxUp_R = -1, idxLo_L = -1, idxLo_R = -1, idxBL_L = -1, idxBL_R = -1, idxBR_L = -1, idxBR_R = -1;
 				for (int i = 0; i < headers.Length; i++)
 				{
 					string h = headers[i].Trim();
@@ -77,14 +77,19 @@ namespace VisionMeasure.Utils
 					if (h.Contains("正面左") && h.Contains("右侧")) idxFL_R = i;
 					if (h.Contains("正面右") && h.Contains("左侧")) idxFR_L = i;
 					if (h.Contains("正面右") && h.Contains("右侧")) idxFR_R = i;
-					if (h.Contains("上端面")) idxUp_L = i;
-					if (h.Contains("下端面")) idxLo_L = i;
+					if (h.Contains("上端面") && h.Contains("左侧")) idxUp_L = i;
+					if (h.Contains("上端面") && h.Contains("右侧")) idxUp_R = i;
+					if (h.Contains("下端面") && h.Contains("左侧")) idxLo_L = i;
+					if (h.Contains("下端面") && h.Contains("右侧")) idxLo_R = i;
 					if (h.Contains("背面左") && h.Contains("左侧")) idxBL_L = i;
 					if (h.Contains("背面左") && h.Contains("右侧")) idxBL_R = i;
 					if (h.Contains("背面右") && h.Contains("左侧")) idxBR_L = i;
 					if (h.Contains("背面右") && h.Contains("右侧")) idxBR_R = i;
 				}
-				Logger.Info($"裁图CSV加载: {lines.Length - 1}行, 列索引 spec={idxSpec}");
+				// 兼容旧版CSV(仅"上端面"/"下端面"不带左右区分)
+				if (idxUp_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("上端面") && idxUp_L < 0 && idxUp_R < 0) idxUp_L = i; } }
+				if (idxLo_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("下端面") && idxLo_L < 0 && idxLo_R < 0) idxLo_L = i; } }
+				Logger.Info($"裁图CSV加载: {lines.Length - 1}行, 列索引 spec={idxSpec} UpL={idxUp_L} UpR={idxUp_R} LoL={idxLo_L} LoR={idxLo_R}");
 				int merged = 0;
 				for (int i = 1; i < lines.Length; i++)
 				{
@@ -102,7 +107,9 @@ namespace VisionMeasure.Utils
 						sku.FrontRight_LeftPx = ParseInt(vals, idxFR_L);
 						sku.FrontRight_RightPx = ParseInt(vals, idxFR_R);
 						sku.UpperEndFace_LeftPx = ParseInt(vals, idxUp_L);
+						sku.UpperEndFace_RightPx = ParseInt(vals, idxUp_R);
 						sku.LowerEndFace_LeftPx = ParseInt(vals, idxLo_L);
+						sku.LowerEndFace_RightPx = ParseInt(vals, idxLo_R);
 						sku.BackLeft_LeftPx = ParseInt(vals, idxBL_L);
 						sku.BackLeft_RightPx = ParseInt(vals, idxBL_R);
 						sku.BackRight_LeftPx = ParseInt(vals, idxBR_L);
@@ -319,7 +326,7 @@ namespace VisionMeasure.Utils
 				if (lines.Length <= 1) return;
 				var headers = lines[0].Split(',');
 				int idxSpec = -1, idxFL_L = -1, idxFL_R = -1, idxFR_L = -1, idxFR_R = -1;
-				int idxUp_L = -1, idxLo_L = -1, idxBL_L = -1, idxBL_R = -1, idxBR_L = -1, idxBR_R = -1;
+				int idxUp_L = -1, idxUp_R = -1, idxLo_L = -1, idxLo_R = -1, idxBL_L = -1, idxBL_R = -1, idxBR_L = -1, idxBR_R = -1;
 				for (int i = 0; i < headers.Length; i++)
 				{
 					string h = headers[i].Trim();
@@ -328,13 +335,18 @@ namespace VisionMeasure.Utils
 					if (h.Contains("正面左") && h.Contains("右侧")) idxFL_R = i;
 					if (h.Contains("正面右") && h.Contains("左侧")) idxFR_L = i;
 					if (h.Contains("正面右") && h.Contains("右侧")) idxFR_R = i;
-					if (h.Contains("上端面")) idxUp_L = i;
-					if (h.Contains("下端面")) idxLo_L = i;
+					if (h.Contains("上端面") && h.Contains("左侧")) idxUp_L = i;
+					if (h.Contains("上端面") && h.Contains("右侧")) idxUp_R = i;
+					if (h.Contains("下端面") && h.Contains("左侧")) idxLo_L = i;
+					if (h.Contains("下端面") && h.Contains("右侧")) idxLo_R = i;
 					if (h.Contains("背面左") && h.Contains("左侧")) idxBL_L = i;
 					if (h.Contains("背面左") && h.Contains("右侧")) idxBL_R = i;
 					if (h.Contains("背面右") && h.Contains("左侧")) idxBR_L = i;
 					if (h.Contains("背面右") && h.Contains("右侧")) idxBR_R = i;
 				}
+				// 兼容旧版CSV(仅"上端面"/"下端面"不带左右区分)
+				if (idxUp_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("上端面") && idxUp_L < 0 && idxUp_R < 0) idxUp_L = i; } }
+				if (idxLo_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("下端面") && idxLo_L < 0 && idxLo_R < 0) idxLo_L = i; } }
 				string skuSpec = sku.P + "P";
 				for (int i = 1; i < lines.Length; i++)
 				{
@@ -348,7 +360,9 @@ namespace VisionMeasure.Utils
 					sku.FrontRight_LeftPx = ParseInt(vals, idxFR_L);
 					sku.FrontRight_RightPx = ParseInt(vals, idxFR_R);
 					sku.UpperEndFace_LeftPx = ParseInt(vals, idxUp_L);
+					sku.UpperEndFace_RightPx = ParseInt(vals, idxUp_R);
 					sku.LowerEndFace_LeftPx = ParseInt(vals, idxLo_L);
+					sku.LowerEndFace_RightPx = ParseInt(vals, idxLo_R);
 					sku.BackLeft_LeftPx = ParseInt(vals, idxBL_L);
 					sku.BackLeft_RightPx = ParseInt(vals, idxBL_R);
 					sku.BackRight_LeftPx = ParseInt(vals, idxBR_L);

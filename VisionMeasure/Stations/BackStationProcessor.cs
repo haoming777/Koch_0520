@@ -112,7 +112,11 @@ namespace Stations
 			if (bmp == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug("[Back] OnCam3(左) " + bmp.Width + "x" + bmp.Height);
-			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = bmp.ToMat(); }
+			lock (_syncLock)
+			{
+				_leftBuffer?.Dispose();
+				_leftBuffer = bmp.ToMat();
+			}
 			CheckAndProcess();
 		}
 
@@ -122,7 +126,11 @@ namespace Stations
 			if (bmp == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug("[Back] OnCam4(右) " + bmp.Width + "x" + bmp.Height);
-			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = bmp.ToMat(); }
+			lock (_syncLock)
+			{
+				_rightBuffer?.Dispose();
+				_rightBuffer = bmp.ToMat();
+			}
 			CheckAndProcess();
 		}
 
@@ -130,7 +138,16 @@ namespace Stations
 		private async void CheckAndProcess()
 		{
 			Mat l = null, r = null;
-			lock (_syncLock) { if (_leftBuffer != null && _rightBuffer != null) { l = _leftBuffer; r = _rightBuffer; _leftBuffer = null; _rightBuffer = null; } }
+			lock (_syncLock)
+			{
+				if (_leftBuffer != null && _rightBuffer != null)
+				{
+					l = _leftBuffer;
+					r = _rightBuffer;
+					_leftBuffer = null;
+					_rightBuffer = null;
+				}
+			}
 			if (l == null || r == null) return;
 			Logger.Debug("[Back] 配对成功");
 			var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -152,6 +169,7 @@ namespace Stations
 		private void Process(Mat leftMat, Mat rightMat)
 		{
 			long pid = DateTime.Now.Ticks;
+			long tickProcess = DateTime.Now.Ticks;
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			var result = new ProductResult { ProductId = pid, CreateTime = DateTime.Now };
 			int p = _sku.P, hp = p / 2;
@@ -159,6 +177,7 @@ namespace Stations
 
 			try
 			{
+				Logger.Debug($"[Back] ⏱ Process入口 P={p} 图={leftMat.Width}x{leftMat.Height}");
 				Logger.Info("[Back] ====== 开始 P=" + p + " " + leftMat.Width + "x" + leftMat.Height + " ======");
 				Logger.Trace("[Back] ▶ ====== 开始推理 P=" + p + " 图=" + leftMat.Width + "x" + leftMat.Height);
 
@@ -197,9 +216,25 @@ namespace Stations
 				// 步骤2: 汇总
 				var all = new List<BoxDefect>();
 				int bc = 0, ho = 0, hs = 0, dc = 0;
-				if (barcodeDict != null) { var its = barcodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); bc = its.Count(d => !d.DefectType.StartsWith("条码:")); }
-				if (dateCodeDict != null) { var its = dateCodeDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); dc = its.Count(d => !d.DefectType.StartsWith("日期:") && !d.DefectType.StartsWith("双排:")); }
-				if (hookDict != null) { var its = hookDict.Values.SelectMany(v => v).ToList(); all.AddRange(its); ho = its.Count(d => d.DefectType == "挂钩明显错位"); hs = its.Count(d => d.DefectType.Contains("轻微挂钩错位")); }
+				if (barcodeDict != null)
+				{
+					var its = barcodeDict.Values.SelectMany(v => v).ToList();
+					all.AddRange(its);
+					bc = its.Count(d => !d.DefectType.StartsWith("条码:"));
+				}
+				if (dateCodeDict != null)
+				{
+					var its = dateCodeDict.Values.SelectMany(v => v).ToList();
+					all.AddRange(its);
+					dc = its.Count(d => !d.DefectType.StartsWith("日期:") && !d.DefectType.StartsWith("双排:"));
+				}
+				if (hookDict != null)
+				{
+					var its = hookDict.Values.SelectMany(v => v).ToList();
+					all.AddRange(its);
+					ho = its.Count(d => d.DefectType == "挂钩明显错位");
+					hs = its.Count(d => d.DefectType.Contains("轻微挂钩错位"));
+				}
 				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
 				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
 				foreach (var d in all)
@@ -249,7 +284,14 @@ namespace Stations
 					Result = isOk
 				});
 				var defStats = new Dictionary<string, int>();
-				foreach (var s in status) { if (s != "OK") { if (defStats.ContainsKey(s)) defStats[s]++; else defStats[s] = 1; } }
+				foreach (var s in status)
+				{
+					if (s != "OK")
+					{
+						if (defStats.ContainsKey(s)) defStats[s]++;
+						else defStats[s] = 1;
+					}
+				}
 				string defStr = defStats.Count > 0 ? string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value))
 					: "条码:0 日期码:0 明显挂钩:0 轻微挂钩:0";
 				defStr = " | " + defStr;
@@ -868,6 +910,15 @@ namespace Stations
 
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
 		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
-		public void Dispose() { if (_disposed) return; _disposed = true; lock (_syncLock) { _leftBuffer?.Dispose(); _rightBuffer?.Dispose(); } }
+		public void Dispose()
+		{
+			if (_disposed) return;
+			_disposed = true;
+			lock (_syncLock)
+			{
+				_leftBuffer?.Dispose();
+				_rightBuffer?.Dispose();
+			}
+		}
 	}
 }

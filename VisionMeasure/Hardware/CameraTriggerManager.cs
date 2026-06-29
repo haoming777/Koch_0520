@@ -155,6 +155,8 @@ namespace Hardware
 			Logger.Info("信号监听线程启动");
 			// 预分配，避免GC
 			var newStates = new Dictionary<int, bool>(4);
+			long lastFreqCheckTicks = DateTime.Now.Ticks;
+			int lastFreqLoopCount = 0;
 
 			while (!_cts.Token.IsCancellationRequested && _isRunning)
 			{
@@ -187,6 +189,13 @@ namespace Hardware
 						if (trigger)
 						{
 							lock (_statsLock) { _inputEdgeCounts[config.InputPort] = _inputEdgeCounts.GetValueOrDefault(config.InputPort) + 1; }
+
+							// IN4/IN10/IN13边沿日志: 只记录少量端口避免刷屏
+							if (config.InputPort == 13 || config.InputPort == 4 || config.InputPort == 10)
+							{
+								string edgeType = config.EdgeMode == CameraTriggerConfig.TriggerEdgeMode.RisingEdge ? "↑" : "↓";
+								Logger.Debug($"[Trigger] IN{config.InputPort}{edgeType} → Camera{config.CameraId}({config.Name})");
+							}
 
 							bool stationEnabled = true;
 							if (config.CameraId <= 2) stationEnabled = VisionMeasure.MainFrm.FrontEnabled;
@@ -225,6 +234,18 @@ namespace Hardware
 
 					// 控制扫描速率 ≈2000Hz，防止纯忙循环把ZMC打崩
 					Thread.SpinWait(2000);
+
+					// 每30秒自检一次实际扫描频率
+					long nowTicks = DateTime.Now.Ticks;
+					if ((nowTicks - lastFreqCheckTicks) / 10000.0 > 30000)
+					{
+						int loopsInPeriod = _monitorLoopCount - lastFreqLoopCount;
+						double elapsedSec = (nowTicks - lastFreqCheckTicks) / 10000000.0;
+						double hz = loopsInPeriod / elapsedSec;
+						Logger.Debug($"[Trigger] MonitorLoop频率自检: {hz:F0}Hz (期望2000Hz) 周期={loopsInPeriod}次");
+						lastFreqCheckTicks = nowTicks;
+						lastFreqLoopCount = _monitorLoopCount;
+					}
 				}
 				catch (Exception ex)
 				{

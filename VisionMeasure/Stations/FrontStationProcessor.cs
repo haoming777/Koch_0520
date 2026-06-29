@@ -91,7 +91,11 @@ namespace VisionMeasure.Stations
 		/// <summary>初始化模型阈值: 从FrontBoxBreakModel加载Conf/Iou阈值覆盖默认值</summary>
 		public void InitThresholdsFromModel() {
 			if (_models.FrontBoxBreakModel != null) {
-				if (_models.FrontBoxBreakModel != null) { ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres; IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres; }
+				if (_models.FrontBoxBreakModel != null)
+			{
+				ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres;
+				IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres;
+			}
 				Logger.Info($"[Front] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 			}
 		}
@@ -107,7 +111,12 @@ namespace VisionMeasure.Stations
 			if (leftImg == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam1 收到图像 {leftImg.Width}x{leftImg.Height}");
-			lock (_syncLock) { _leftBuffer?.Dispose(); _leftBuffer = leftImg.ToMat(); if (!SkipCrop) Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY); }
+			lock (_syncLock)
+			{
+				_leftBuffer?.Dispose();
+				_leftBuffer = leftImg.ToMat();
+				if (!SkipCrop) Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY);
+			}
 			CheckAndProcessAsync();
 		}
 
@@ -117,7 +126,12 @@ namespace VisionMeasure.Stations
 			if (rightImg == null) return;
 			Interlocked.Increment(ref _imgCount);
 			Logger.Debug($"[Front] OnCam2 收到图像 {rightImg.Width}x{rightImg.Height}");
-			lock (_syncLock) { _rightBuffer?.Dispose(); _rightBuffer = rightImg.ToMat(); if (!SkipCrop) Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY); }
+			lock (_syncLock)
+			{
+				_rightBuffer?.Dispose();
+				_rightBuffer = rightImg.ToMat();
+				if (!SkipCrop) Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY);
+			}
 			CheckAndProcessAsync();
 		}
 
@@ -214,7 +228,19 @@ namespace VisionMeasure.Stations
 
 				// 缺陷统计
 				var defStats = new Dictionary<string, int>();
-				foreach (var s in statusList) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (defStats.ContainsKey(k)) defStats[k]++; else defStats[k] = 1; } } }
+				foreach (var s in statusList)
+				{
+					if (s != "OK")
+						foreach (var d in s.Split(','))
+						{
+							var k = d.Trim();
+							if (!string.IsNullOrEmpty(k))
+							{
+								if (defStats.ContainsKey(k)) defStats[k]++;
+								else defStats[k] = 1;
+							}
+						}
+				}
 				string defStr = defStats.Count > 0 ? string.Join(" ", defStats.Select(kv => kv.Key + ":" + kv.Value))
 					: "盒子破损:0 P号错误:0";
 				defStr = " | " + defStr;
@@ -365,8 +391,13 @@ namespace VisionMeasure.Stations
 				Logger.Debug($"[Front] 盒子破损: 左{leftSubs.Count}张+右{rightSubs.Count}张子图(P={pCount})");
 
 				// 3. 左右各自批量推理
+				Logger.Debug($"[Front DetectBoxDamage] >>> 左侧 PredictBatch 开始 (batch={leftSubs.Count})");
 				var lr = _models.FrontBoxBreakModel.PredictBatch(leftSubs, ConfThreshold, IouThreshold);
+				Logger.Debug($"[Front DetectBoxDamage] <<< 左侧 PredictBatch 完成, 检测到 {lr?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0} 个框");
+
+				Logger.Debug($"[Front DetectBoxDamage] >>> 右侧 PredictBatch 开始 (batch={rightSubs.Count})");
 				var rr = _models.FrontBoxBreakModel.PredictBatch(rightSubs, ConfThreshold, IouThreshold);
+				Logger.Debug($"[Front DetectBoxDamage] <<< 右侧 PredictBatch 完成, 检测到 {rr?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0} 个框");
 
 				// 4. 映射左图结果: 子图索引i → 盒索引i (0~halfP-1)
 				//    BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)
@@ -439,8 +470,16 @@ namespace VisionMeasure.Stations
 		{
 			var lb = left.ToBitmap(); var rb = right.ToBitmap();
 			int p = _currentSku?.P ?? 8;
-			using (var g = Graphics.FromImage(lb)) { g.SmoothingMode = SmoothingMode.AntiAlias; DrawDefects(g, pNumberResults, damageResults, statusList, 0, halfP, lb.Width, lb.Height); }
-			using (var g = Graphics.FromImage(rb)) { g.SmoothingMode = SmoothingMode.AntiAlias; DrawDefects(g, pNumberResults, damageResults, statusList, halfP, p, rb.Width, rb.Height); }
+			using (var g = Graphics.FromImage(lb))
+			{
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				DrawDefects(g, pNumberResults, damageResults, statusList, 0, halfP, lb.Width, lb.Height);
+			}
+			using (var g = Graphics.FromImage(rb))
+			{
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				DrawDefects(g, pNumberResults, damageResults, statusList, halfP, p, rb.Width, rb.Height);
+			}
 			return MergeImages(lb, rb, isOk);
 		}
 
@@ -586,6 +625,11 @@ namespace VisionMeasure.Stations
 			return "中班";
 		}
 
-		public void Dispose() { _imageSaver?.Dispose(); _leftBuffer?.Dispose(); _rightBuffer?.Dispose(); }
+		public void Dispose()
+		{
+			_imageSaver?.Dispose();
+			_leftBuffer?.Dispose();
+			_rightBuffer?.Dispose();
+		}
 	}
 }

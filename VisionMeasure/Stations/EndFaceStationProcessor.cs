@@ -274,6 +274,7 @@ namespace Stations
 
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			long firstProductId = upperImages.FirstOrDefault()?.ProductId ?? 0;
+			Logger.Debug($"[EndFace] ⏱ ProcessBatch开始 Upper={upperImages.Count}张 Lower={lowerImages.Count}张 P={p}");
 
 			try
 			{
@@ -282,20 +283,30 @@ namespace Stations
 				List<Mat> upperMats = null, lowerMats = null;
 				using (var cropScope = new StopwatchScope(t => cropTime = t))
 				{
-					int upperCropPx = _sku?.UpperEndFace_LeftPx ?? 0; // 上端面裁右边
-					int lowerCropPx = _sku?.LowerEndFace_LeftPx ?? 0; // 下端面裁左边
-					upperMats = CropImagesBatch(upperImages, upperCropPx, true);
-					lowerMats = CropImagesBatch(lowerImages, lowerCropPx, false);
+					// 上端面: 左裁边(裁掉左边像素) + 右裁边(裁掉右边像素)
+					int upperCropLeftPx = _sku?.UpperEndFace_LeftPx ?? 0;
+					int upperCropRightPx = _sku?.UpperEndFace_RightPx ?? 0;
+					// 下端面: 左裁边 + 右裁边
+					int lowerCropLeftPx = _sku?.LowerEndFace_LeftPx ?? 0;
+					int lowerCropRightPx = _sku?.LowerEndFace_RightPx ?? 0;
+					Logger.Debug($"[EndFace] 裁图参数: 上端面 左{upperCropLeftPx}px 右{upperCropRightPx}px | 下端面 左{lowerCropLeftPx}px 右{lowerCropRightPx}px");
+					upperMats = CropImagesBatch(upperImages, upperCropLeftPx, upperCropRightPx);
+					lowerMats = CropImagesBatch(lowerImages, lowerCropLeftPx, lowerCropRightPx);
+					if (upperMats.Count > 0) Logger.Debug($"[EndFace] 裁图后 上端面尺寸={upperMats[0].Width}x{upperMats[0].Height} (共{upperMats.Count}张)");
+					if (lowerMats.Count > 0) Logger.Debug($"[EndFace] 裁图后 下端面尺寸={lowerMats[0].Width}x{lowerMats[0].Height} (共{lowerMats.Count}张)");
+					Logger.Debug($"[EndFace] ⏱ 裁图耗时={cropTime:F1}ms");
 				}
 
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
 				using (var inferScope = new StopwatchScope(t => inferenceTime = t))
 				{
+					Logger.Debug($"[EndFace] ⏱ 推理开始: 上端面 batch={upperMats.Count} 下端面 batch={lowerMats.Count} 并行");
 					var upperTask = Task.Run(() => EnableUpperDefectCheck ? RunInference(upperMats, _models.EndFaceUpperModel) : new List<YoloInference.YoloResult>());
 					var lowerTask = Task.Run(() => RunInference(lowerMats, _models.EndFaceLowerModel));
 					Task.WaitAll(upperTask, lowerTask);
 					upperResults = upperTask.Result;
 					lowerResults = lowerTask.Result;
+					Logger.Debug($"[EndFace] ⏱ 推理完成 耗时={inferenceTime:F1}ms 上检出={upperResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框 下检出={lowerResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框");
 				}
 
 				var upperDefects = ParseResults(upperResults);
@@ -387,8 +398,34 @@ namespace Stations
 
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(upperStatus, lowerStatus, mergedStatus, actualP);
-				var upStats = new Dictionary<string, int>(); foreach (var s in upperStatus) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (upStats.ContainsKey(k)) upStats[k]++; else upStats[k] = 1; } } }
-				var loStats = new Dictionary<string, int>(); foreach (var s in lowerStatus) { if (s != "OK") foreach (var d in s.Split(',')) { var k = d.Trim(); if (!string.IsNullOrEmpty(k)) { if (loStats.ContainsKey(k)) loStats[k]++; else loStats[k] = 1; } } }
+				var upStats = new Dictionary<string, int>();
+				foreach (var s in upperStatus)
+				{
+					if (s != "OK")
+						foreach (var d in s.Split(','))
+						{
+							var k = d.Trim();
+							if (!string.IsNullOrEmpty(k))
+							{
+								if (upStats.ContainsKey(k)) upStats[k]++;
+								else upStats[k] = 1;
+							}
+						}
+				}
+				var loStats = new Dictionary<string, int>();
+				foreach (var s in lowerStatus)
+				{
+					if (s != "OK")
+						foreach (var d in s.Split(','))
+						{
+							var k = d.Trim();
+							if (!string.IsNullOrEmpty(k))
+							{
+								if (loStats.ContainsKey(k)) loStats[k]++;
+								else loStats[k] = 1;
+							}
+						}
+				}
 				string defStr = " | 上端面:" + (upStats.Count > 0 ? string.Join(" ", upStats.Select(kv => kv.Key + kv.Value)) : "0");
 				defStr += " 下端面:" + (loStats.Count > 0 ? string.Join(" ", loStats.Select(kv => kv.Key + kv.Value)) : "0");
 				Logger.Info($"[EndFace] 完成 P={actualP} OK={boxOk} NG={mergedStatus.Count - boxOk}{defStr} | 耗时={totalTime:F0}ms");
@@ -404,21 +441,19 @@ namespace Stations
 			}
 		}
 
-		/// <summary>批量裁图: 遍历ImageContext→ToMat→按cropPx裁剪(cropRight=裁右边/cropLeft=裁左边)→返回Mat列表</summary>
-		private List<Mat> CropImagesBatch(List<ImageContext> images, int cropPx, bool cropRight)
+		/// <summary>批量裁图: 遍历ImageContext→ToMat→同时支持左右双侧裁图(leftPx裁左边, rightPx裁右边)→返回Mat列表</summary>
+		private List<Mat> CropImagesBatch(List<ImageContext> images, int leftPx, int rightPx)
 		{
 			var mats = new List<Mat>();
 			foreach (var img in images)
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
-				// 水平裁图（上端面裁右边，下端面裁左边）
-				if (cropPx > 0 && !SkipCrop)
+				// 水平裁图: 同时支持左右双侧裁图
+				if ((leftPx > 0 || rightPx > 0) && !SkipCrop)
 				{
-					Mat croppedH;
-					if (cropRight)
-						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, null, cropPx);
-					else
-						croppedH = ImageHelper.CropImageHorizontallyCv2(mat, cropPx, null);
+					int? l = leftPx > 0 ? (int?)leftPx : null;
+					int? r = rightPx > 0 ? (int?)rightPx : null;
+					Mat croppedH = ImageHelper.CropImageHorizontallyCv2(mat, l, r);
 					mat.Dispose();
 					mat = croppedH;
 				}
@@ -808,7 +843,15 @@ namespace Stations
 			Interlocked.Exchange(ref _ngCount, 0);
 		}
 
-		private void CleanupDisplayBitmaps() { lock (_resultLock) { foreach (var b in _currentDisplayBitmaps) b?.Dispose(); foreach (var b in _upperDisplayBitmaps) b?.Dispose(); foreach (var b in _lowerDisplayBitmaps) b?.Dispose(); } }
+		private void CleanupDisplayBitmaps()
+		{
+			lock (_resultLock)
+			{
+				foreach (var b in _currentDisplayBitmaps) b?.Dispose();
+				foreach (var b in _upperDisplayBitmaps) b?.Dispose();
+				foreach (var b in _lowerDisplayBitmaps) b?.Dispose();
+			}
+		}
 		/// <summary>释放资源: 取消令牌→Join线程→Dispose队列→清理显示Bitmap缓存</summary>
 		public void Dispose()
 		{

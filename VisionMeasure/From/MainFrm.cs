@@ -594,13 +594,18 @@ namespace VisionMeasure
 			//    避免中间IN13↓误触发取消当前批次
 			if (cameraId == 8 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled)
 			{
+				long tickIn13 = DateTime.Now.Ticks;
+				Logger.Debug($"[Side] ⏱ IN13↓ 收到下降沿信号 Ticks={tickIn13} 时间={DateTime.Now:HH:mm:ss.fff}");
 				Logger.Info("[Side] IN13↓ 检测到工件");
 				long pending = Interlocked.Increment(ref _sidePendingCount);
 				if (pending == 1)  // 第一个pending → 检查是否可立即启动
 				{
 					if (!_sideStation.IsMoving)
 					{
+						long tickCallDetection = DateTime.Now.Ticks;
+						double delayFromIn13Ms = (tickCallDetection - tickIn13) / 10000.0;
 						Interlocked.Decrement(ref _sidePendingCount);
+						Logger.Debug($"[Side] ⏱ 立即启动StartDetection 从IN13↓至此延迟={delayFromIn13Ms:F1}ms");
 						Logger.Info("[Side] 立即启动侧面运动控制");
 						_sideStation.StartDetection();
 					}
@@ -836,7 +841,7 @@ namespace VisionMeasure
 				}
 
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[1]);
 				if (FrontEnabled) _frontStation?.OnCam1(bitmap, pid);
 			}
@@ -855,7 +860,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[2]);
 				if (FrontEnabled) _frontStation?.OnCam2(bitmap, pid);
 			}
@@ -874,7 +879,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera3] 上端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[3]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam5(bitmap, pid);
 			}
@@ -893,7 +898,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera4] 下端面 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[4]);
 				if (EndFaceEnabled) _endFaceStation?.OnCam6(bitmap, pid);
 			}
@@ -912,7 +917,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera5] 背面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[5]);
 				if (BackEnabled) _backStation?.OnCam3(bitmap, pid);
 			}
@@ -931,7 +936,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera6] 背面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[6]);
 				if (BackEnabled) _backStation?.OnCam4(bitmap, pid);
 			}
@@ -950,7 +955,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera7] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[7]);
 				if (SideEnabled) _sideStation?.OnCam7(bitmap, pid);
 			}
@@ -969,7 +974,7 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				//				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
+				Logger.Debug($"[Camera8] 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[8]);
 				if (SideEnabled) _sideStation?.OnCam8(bitmap, pid);
 			}
@@ -1375,6 +1380,11 @@ namespace VisionMeasure
 						}
 					}
 					if (_currentSku != null)
+				{
+					// 校验SKU编号：只有匹配时才恢复用户编辑的值，防止A款SKU的编辑覆盖到B款
+					bool skuMatched = data.TryGetValue("SKU", out string savedSkuNum)
+						&& savedSkuNum == _currentSku.SkuNumber;
+					if (skuMatched)
 					{
 						if (data.TryGetValue("P", out string rp2) && int.TryParse(rp2, out int rpi) && rpi > 0) _currentSku.P = rpi;
 						if (data.TryGetValue("Z", out string rz2) && int.TryParse(rz2, out int rzi)) _currentSku.Z = rzi;
@@ -1382,11 +1392,17 @@ namespace VisionMeasure
 						if (data.TryGetValue("FrontPNumber", out string fp)) _currentSku.FrontPCode = fp;
 						if (data.TryGetValue("BackBarcode", out string bc)) _currentSku.BackBarcode = bc;
 						if (data.TryGetValue("CodingFormat", out string cf)) _currentSku.CodingFormat = cf;
+						Logger.Debug($"SKU参数已恢复(SKU匹配): P={_currentSku.P} Z={_currentSku.Z} MM={_currentSku.MM} P号={_currentSku.FrontPCode} 条码={_currentSku.BackBarcode} 格式={_currentSku.CodingFormat}");
 					}
-					_frontStation?.UpdateSku(_currentSku); _backStation?.UpdateSku(_currentSku);
-					_sideStation?.UpdateSku(_currentSku); _endFaceStation?.UpdateSku(_currentSku);
-					_endFaceStation?.UpdatePCount(_currentSku?.P ?? 12);
-					Logger.Info("SKU参数已从本地恢复并推送到各工位");
+					else
+					{
+						Logger.Debug($"SKU参数跳过恢复(SKU不匹配: 保存={savedSkuNum} 当前={_currentSku.SkuNumber})");
+					}
+				}
+				_frontStation?.UpdateSku(_currentSku); _backStation?.UpdateSku(_currentSku);
+				_sideStation?.UpdateSku(_currentSku); _endFaceStation?.UpdateSku(_currentSku);
+				_endFaceStation?.UpdatePCount(_currentSku?.P ?? 12);
+				Logger.Info("SKU参数已从本地恢复并推送到各工位");
 				}));
 			}
 			catch (Exception ex) { Logger.Error("加载SKU参数失败: " + ex.Message); }

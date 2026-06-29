@@ -234,20 +234,29 @@ namespace Stations
 			if (_disposed) { Logger.Warning("[Side] 已释放"); return; }
 
 			long myCycleId = Interlocked.Increment(ref _cycleId);
+			long tickStartDetection = DateTime.Now.Ticks;
+			Logger.Debug($"[Side] ⏱ StartDetection入口 Ticks={tickStartDetection} 时间={DateTime.Now:HH:mm:ss.fff}");
+
 			IsMoving = true;
 			SetLimitSwitches();
 			_motionCts = new CancellationTokenSource();
 			var cts = _motionCts;
 			Task.Run(() =>
 			{
+				long tickTaskBegin = DateTime.Now.Ticks;
+				double delayFromEntryMs = (tickTaskBegin - tickStartDetection) / 10000.0;
+				Logger.Debug($"[Side] ⏱ Task.Run开始执行 从StartDetection入口延迟={delayFromEntryMs:F1}ms");
 				try
 				{
 					// 等待安全锁释放
 					if (!CheckSafetyLock())
 					{
+						long tickLockWait = DateTime.Now.Ticks;
 						Logger.Info("[Side] 安全锁未释放(门开) IN" + SafetyLockPort + "=0，等待关门...");
 						while (!CheckSafetyLock() && !cts.Token.IsCancellationRequested)
 							Thread.Sleep(5);
+						double lockWaitMs = (DateTime.Now.Ticks - tickLockWait) / 10000.0;
+						Logger.Debug($"[Side] ⏱ 安全锁等待耗时={lockWaitMs:F1}ms");
 						if (cts.Token.IsCancellationRequested) { Logger.Warning("[Side] 安全锁等待被取消"); return; }
 						Logger.Info("[Side] 安全锁已释放(门关) IN" + SafetyLockPort + "=1，继续执行");
 					}
@@ -255,7 +264,11 @@ namespace Stations
 					ClearBatch();
 					lock (_resultLock) { _leftResults.Clear(); _rightResults.Clear(); }
 					var streamTask = Task.Run(() => ProcessStream(cts.Token));
+					long tickMotionStart = DateTime.Now.Ticks;
+					Logger.Debug($"[Side] ⏱ StartMotion开始 从Task.Run入口延迟={(tickMotionStart - tickTaskBegin) / 10000.0:F1}ms");
 					StartMotion(cts.Token);
+					long tickMotionEnd = DateTime.Now.Ticks;
+					Logger.Debug($"[Side] ⏱ StartMotion结束 耗时={(tickMotionEnd - tickMotionStart) / 10000.0:F1}ms");
 					streamTask.Wait(2000);  // ProcessStream内部有3s无图超时, 这里给2s兜底
 					FinalizeResults();
 				}
@@ -281,26 +294,48 @@ namespace Stations
 		private void StartMotion(CancellationToken cancel)
 		{
 			int p = _sku.P;
-			Logger.Info("[Side] 运动开始: 轴" + SideAxis + " " + StartPosition + "→" + EndPosition + " 前进速度=" + ForwardSpeed + " 回程速度=" + ReturnSpeed + " 安全锁模式=" + (RecoveryMode == SafetyRecovery.Continue ? "继续执行" : "返回起始位"));
+			long tickMotionBegin = DateTime.Now.Ticks;
+			Logger.Info("[Side] 运动开始: 轴" + SideAxis + " " + StartPosition + "→" + EndPosition + " 前进速度=" + ForwardSpeed + " 回程速度=" + ReturnSpeed + " 加速=" + Accel + " 减速=" + Decel + " 安全锁模式=" + (RecoveryMode == SafetyRecovery.Continue ? "继续执行" : "返回起始位"));
 
-			// 到起点 — 使用回程速度快速就位(首次必须设置速度, 否则沿用上次未知值)
+			// ── 阶段1: 到起点 ──
 			WaitForSafetyLock(cancel);
+			long tickPhase1 = DateTime.Now.Ticks;
 			SetAxisSpeed(ReturnSpeed);
+			Logger.Debug($"[Side] ⏱ 阶段1-到起点: SetSpeed={ReturnSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, StartPosition);
+			Logger.Debug($"[Side] ⏱ 阶段1-MoveAbs发出: target={StartPosition}");
 			if (!WaitForMove(SideAxis, StartPosition, 10000, cancel)) return;
+			long tickPhase1End = DateTime.Now.Ticks;
+			float posAfterPhase1 = _motion.GetPosition(SideAxis);
+			Logger.Debug($"[Side] ⏱ 阶段1-到起点完成 耗时={(tickPhase1End - tickPhase1) / 10000.0:F1}ms 当前位置={posAfterPhase1:F1}");
 
-			// 前进到终点
+			// ── 阶段2: 前进到终点 ──
 			WaitForSafetyLock(cancel);
+			long tickPhase2 = DateTime.Now.Ticks;
 			SetAxisSpeed(ForwardSpeed);
+			Logger.Debug($"[Side] ⏱ 阶段2-前进: SetSpeed={ForwardSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, EndPosition);
+			Logger.Debug($"[Side] ⏱ 阶段2-MoveAbs发出: target={EndPosition}");
 			if (!WaitForMove(SideAxis, EndPosition, 60000, cancel)) return;
+			long tickPhase2End = DateTime.Now.Ticks;
+			float posAfterPhase2 = _motion.GetPosition(SideAxis);
+			Logger.Debug($"[Side] ⏱ 阶段2-前进完成 耗时={(tickPhase2End - tickPhase2) / 10000.0:F1}ms 当前位置={posAfterPhase2:F1}");
 
-			// 返回起点
+			// ── 阶段3: 返回起点 ──
 			Logger.Info("[Side] 返回起始位 L=" + _leftCount + " R=" + _rightCount);
 			WaitForSafetyLock(cancel);
+			long tickPhase3 = DateTime.Now.Ticks;
 			SetAxisSpeed(ReturnSpeed);
+			Logger.Debug($"[Side] ⏱ 阶段3-返回: SetSpeed={ReturnSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, StartPosition);
+			Logger.Debug($"[Side] ⏱ 阶段3-MoveAbs发出: target={StartPosition}");
 			WaitForMove(SideAxis, StartPosition, 10000, cancel);
+			long tickPhase3End = DateTime.Now.Ticks;
+			float posAfterPhase3 = _motion.GetPosition(SideAxis);
+			Logger.Debug($"[Side] ⏱ 阶段3-返回完成 耗时={(tickPhase3End - tickPhase3) / 10000.0:F1}ms 当前位置={posAfterPhase3:F1}");
+
+			long tickMotionTotal = DateTime.Now.Ticks;
+			Logger.Debug($"[Side] ⏱ StartMotion总耗时={(tickMotionTotal - tickMotionBegin) / 10000.0:F1}ms");
 		}
 
 		/// <summary>等待安全锁释放: 门开(IN8=0)则阻塞等待，门关(IN8=1)则通过</summary>
@@ -332,11 +367,28 @@ namespace Stations
 		/// <param name="cancel">取消令牌(运动周期被取消时抛出)</param>
 		private bool WaitForMove(int axis, float targetPos, int timeoutMs, CancellationToken cancel)
 		{
+			long tickEnter = DateTime.Now.Ticks;
+			float posAtEnter = _motion.GetPosition(axis);
+			Logger.Debug($"[Side] ⏱ WaitForMove进入 axis={axis} target={targetPos:F1} curPos={posAtEnter:F1} timeout={timeoutMs}ms");
+
 			var sw = Stopwatch.StartNew();
 			bool stopped = false;
 			int reissueCount = 0;  // 重新发送指令计数器，防止无限循环
+			int loopCount = 0;
+			long lastLogTick = tickEnter;
 			while (!cancel.IsCancellationRequested && sw.ElapsedMilliseconds < timeoutMs)
 			{
+				loopCount++;
+				// 每500ms输出一次位置和耗时(长运动时方便观察进度)
+				long nowTicks = DateTime.Now.Ticks;
+				if ((nowTicks - lastLogTick) / 10000.0 > 500)
+				{
+					float curPos = _motion.GetPosition(axis);
+					bool moving = _motion.IsMoving(axis);
+					Logger.Debug($"[Side] ⏱ WaitForMove进行中 target={targetPos:F1} curPos={curPos:F1} isMoving={moving} 已等待={sw.ElapsedMilliseconds}ms 循环={loopCount}");
+					lastLogTick = nowTicks;
+				}
+
 				// ── 安全锁检查(硬件IO读取，不受PC CPU影响) ──
 				if (!CheckSafetyLock())
 				{
@@ -353,6 +405,7 @@ namespace Stations
 				// 安全锁已恢复
 				if (stopped)
 				{
+					long tickLockResume = DateTime.Now.Ticks;
 					stopped = false;
 					if (RecoveryMode == SafetyRecovery.ReturnToStart)
 					{
@@ -370,11 +423,13 @@ namespace Stations
 							_motion.ClearHardwareAlarm(axis); if (returnStopped) { Logger.Info("[Side] 安全锁恢复，继续回归起点"); _motion.MoveAbs(axis, StartPosition); returnStopped = false; }
 							Thread.Sleep(5);
 						}
+						Logger.Debug($"[Side] ⏱ WaitForMove因ReturnToStart退出 耗时={sw.ElapsedMilliseconds}ms");
 						return false;
 					}
 					else
 					{
 						Logger.Info("[Side] 安全锁已释放，恢复运动→目标" + targetPos);
+						Logger.Debug($"[Side] ⏱ 安全锁中断时长={(nowTicks - tickLockResume) / 10000.0:F1}ms");
 					_motion.ClearHardwareAlarm(axis);
 						_motion.MoveAbs(axis, targetPos);
 					}
@@ -386,7 +441,11 @@ namespace Stations
 				{
 					float curPos = _motion.GetPosition(axis);
 					if (Math.Abs(curPos - targetPos) <= 0.5f)
+					{
+						long tickExit = DateTime.Now.Ticks;
+						Logger.Debug($"[Side] ⏱ WaitForMove到位退出 target={targetPos:F1} curPos={curPos:F1} 耗时={sw.ElapsedMilliseconds}ms 总耗时={(tickExit - tickEnter) / 10000.0:F1}ms");
 						return true;  // 已到达目标位置
+					}
 
 					// 轴停了但不在目标位置(被外部指令打断)，重新发送MoveAbs
 					if (reissueCount < 3)
@@ -405,13 +464,30 @@ namespace Stations
 				Thread.Sleep(5);
 			}
 			cancel.ThrowIfCancellationRequested();
+			long tickTimeout = DateTime.Now.Ticks;
+			Logger.Warning($"[Side] ⏱ WaitForMove超时退出 target={targetPos:F1} 耗时={(tickTimeout - tickEnter) / 10000.0:F1}ms timeout={timeoutMs}ms");
 			return false;
 		}
 
 		/// <summary>设置轴限位IO+限位IO设置(硬件ALM_IN已禁用, 仅用软件安全锁)</summary>
-		private void SetLimitSwitches() { if (_motion.IsConnected) { try { _motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort); Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort); } catch (Exception ex) { Logger.Warning("[Side] 限位设置失败: " + ex.Message); } } if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort); }
+		private void SetLimitSwitches()
+		{
+			if (_motion.IsConnected)
+			{
+				try
+				{
+					_motion.SetLimitIn(SideAxis, FwdInPort, RevInPort, DatumInPort);
+					Logger.Info("[Side] 限位已设置: FWD=IN" + FwdInPort + " REV=IN" + RevInPort + " DATUM=IN" + DatumInPort);
+				}
+				catch (Exception ex)
+				{
+					Logger.Warning("[Side] 限位设置失败: " + ex.Message);
+				}
+			}
+			if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort);
+		}
 	/// <summary>设置轴运行参数: 速度+加速度+减速度, 每次运动段切换前调用(前进/返回各自速度)</summary>
-		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); }
+		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); Logger.Debug($"[Side] SetAxisSpeed: axis={SideAxis} speed={speed} accel={Accel} decel={Decel}"); }
 
 		/// <summary>检查安全锁传感器: true=安全可运动, false=不安全阻止运动</summary>
 	/// <summary>安全锁检查: 读IN8硬件IO → true=安全可运动 | false=不安全</summary>
@@ -946,11 +1022,46 @@ namespace Stations
 			catch (Exception ex) { Logger.Error("[Side] 存图异常: " + ex.Message); }
 		}
 	/// <summary>清空本批数据: 清空左右队列+清零计数+清空结果+释放DisplayBitmaps, 每个周期开始前调用</summary>
-		private void ClearBatch() { lock (_countLock) { while (_leftQueue.TryDequeue(out _)) ; while (_rightQueue.TryDequeue(out _)) ; _leftCount = 0; _rightCount = 0; } _leftResults.Clear(); _rightResults.Clear(); lock (_resultLock) { foreach (var b in _leftDisplayBitmaps) b?.Dispose(); foreach (var b in _rightDisplayBitmaps) b?.Dispose(); foreach (var b in _displayBitmaps) b?.Dispose(); _leftDisplayBitmaps.Clear(); _rightDisplayBitmaps.Clear(); _displayBitmaps.Clear(); } }
+		private void ClearBatch()
+		{
+			lock (_countLock)
+			{
+				while (_leftQueue.TryDequeue(out _)) ;
+				while (_rightQueue.TryDequeue(out _)) ;
+				_leftCount = 0;
+				_rightCount = 0;
+			}
+			_leftResults.Clear();
+			_rightResults.Clear();
+			lock (_resultLock)
+			{
+				foreach (var b in _leftDisplayBitmaps) b?.Dispose();
+				foreach (var b in _rightDisplayBitmaps) b?.Dispose();
+				foreach (var b in _displayBitmaps) b?.Dispose();
+				_leftDisplayBitmaps.Clear();
+				_rightDisplayBitmaps.Clear();
+				_displayBitmaps.Clear();
+			}
+		}
 		private string GetShift() { var n = DateTime.Now.TimeOfDay; if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "晚班"; if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "早班"; return "中班"; }
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
 		public void ClearCounters() { Interlocked.Exchange(ref _totalCount, 0); Interlocked.Exchange(ref _okCount, 0); Interlocked.Exchange(ref _ngCount, 0); }
-		public void Dispose() { if (_disposed) return; _disposed = true; _motionCts?.Cancel(); lock (_resultLock) { foreach (var b in _leftDisplayBitmaps) b?.Dispose(); foreach (var b in _rightDisplayBitmaps) b?.Dispose(); foreach (var b in _displayBitmaps) b?.Dispose(); _leftDisplayBitmaps.Clear(); _rightDisplayBitmaps.Clear(); _displayBitmaps.Clear(); _displayImages.Clear(); } }
+		public void Dispose()
+		{
+			if (_disposed) return;
+			_disposed = true;
+			_motionCts?.Cancel();
+			lock (_resultLock)
+			{
+				foreach (var b in _leftDisplayBitmaps) b?.Dispose();
+				foreach (var b in _rightDisplayBitmaps) b?.Dispose();
+				foreach (var b in _displayBitmaps) b?.Dispose();
+				_leftDisplayBitmaps.Clear();
+				_rightDisplayBitmaps.Clear();
+				_displayBitmaps.Clear();
+				_displayImages.Clear();
+			}
+		}
 	}
 
 	public enum Side { Left, Right }
