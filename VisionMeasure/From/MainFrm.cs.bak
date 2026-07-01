@@ -66,7 +66,7 @@ namespace VisionMeasure
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
 		private long _sidePendingCount;  // IN13↓排队计数器(Interlocked操作, 替代旧的bool)
-		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中 (int可用Volatile.Read原子读)
+		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -591,85 +591,46 @@ namespace VisionMeasure
 				}
 			}
 			// IN13下降沿(Camera8) → 启动检测
-			// 排队机制: 空闲时立即启动, 忙时pending计数+单轮询Task(防止并发)
-			//    _sidePollingActive保证全局只有一个轮询Task, 避免多Task同时触发
+			// 使用计数器+轮询机制: 忙时排队pendingCount, 空闲时立即启动
+			//    避免中间IN13↓误触发取消当前批次
 			if (cameraId == 8 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled)
 			{
 				long tickIn13 = DateTime.Now.Ticks;
 				Logger.Debug($"[Side] ⏱ IN13↓ 收到下降沿信号 Ticks={tickIn13} 时间={DateTime.Now:HH:mm:ss.fff}");
 				Logger.Info("[Side] IN13↓ 检测到工件");
-
-				// 空闲且无轮询Task → 立即启动(不经过pending计数器, 避免跟轮询Task抢Decrement)
-				if (!_sideStation.IsMoving && Volatile.Read(ref _sidePollingActive) == 0)
+				long pending = Interlocked.Increment(ref _sidePendingCount);
+				if (pending == 1)  // 第一个pending → 检查是否可立即启动
 				{
-					long tickCallDetection = DateTime.Now.Ticks;
-					double delayFromIn13Ms = (tickCallDetection - tickIn13) / 10000.0;
-					Logger.Debug($"[Side] ⏱ 立即启动StartDetection 从IN13↓至此延迟={delayFromIn13Ms:F1}ms");
-					Logger.Info("[Side] 立即启动侧面运动控制");
-					_sideStation.StartDetection();
-					return;
-				}
-
-				// 忙或已有轮询Task → 排队
-				long pendingNew = Interlocked.Increment(ref _sidePendingCount);
-				Logger.Info($"[Side] IN13↓ 排队(pending={pendingNew})，侧面" + (_sideStation.IsMoving ? "正忙" : "等待轮询消费"));
-
-				// 确保只有一个轮询Task在运行(原子CAS)
-				if (Interlocked.CompareExchange(ref _sidePollingActive, 1, 0) == 0)
-				{
-					Task.Run(() =>
+					if (!_sideStation.IsMoving)
 					{
-						try
+						long tickCallDetection = DateTime.Now.Ticks;
+						double delayFromIn13Ms = (tickCallDetection - tickIn13) / 10000.0;
+						Interlocked.Decrement(ref _sidePendingCount);
+						Logger.Debug($"[Side] ⏱ 立即启动StartDetection 从IN13↓至此延迟={delayFromIn13Ms:F1}ms");
+						Logger.Info("[Side] 立即启动侧面运动控制");
+						_sideStation.StartDetection();
+					}
+					else
+					{
+						Logger.Info($"[Side] 侧面正忙(pending={pending})，排队等待...");
+						Task.Run(() =>
 						{
 							while (_sideStation != null)
 							{
 								Thread.Sleep(10);
-								if (!_sideStation.IsMoving)
+								if (!_sideStation.IsMoving && Interlocked.Read(ref _sidePendingCount) > 0)
 								{
-									long cur = Interlocked.Read(ref _sidePendingCount);
-									if (cur > 0)
-									{
-										long after = Interlocked.Decrement(ref _sidePendingCount);
-										if (after >= 0)
-										{
-											Logger.Info($"[Side] 排队触发(pending剩余={after})，启动新的侧面运动控制");
-											_sideStation.StartDetection();
-										}
-										else
-										{
-											// 异常: 计数器被拉到负数, 修正
-											Interlocked.Increment(ref _sidePendingCount);
-											Logger.Warning($"[Side] ⚠ 排队计数器异常(负值={after})，已自动修正");
-										}
-									}
+									Interlocked.Decrement(ref _sidePendingCount);
+									Logger.Info($"[Side] 排队触发(pending剩余={Interlocked.Read(ref _sidePendingCount)})，启动新的侧面运动控制");
+									_sideStation.StartDetection();
 								}
 							}
-						}
-						finally
-						{
-							Interlocked.Exchange(ref _sidePollingActive, 0);
-							// 收尾: 如果还有残留排队且当前空闲, 依次消费
-							if (_sideStation != null && !_sideStation.IsMoving)
-							{
-								while (true)
-								{
-									long rem = Interlocked.Read(ref _sidePendingCount);
-									if (rem <= 0) break;
-									long after = Interlocked.Decrement(ref _sidePendingCount);
-									if (after >= 0)
-									{
-										Logger.Info($"[Side] 收尾排队触发(pending剩余={after})");
-										_sideStation.StartDetection();
-									}
-									else
-									{
-										Interlocked.Increment(ref _sidePendingCount);
-										break;
-									}
-								}
-							}
-						}
-					});
+						});
+					}
+				}
+				else
+				{
+					Logger.Info($"[Side] IN13↓ 排队(pending={pending})");
 				}
 			}
 		}

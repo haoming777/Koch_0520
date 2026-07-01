@@ -335,7 +335,17 @@ namespace Stations
 			Logger.Debug($"[Side] ⏱ 阶段3-返回完成 耗时={(tickPhase3End - tickPhase3) / 10000.0:F1}ms 当前位置={posAfterPhase3:F1}");
 
 			long tickMotionTotal = DateTime.Now.Ticks;
-			Logger.Debug($"[Side] ⏱ StartMotion总耗时={(tickMotionTotal - tickMotionBegin) / 10000.0:F1}ms");
+			double totalMotionMs = (tickMotionTotal - tickMotionBegin) / 10000.0;
+				double phase2Ms = (tickPhase2End - tickPhase2) / 10000.0;
+				double phase3Ms = (tickPhase3End - tickPhase3) / 10000.0;
+				float distance = Math.Abs(EndPosition - StartPosition);
+				double fwdAvgSpeed = phase2Ms > 0 ? distance / phase2Ms * 1000.0 : 0;
+				double retAvgSpeed = phase3Ms > 0 ? distance / phase3Ms * 1000.0 : 0;
+				Logger.Info($"[Side] ⚡ 运动性能: 总={totalMotionMs:F0}ms " +
+					$"前进={phase2Ms:F0}ms(实际均速={fwdAvgSpeed:F0}/s vs 设定{ForwardSpeed}) " +
+					$"返回={phase3Ms:F0}ms(实际均速={retAvgSpeed:F0}/s vs 设定{ReturnSpeed}) " +
+					$"加速={Accel} 减速={Decel}");
+				Logger.Debug($"[Side] ⏱ StartMotion总耗时={totalMotionMs:F1}ms");
 		}
 
 		/// <summary>等待安全锁释放: 门开(IN8=0)则阻塞等待，门关(IN8=1)则通过</summary>
@@ -556,9 +566,12 @@ namespace Stations
 				try { var renderBmp = RenderSideImage(ctx, displayIdx, p, targetResults); OnRealTimeDisplay?.Invoke(ctx.Side, renderBmp); } catch (Exception rex) { Logger.Error("[Side] 实时渲染异常: " + rex.Message); }
 				EmitPartial(p);
 				processed++;
-				Thread.Sleep(20);
+				Thread.Sleep(2);  // 从20ms优化到2ms, 减少无谓等待(24张可节省~430ms)
 			}
-			Logger.Info($"[Side] ProcessStream结束 processed={processed} 总推理={totalInferMs:F0}ms 平均={(processed > 0 ? totalInferMs / processed : 0):F0}ms 总耗时={swTotal.Elapsed.TotalMilliseconds:F0}ms");
+			double totalMs = swTotal.Elapsed.TotalMilliseconds;
+				double avgInferMs = processed > 0 ? totalInferMs / processed : 0;
+				double fps = totalMs > 0 ? processed * 1000.0 / totalMs : 0;
+				Logger.Info($"[Side] ProcessStream结束 processed={processed} 推理总={totalInferMs:F0}ms 推理均={avgInferMs:F0}ms 吞吐={fps:F1}fps 总耗时={totalMs:F0}ms");
 		}
 
 	/// <summary>实时推送部分结果: 取左右结果最大数量, 逐索引合并左右状态→OnStatusUpdate通知UI更新轮播图索引</summary>
@@ -821,39 +834,61 @@ namespace Stations
 		}
 
 	/// <summary>构建左右独立显示图: 左侧→_leftDisplayBitmaps, 右侧→_rightDisplayBitmaps, 同时填充合并列表(存图用)</summary>
+	/// <summary>优化: 渲染移到_resultLock外执行(耗时数百ms), 锁内只做快速引用交换</summary>
 		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
 		{
+			// 阶段1: 快照旧引用+Clear(微秒级, ToArray避免Clear后引用失效)
+			Bitmap[] oldLeft, oldRight, oldDisplay;
 			lock (_resultLock)
 			{
-				// 释放旧Bitmap
-				foreach (var oldBmp in _leftDisplayBitmaps) oldBmp?.Dispose();
-				foreach (var oldBmp in _rightDisplayBitmaps) oldBmp?.Dispose();
-				foreach (var oldBmp in _displayBitmaps) oldBmp?.Dispose();
-				_displayImages.Clear();
+				oldLeft = _leftDisplayBitmaps.ToArray();
+				oldRight = _rightDisplayBitmaps.ToArray();
+				oldDisplay = _displayBitmaps.ToArray();
 				_leftDisplayBitmaps.Clear();
 				_rightDisplayBitmaps.Clear();
 				_displayBitmaps.Clear();
-				int count = Math.Max(leftImages.Count, rightImages.Count);
-				// 左侧渲染 → _leftDisplayBitmaps(显示用) + _displayBitmaps(存图用)
-				for (int i = 0; i < count; i++)
-				{
-					Bitmap bmp = i < leftImages.Count
-						? RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults)
-						: CreateMissingBmp(i, count);
-					_leftDisplayBitmaps.Add(bmp);
-					_displayBitmaps.Add(bmp);
-					_displayImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
-				}
-				// 右侧渲染 → _rightDisplayBitmaps(显示用) + _displayBitmaps(存图用)
-				for (int i = 0; i < count; i++)
-				{
-					Bitmap bmp = i < rightImages.Count
-						? RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults)
-						: CreateMissingBmp(i, count);
-					_rightDisplayBitmaps.Add(bmp);
-					_displayBitmaps.Add(bmp);
-					_displayImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
-				}
+				_displayImages.Clear();
+			}
+			// 锁外释放旧Bitmap(不阻塞任何线程)
+			foreach (var b in oldLeft) b?.Dispose();
+			foreach (var b in oldRight) b?.Dispose();
+			foreach (var b in oldDisplay) b?.Dispose();
+
+			// 阶段2: 锁外渲染(耗时操作, 不阻塞ClearBatch/StartMotion)
+			var newLeft = new List<Bitmap>();
+			var newRight = new List<Bitmap>();
+			var newDisplay = new List<Bitmap>();
+			var newImages = new List<Mat>();
+			int count = Math.Max(leftImages.Count, rightImages.Count);
+
+			// 左侧渲染
+			for (int i = 0; i < count; i++)
+			{
+				Bitmap bmp = i < leftImages.Count
+					? RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults)
+					: CreateMissingBmp(i, count);
+				newLeft.Add(bmp);
+				newDisplay.Add(bmp);
+				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
+			}
+			// 右侧渲染
+			for (int i = 0; i < count; i++)
+			{
+				Bitmap bmp = i < rightImages.Count
+					? RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults)
+					: CreateMissingBmp(i, count);
+				newRight.Add(bmp);
+				newDisplay.Add(bmp);
+				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
+			}
+
+		// 阶段3: 快速AddRange到readonly列表(微秒级)
+			lock (_resultLock)
+			{
+				_leftDisplayBitmaps.AddRange(newLeft);
+				_rightDisplayBitmaps.AddRange(newRight);
+				_displayBitmaps.AddRange(newDisplay);
+				_displayImages.AddRange(newImages);
 				_leftDisplayIndex = Math.Max(0, count - 1);
 				_rightDisplayIndex = Math.Max(0, count - 1);
 				_displayIndex = Math.Max(0, _displayImages.Count - 1);
@@ -1022,6 +1057,7 @@ namespace Stations
 			catch (Exception ex) { Logger.Error("[Side] 存图异常: " + ex.Message); }
 		}
 	/// <summary>清空本批数据: 清空左右队列+清零计数+清空结果+释放DisplayBitmaps, 每个周期开始前调用</summary>
+		/// <summary>优化: Bitmap Dispose移出_resultLock临界区, 避免阻塞下一周期StartMotion</summary>
 		private void ClearBatch()
 		{
 			lock (_countLock)
@@ -1033,15 +1069,22 @@ namespace Stations
 			}
 			_leftResults.Clear();
 			_rightResults.Clear();
+
+			// 在锁内快速收集旧引用后Clear, Dispose移到锁外(避免长时间持锁阻塞StartMotion)
+			Bitmap[] oldLeft, oldRight, oldDisplay;
 			lock (_resultLock)
 			{
-				foreach (var b in _leftDisplayBitmaps) b?.Dispose();
-				foreach (var b in _rightDisplayBitmaps) b?.Dispose();
-				foreach (var b in _displayBitmaps) b?.Dispose();
+				oldLeft = _leftDisplayBitmaps.ToArray();
+				oldRight = _rightDisplayBitmaps.ToArray();
+				oldDisplay = _displayBitmaps.ToArray();
 				_leftDisplayBitmaps.Clear();
 				_rightDisplayBitmaps.Clear();
 				_displayBitmaps.Clear();
 			}
+			// 锁外释放旧Bitmap(这些操作可能耗时数百ms, 不阻塞任何线程)
+			foreach (var b in oldLeft) b?.Dispose();
+			foreach (var b in oldRight) b?.Dispose();
+			foreach (var b in oldDisplay) b?.Dispose();
 		}
 		private string GetShift() { var n = DateTime.Now.TimeOfDay; if (n >= TimeSpan.Parse("00:00") && n <= TimeSpan.Parse("07:59")) return "晚班"; if (n >= TimeSpan.Parse("08:00") && n <= TimeSpan.Parse("15:59")) return "早班"; return "中班"; }
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; _totalCount = ok + ng; }
