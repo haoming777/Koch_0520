@@ -390,14 +390,22 @@ namespace VisionMeasure.Stations
 
 				Logger.Debug($"[Front] 盒子破损: 左{leftSubs.Count}张+右{rightSubs.Count}张子图(P={pCount})");
 
-				// 3. 左右各自批量推理
-				Logger.Debug($"[Front DetectBoxDamage] >>> 左侧 PredictBatch 开始 (batch={leftSubs.Count})");
-				var lr = _models.FrontBoxBreakModel.PredictBatch(leftSubs, ConfThreshold, IouThreshold);
-				Logger.Debug($"[Front DetectBoxDamage] <<< 左侧 PredictBatch 完成, 检测到 {lr?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0} 个框");
+				// 3. 逐张单图推理(替代batch): 避免batch拼接导致小图坐标映射偏差
+				var lr = new List<YoloInference.YoloResult>();
+				foreach (var sub in leftSubs)
+				{
+					var r = _models.FrontBoxBreakModel.Predict(sub, ConfThreshold, IouThreshold);
+					lr.Add(r);
+				}
+				Logger.Debug($"[Front DetectBoxDamage] 左侧单张推理完成 {leftSubs.Count}张, 检出 {lr.Sum(r => r?.BoxesN?.Length ?? 0)} 框");
 
-				Logger.Debug($"[Front DetectBoxDamage] >>> 右侧 PredictBatch 开始 (batch={rightSubs.Count})");
-				var rr = _models.FrontBoxBreakModel.PredictBatch(rightSubs, ConfThreshold, IouThreshold);
-				Logger.Debug($"[Front DetectBoxDamage] <<< 右侧 PredictBatch 完成, 检测到 {rr?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0} 个框");
+				var rr = new List<YoloInference.YoloResult>();
+				foreach (var sub in rightSubs)
+				{
+					var r = _models.FrontBoxBreakModel.Predict(sub, ConfThreshold, IouThreshold);
+					rr.Add(r);
+				}
+				Logger.Debug($"[Front DetectBoxDamage] 右侧单张推理完成 {rightSubs.Count}张, 检出 {rr.Sum(r => r?.BoxesN?.Length ?? 0)} 框");
 
 				// 4. 映射左图结果: 子图索引i → 盒索引i (0~halfP-1)
 				//    BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)

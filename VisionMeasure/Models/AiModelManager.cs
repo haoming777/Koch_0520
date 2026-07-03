@@ -115,7 +115,7 @@ namespace Models
 					{
 						try
 						{
-							FrontBoxBreakModel = new YoloOnnx(fullPath, metaPath, 6) { ModelName = "FrontBoxBreak" };
+							FrontBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1) { ModelName = "FrontBoxBreak" }; // batch=1: 单张小图推理;
 							Logger.Info($"正面盒子破检测模型加载成功: {fullPath}");
 						}
 						catch (Exception ex)
@@ -301,7 +301,7 @@ namespace Models
 					{
 						try
 						{
-							SideDefectModel = new YoloOnnx(fullPath, metaPath, 2, gpuDeviceId: _config.VimoGpuDeviceId) { ModelName = "SideDefect" };
+							SideDefectModel = new YoloOnnx(fullPath, metaPath, 1, gpuDeviceId: _config.VimoGpuDeviceId) { ModelName = "SideDefect" }; // batch=1: 单张推理;
 							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 						}
 						catch (Exception ex)

@@ -212,7 +212,7 @@ namespace YoloInference
 		/// <summary>推理预热: 用零张量跑N次推理(触发GPU编译优化, 避免首帧慢)</summary>
 		private void Warmup(int iterations, int warmupBatchSize)
 		{
-			Logger.Info($"[GPU] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}])...");
+			Logger.Info($"[GPU] 开始显存预热 ({iterations} 次, 张量=[{warmupBatchSize}, 3, {_inputH}, {_inputW}], 模型={ModelName ?? "?"})...");
 			int totalSize = warmupBatchSize * 3 * _inputH * _inputW;
 			float[] dummyData = new float[totalSize];
 			// 用随机数替代全零，强制CUDA编译所有conv/kernel路径，避免首次真图推理时重编译

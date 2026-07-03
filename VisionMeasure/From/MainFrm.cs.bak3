@@ -66,10 +66,6 @@ namespace VisionMeasure
 		private BackStationProcessor _backStation;
 		private SideStationProcessor _sideStation;
 		private long _sidePendingCount;  // IN13↓排队计数器(Interlocked操作, 替代旧的bool)
-		private long _sideEmptyCycleCount = 0;  // 侧面空触发连续计数(用于检测没有盒子空跑)
-		private long _lastSideImageCount = 0;   // 上一次侧面检测周期收图总数(诊断漏拍)
-		private long _lastFrontImageTicks = 0;  // 最后一次正面收到图像的Ticks(用于侧面活件判断)
-		private const long NoProductTimeoutTicks = 5 * 10000 * 1000; // 5秒内无正面图像→认为无盒
 		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中 (int可用Volatile.Read原子读)
 		private long _lastCarouselRefreshTicks = 0;  // 上一次轮播刷新时间(节流用)
 
@@ -245,12 +241,9 @@ namespace VisionMeasure
 				// 启动班次检查
 				StartShiftCheckTimer();
 
-				// 改用System.Timers.Timer(后台线程)替代Forms.Timer(UI线程), 硬件IO不再阻塞UI
-				var _statusBgTimer = new System.Timers.Timer(500);
-				_statusBgTimer.Elapsed += (_, evt) => StatusPollTick();
-				_statusBgTimer.AutoReset = true;
-				_statusBgTimer.Start();
-				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 }; // 保留引用兼容
+				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 };
+				_statusPollTimer.Tick += StatusPollTick;
+				_statusPollTimer.Start();
 
 				// 刷新显示
 				RefreshCarouselDisplays();
@@ -605,19 +598,7 @@ namespace VisionMeasure
 			{
 				long tickIn13 = DateTime.Now.Ticks;
 				Logger.Debug($"[Side] ⏱ IN13↓ 收到下降沿信号 Ticks={tickIn13} 时间={DateTime.Now:HH:mm:ss.fff}");
-									Logger.Info("[Side] IN13↓ 检测到工件");
-					Logger.Debug("[Side] ⏱ IN13↓触发诊断: 前方排队=" + Interlocked.Read(ref _sidePendingCount) + " 侧面忙=" + (_sideStation?.IsMoving ?? false) + " 空触发连续=" + Interlocked.Read(ref _sideEmptyCycleCount) + " 上次收图=" + Interlocked.Read(ref _lastSideImageCount));
-
-				// ── 活件检测: 正面最近N秒内无图像 → 判定为假触发, 拒绝启动运动 ──
-				long lastFrontTicks = Interlocked.Read(ref _lastFrontImageTicks);
-				long sinceLastFrontMs = (DateTime.Now.Ticks - lastFrontTicks) / 10000;
-				Logger.Debug("[Side] ⏱ 活件检测: 距上次正面收图=" + (sinceLastFrontMs) + "ms (阈值=" + (NoProductTimeoutTicks / 10000) + "ms)");
-				if (lastFrontTicks == 0 || (DateTime.Now.Ticks - lastFrontTicks) > NoProductTimeoutTicks)
-				{
-					long emptyCnt = Interlocked.Increment(ref _sideEmptyCycleCount);
-					Logger.Warning("[Side] ⚠ 拒绝启动: 距上次正面收图" + sinceLastFrontMs + "ms, 疑似无盒假触发! (连续空触发=" + emptyCnt + "次)");
-					return;  // 不进排队也不启动运动, 直接丢弃此触发
-				}
+				Logger.Info("[Side] IN13↓ 检测到工件");
 
 				// 空闲且无轮询Task → 立即启动(不经过pending计数器, 避免跟轮询Task抢Decrement)
 				if (!_sideStation.IsMoving && Volatile.Read(ref _sidePollingActive) == 0)
@@ -653,13 +634,6 @@ namespace VisionMeasure
 										if (after >= 0)
 										{
 											Logger.Info($"[Side] 排队触发(pending剩余={after})，启动新的侧面运动控制");
-											// 活件二次确认: 排队期间产品可能已离开, 再次检查正面收图时间
-											long lft = Interlocked.Read(ref _lastFrontImageTicks);
-											if (lft == 0 || (DateTime.Now.Ticks - lft) > NoProductTimeoutTicks)
-											{
-												Logger.Warning("[Side] 排队期间产品超时, 跳过启动(距上次正面收图=" + ((DateTime.Now.Ticks - lft) / 10000) + "ms)");
-												continue;
-											}
 											_sideStation.StartDetection();
 										}
 										else
@@ -686,13 +660,6 @@ namespace VisionMeasure
 									if (after >= 0)
 									{
 										Logger.Info($"[Side] 收尾排队触发(pending剩余={after})");
-										// 收尾活件二次确认
-										long lft2 = Interlocked.Read(ref _lastFrontImageTicks);
-										if (lft2 == 0 || (DateTime.Now.Ticks - lft2) > NoProductTimeoutTicks)
-										{
-											Logger.Warning("[Side] 收尾-产品超时, 跳过启动(距上次正面收图=" + ((DateTime.Now.Ticks - lft2) / 10000) + "ms)");
-											break;
-										}
 										_sideStation.StartDetection();
 									}
 									else
@@ -770,23 +737,7 @@ namespace VisionMeasure
 			_backStation.Start();
 
 			_sideStation = new SideStationProcessor(_aiModels, imgPath, _currentSku, _motionMgr, _imageSaver, _perfMonitor);
-							_sideStation.OnResultReady += OnStationResult;
-				_sideStation.OnResultReady += (result) =>
-				{
-					// 侧面空触发检测: 记录本次收图数, 连续空触发超阈值告警
-					int curCount = _sideStation.ImageCount;
-					Interlocked.Exchange(ref _lastSideImageCount, curCount);
-					if (curCount == 0)
-					{
-						long emptyCnt = Interlocked.Increment(ref _sideEmptyCycleCount);
-						if (emptyCnt <= 3 || emptyCnt % 10 == 0)
-							Logger.Warning("[Side] ⚠ 空触发: 本周期未收到任何侧面图像! (连续空触发=" + emptyCnt + "次, 可能没有盒子通过)");
-					}
-					else
-					{
-						Interlocked.Exchange(ref _sideEmptyCycleCount, 0);
-					}
-				};
+			_sideStation.OnResultReady += OnStationResult;
 			_sideStation.OnStatusUpdate += OnSideStatusUpdate;
 			_sideStation.OnRealTimeDisplay += (side, bmp) =>
 			{
@@ -931,7 +882,6 @@ namespace VisionMeasure
 				}
 
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Interlocked.Exchange(ref _lastFrontImageTicks, DateTime.Now.Ticks);  // 记录正面收图时间, 用于侧面活件判断
 				Logger.Debug($"[Camera1] 正面左 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[1]);
 				if (FrontEnabled) _frontStation?.OnCam1(bitmap, pid);
@@ -951,7 +901,6 @@ namespace VisionMeasure
 			{
 				if (_isClosing || bitmap == null) return;
 				long pid = Interlocked.Increment(ref _productIdCounter);
-				Interlocked.Exchange(ref _lastFrontImageTicks, DateTime.Now.Ticks);  // 记录正面收图时间, 用于侧面活件判断
 				Logger.Debug($"[Camera2] 正面右 收到图像 {bitmap.Width}x{bitmap.Height}, ProductId={pid}");
 				Interlocked.Increment(ref Hardware.CameraTriggerManager.ImageReceivedCount[2]);
 				if (FrontEnabled) _frontStation?.OnCam2(bitmap, pid);
@@ -1164,7 +1113,8 @@ namespace VisionMeasure
 					UpdatePictureBox(xlPictureBox3, result.EndFaceRenderImage);
 				if (result.EndFaceLowerRenderImage != null)
 					UpdatePictureBox(xlPictureBox4, result.EndFaceLowerRenderImage);
-				// SideRenderImage/SideLeftRenderImage是同一张图, 避免重复更新xlPic5
+				if (result.SideRenderImage != null)
+					UpdatePictureBox(xlPictureBox5, result.SideRenderImage);
 				if (result.SideLeftRenderImage != null)
 					UpdatePictureBox(xlPictureBox5, result.SideLeftRenderImage);
 				if (result.SideRightRenderImage != null)
@@ -1181,47 +1131,44 @@ namespace VisionMeasure
 		/// </summary>
 		private void UpdateStatistics(ProductResult result)
 		{
-		// 更新正面统计 (调用者已在UI线程/BeginInvoke中, 无需再次BeginInvoke)
-		if (_frontStation != null)
-		{
-			if (OK_zheng_Lb != null) OK_zheng_Lb.Text = _frontStation.OkCount.ToString();
-			if (NG_zheng_Lb != null) NG_zheng_Lb.Text = _frontStation.NgCount.ToString();
-			long ft = _frontStation.OkCount + _frontStation.NgCount;
-			if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = (ft > 0 ? (_frontStation.OkCount * 100.0 / ft).ToString("F1") + "%" : "0%");
-		}
-		if (_backStation != null)
-		{
-			if (OK_fan_Lb != null) OK_fan_Lb.Text = _backStation.OkCount.ToString();
-			if (NG_fan_Lb != null) NG_fan_Lb.Text = _backStation.NgCount.ToString();
-			long bt = _backStation.OkCount + _backStation.NgCount;
-			if (Yield_fan_Lb != null) Yield_fan_Lb.Text = (bt > 0 ? (_backStation.OkCount * 100.0 / bt).ToString("F1") + "%" : "0%");
-		}
-		if (_endFaceStation != null)
-		{
-			if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = _endFaceStation.OkCount.ToString();
-			if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = _endFaceStation.NgCount.ToString();
-			long et = _endFaceStation.OkCount + _endFaceStation.NgCount;
-			if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = (et > 0 ? (_endFaceStation.OkCount * 100.0 / et).ToString("F1") + "%" : "0%");
-		}
-		if (_sideStation != null)
-		{
-			if (OK_cemian_Lb != null) OK_cemian_Lb.Text = _sideStation.OkCount.ToString();
-			if (NG_cemian_Lb != null) NG_cemian_Lb.Text = _sideStation.NgCount.ToString();
-			long st2 = _sideStation.OkCount + _sideStation.NgCount;
-			if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = (st2 > 0 ? (_sideStation.OkCount * 100.0 / st2).ToString("F1") + "%" : "0%");
-		}
+			// 更新正面统计
+			// 使用各工位累计计数，按支计算
+			this.BeginInvoke(new Action(() =>
+			{
+				if (_frontStation != null)
+				{
+					if (OK_zheng_Lb != null) OK_zheng_Lb.Text = _frontStation.OkCount.ToString();
+					if (NG_zheng_Lb != null) NG_zheng_Lb.Text = _frontStation.NgCount.ToString();
+					long ft = _frontStation.OkCount + _frontStation.NgCount;
+					if (Yield_zheng_Lb != null) Yield_zheng_Lb.Text = (ft > 0 ? (_frontStation.OkCount * 100.0 / ft).ToString("F1") + "%" : "0%");
+				}
+				if (_backStation != null)
+				{
+					if (OK_fan_Lb != null) OK_fan_Lb.Text = _backStation.OkCount.ToString();
+					if (NG_fan_Lb != null) NG_fan_Lb.Text = _backStation.NgCount.ToString();
+					long bt = _backStation.OkCount + _backStation.NgCount;
+					if (Yield_fan_Lb != null) Yield_fan_Lb.Text = (bt > 0 ? (_backStation.OkCount * 100.0 / bt).ToString("F1") + "%" : "0%");
+				}
+				if (_endFaceStation != null)
+				{
+					if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = _endFaceStation.OkCount.ToString();
+					if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = _endFaceStation.NgCount.ToString();
+					long et = _endFaceStation.OkCount + _endFaceStation.NgCount;
+					if (Yield_duanmian_Lb != null) Yield_duanmian_Lb.Text = (et > 0 ? (_endFaceStation.OkCount * 100.0 / et).ToString("F1") + "%" : "0%");
+				}
+				if (_sideStation != null)
+				{
+					if (OK_cemian_Lb != null) OK_cemian_Lb.Text = _sideStation.OkCount.ToString();
+					if (NG_cemian_Lb != null) NG_cemian_Lb.Text = _sideStation.NgCount.ToString();
+					long st2 = _sideStation.OkCount + _sideStation.NgCount;
+					if (Yield_cemian_Lb != null) Yield_cemian_Lb.Text = (st2 > 0 ? (_sideStation.OkCount * 100.0 / st2).ToString("F1") + "%" : "0%");
+				}
+			}));
 		}
 
-				private long _lastEndFaceCarouselRefreshTicks = 0;  // 端面轮播刷新节流(同侧面300ms)
-
-		/// <summary>端面状态更新回调: 300ms节流刷新轮播图, 避免频繁UI更新导致卡顿</summary>
+		/// <summary>端面状态更新回调: 更新轮播索引标签+RefreshCarouselDisplays刷新显示</summary>
 		private void OnEndFaceStatusUpdate(List<string> upperStatus, List<string> lowerStatus, List<string> mergedStatus, int p)
 		{
-			// 节流: 同侧面300ms
-			long now = DateTime.Now.Ticks;
-			if (now - Interlocked.Read(ref _lastEndFaceCarouselRefreshTicks) < 300 * 10000) return;
-			Interlocked.Exchange(ref _lastEndFaceCarouselRefreshTicks, now);
-
 			this.BeginInvoke(new Action(() =>
 			{
 				if (_endFaceIndexLabel != null && _endFaceStation != null)
@@ -1231,6 +1178,7 @@ namespace VisionMeasure
 				RefreshCarouselDisplays();
 			}));
 		}
+
 		/// <summary>侧面状态更新回调: 更新轮播索引标签+RefreshCarouselDisplays刷新显示</summary>
 		private void OnSideStatusUpdate(List<string> leftStatus, List<string> rightStatus, List<string> mergedStatus, int p)
 		{
@@ -1802,10 +1750,6 @@ namespace VisionMeasure
 		/// 参数: pb=目标控件, image=要显示的Bitmap
 		/// 注意事项: Clone避免外部释放导致Paint异常; >1920px等比缩放; 先赋值再Dispose避免闪烁
 		/// </summary>
-		// 每PictureBox最小更新间隔(ms), 避免同控件短时间内重复Bitmap分配
-		private readonly Dictionary<XLPictureBox, long> _pbLastUpdateTicks = new Dictionary<XLPictureBox, long>();
-		private const long PbUpdateIntervalTicks = 100 * 10000; // 100ms最小间隔
-
 		private void UpdatePictureBox(XLPictureBox pb, Bitmap image)
 		{
 			if (pb == null || image == null) return;
@@ -1816,26 +1760,8 @@ namespace VisionMeasure
 				return;
 			}
 
-			// 节流: 同控件100ms内不重复更新, 避免Bitmap Clone堆积
-			long nowTicks = DateTime.Now.Ticks;
-			lock (_pbLastUpdateTicks)
-			{
-				if (_pbLastUpdateTicks.TryGetValue(pb, out long lastTicks))
-				{
-					if (nowTicks - lastTicks < PbUpdateIntervalTicks)
-						return; // 距上次更新不足100ms, 跳过
-				}
-				_pbLastUpdateTicks[pb] = nowTicks;
-			}
-
 			try
 			{
-				// 优化: 如果图像引用和当前一样, 跳过(避免重复Clone)
-				if (object.ReferenceEquals(pb.Image, image))
-				{
-					Logger.Debug("[UI] UpdatePictureBox跳过(同引用)");
-					return;
-				}
 				Bitmap display;
 				int maxW = 1920;
 				if (image.Width > maxW)
@@ -2088,7 +2014,7 @@ namespace VisionMeasure
 		/// SaveCounts→SaveShift→_sideTriggerPending=false→工位Dispose→触发管理器→8相机Close→硬件Disconnect→性能/保存器/计时器→AI→Logger
 		/// </summary>
 
-		private void StatusPollTick(object sender = null, EventArgs e = null)
+		private void StatusPollTick(object sender, EventArgs e)
 		{
 			try
 			{

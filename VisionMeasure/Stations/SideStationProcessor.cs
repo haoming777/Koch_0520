@@ -523,7 +523,8 @@ namespace Stations
 			int statusThrottle = 0;    // UI状态节流: 每4张推一次状态
 			long firstImgTicks = 0;    // 首张图片到达Ticks(诊断用)
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
-			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount}");
+			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount});
+			Logger.Debug($"[Side] ⏱ ProcessStream诊断: isMoving={IsMoving} totalMsElapsed={swTotal.Elapsed.TotalMilliseconds:F0});
 			while (!cancel.IsCancellationRequested && processed < p * 2)
 			{
 				SideImageCtx ctx;
@@ -544,9 +545,9 @@ namespace Stations
 						Logger.Info($"[Side] ProcessStream 收到取消信号，退出(已处理{processed}/期望{p*2})");
 						break;
 					}
-					if (noImgCount > 3000)
+					if (noImgCount > 10000)  // 10秒超时, 防止运动未完成过早退出
 					{
-						Logger.Warning($"[Side] ProcessStream {noImgCount}ms无新图片，退出等待(已处理{processed}/期望{p*2})");
+						Logger.Warning($"[Side] ProcessStream {noImgCount}ms无新图片，退出等待(可能运动已结束或相机触发异常)(已处理{processed}/期望{p*2})");
 						break;
 					}
 					continue;
@@ -588,6 +589,7 @@ namespace Stations
 			double totalMs = swTotal.Elapsed.TotalMilliseconds;
 				double avgInferMs = processed > 0 ? totalInferMs / processed : 0;
 				double fps = totalMs > 0 ? processed * 1000.0 / totalMs : 0;
+				Logger.Debug($"[Side] ⏱ ProcessStream退出诊断: processed={processed} 期望={p*2} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)});
 				Logger.Info($"[Side] ProcessStream结束 processed={processed} 推理总={totalInferMs:F0}ms 推理均={avgInferMs:F0}ms 吞吐={fps:F1}fps 总耗时={totalMs:F0}ms");
 		}
 
@@ -614,6 +616,8 @@ namespace Stations
 	///   阶段2完成后再通过OnResultReady补发渲染图</summary>
 		private void FinalizeResults()
 		{
+			int expectedP = _sku.P;
+			Logger.Debug($"[Side] ⏱ FinalizeResults诊断: P={expectedP} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)} 左已处理={_processedLeftImgs.Count} 右已处理={_processedRightImgs.Count});
 			int p = _sku.P;
 
 			// ─── 阶段1: 快速汇总(同步, 不渲染) ───
@@ -815,30 +819,32 @@ namespace Stations
 					{
 						if (EnableSideDefectCheck && _models.SideDefectModel != null)
 						{
-							var batch = new List<Mat> { head, tail };
-							var batchResults = _models.SideDefectModel.PredictBatch(batch, ConfThreshold, IouThreshold);
+							// 单张推理: 头尾各自Predict, 避免batch拼接导致坐标映射偏差
+							var headResult = _models.SideDefectModel.Predict(head, ConfThreshold, IouThreshold);
+							var tailResult = _models.SideDefectModel.Predict(tail, ConfThreshold, IouThreshold);
 							bool ng = false;
 							// 头部检测：坐标保持原样(0~cropW)
-							// 头部检测：BoxesN是裁剪图上的归一化坐标，需映射回原图
-							if (batchResults != null && batchResults.Count > 0 && batchResults[0]?.BoxesN?.Length > 0)
+							if (headResult != null && headResult.BoxesN?.Length > 0)
 							{
 								ng = true;
-								for (int j = 0; j < batchResults[0].BoxesN.Length; j++)
+								Logger.Debug("[Side] 头部检测到缺陷: " + headResult.BoxesN.Length + "个 (cropW=" + cropW + " w=" + w + ")");
+								for (int j = 0; j < headResult.BoxesN.Length; j++)
 								{
-									var b = batchResults[0].BoxesN[j];
-									result.Defects.Add(new BoxDefect(j, "缺陷" + batchResults[0].ClassIds[j],
-										new float[] { b.X * cropW / w, b.Y, (b.X + b.Width) * cropW / w, b.Y + b.Height }, batchResults[0].Scores[j]));
+									var b = headResult.BoxesN[j];
+									result.Defects.Add(new BoxDefect(j, "缺陷" + headResult.ClassIds[j],
+										new float[] { b.X * cropW / w, b.Y, (b.X + b.Width) * cropW / w, b.Y + b.Height }, headResult.Scores[j]));
 								}
 							}
 							// 尾部检测：裁剪图坐标+(w-cropW)偏移映射回原图
-							if (batchResults != null && batchResults.Count > 1 && batchResults[1]?.BoxesN?.Length > 0)
+							if (tailResult != null && tailResult.BoxesN?.Length > 0)
 							{
 								ng = true;
-								for (int j = 0; j < batchResults[1].BoxesN.Length; j++)
+								Logger.Debug("[Side] 尾部检测到缺陷: " + tailResult.BoxesN.Length + "个 (cropW=" + cropW + " w=" + w + ")");
+								for (int j = 0; j < tailResult.BoxesN.Length; j++)
 								{
-									var b = batchResults[1].BoxesN[j];
-									result.Defects.Add(new BoxDefect(j, "缺陷" + batchResults[1].ClassIds[j],
-										new float[] { (w - cropW + b.X * cropW) / w, b.Y, (w - cropW + (b.X + b.Width) * cropW) / w, b.Y + b.Height }, batchResults[1].Scores[j]));
+									var b = tailResult.BoxesN[j];
+									result.Defects.Add(new BoxDefect(j, "缺陷" + tailResult.ClassIds[j],
+										new float[] { (w - cropW + b.X * cropW) / w, b.Y, (w - cropW + (b.X + b.Width) * cropW) / w, b.Y + b.Height }, tailResult.Scores[j]));
 								}
 							}
 							if (ng) result.Status = "NG";
@@ -976,25 +982,12 @@ namespace Stations
 						}
 					}
 
-					// ── 3. 显示旋转 ──
-					if (ctx.Side == Side.Left || ctx.Side == Side.Right)
-					{
-						float angle = ctx.Side == Side.Left ? -90 : 90;
-						var rotatedBmp = new Bitmap(bmp.Height, bmp.Width);
-						using (var rg = Graphics.FromImage(rotatedBmp))
-						{
-							rg.TranslateTransform(rotatedBmp.Width / 2f, rotatedBmp.Height / 2f);
-							rg.RotateTransform(angle);
-							rg.TranslateTransform(-bmp.Width / 2f, -bmp.Height / 2f);
-							rg.DrawImage(bmp, 0, 0);
-						}
-						bmp.Dispose();
-						bmp = rotatedBmp;
-					}
+					// ── 3. 横向显示: 不再旋转侧面图, 保持原始横向显示 ──
+					// 原代码旋转90°, 导致横向图变竖向. 如需竖向显示请改回旋转代码.
 					// ── 4. 状态+序号：绘制在旋转后（水平文字，放在图片中间不推理区域）──
 					int rw = bmp.Width, rh = bmp.Height;
 					float bigFontSz = Math.Max(96f, Math.Min(rw, rh) / 12f);  // 放大字体
-					string status = res?.Status ?? "?";
+					string status = res?.Status ?? "OK";  // 防止显示'?'，未找到结果默认OK
 					Color stColor = status == "OK" ? Color.LimeGreen : (status == "?" ? Color.Gray : Color.Red);
 					using (var g2 = Graphics.FromImage(bmp))
 					{
@@ -1042,6 +1035,7 @@ namespace Stations
 			{
 				if (leftImages == null || rightImages == null) return;
 				bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage;
+				Logger.Debug($"[Side] 存图诊断: 左图={leftImages.Count} 右图={rightImages.Count} displayBitmaps={_displayBitmaps.Count} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 状态数={status.Count});
 				Logger.Info("[Side] 存图配置: SaveOk=" + so + " SaveNg=" + sn + " isOk=" + isOk + " L=" + leftImages.Count + " R=" + rightImages.Count);
 				if (isOk && !so) { Logger.Info("[Side] 跳过存图(OK图不存)"); return; }
 				if (!isOk && !sn) { Logger.Info("[Side] 跳过存图(NG图不存)"); return; }
@@ -1060,13 +1054,19 @@ namespace Stations
 				int savedRender = 0;
 				lock (_resultLock)
 				{
-					int lc = leftImages.Count;
+					// 修复: 使用count(displayBitmaps每侧数量)而非lc(leftImages.Count)做索引映射
+					// 原bug: 左右图数量不等时, boxIdx = i - lc 会偏移错误, 导致OK图被误存到NG目录
+					int count = Math.Max(leftImages.Count, rightImages.Count);
 					for (int i = 0; i < _displayBitmaps.Count; i++) {
-						if (_displayBitmaps[i] == null) continue; int boxIdx = i < lc ? i : (i - lc); { bool isLeft = i < lc; bool ng = isOk || (isLeft ? (boxIdx < _leftResults.Count && _leftResults[boxIdx].Status != "OK") : (boxIdx < _rightResults.Count && _rightResults[boxIdx].Status != "OK")); if (!ng) continue; }
-						var d = i < lc ? leftDir : rightDir;
-						int idx = i < lc ? (i + 1) : (i - lc + 1);
+						if (_displayBitmaps[i] == null) continue;
+						bool isLeft = i < count;
+						int boxIdx = isLeft ? i : (i - count);
+						bool ng = isOk || (isLeft ? (boxIdx < _leftResults.Count && _leftResults[boxIdx].Status != "OK") : (boxIdx < _rightResults.Count && _rightResults[boxIdx].Status != "OK")); if (!ng) continue;
+						var d = isLeft ? leftDir : rightDir;
+						int idx = boxIdx + 1;
 						_imageSaver.AddSaveTask(Path.Combine(d, ts + "_渲染_" + idx + "_" + nt + ".jpg"), _displayBitmaps[i].ToJpegBytesFast(85), true, 85);
 						savedRender++;
+						Logger.Debug("[Side] 存渲染图: " + (isLeft ? "左" : "右") + "盒" + idx + " 状态=" + (isLeft ? _leftResults[boxIdx].Status : _rightResults[boxIdx].Status));
 					}
 				}
 				Logger.Info("[Side] 存图完成: 左原图" + leftImages.Count + " 右原图" + rightImages.Count + " 渲染图" + savedRender);
