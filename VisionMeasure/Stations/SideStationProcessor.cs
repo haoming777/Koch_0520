@@ -180,8 +180,8 @@ namespace Stations
 			});
 		}
 
-		public void OnCam7(Bitmap bmp, long pid) { if (bmp != null) AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); }
-		public void OnCam8(Bitmap bmp, long pid) { if (bmp != null) AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); }
+		public void OnCam7(Bitmap bmp, long pid) { if (bmp != null) { AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); Logger.Debug($"[Side] 📷 Cam7入队 左队列={_leftCount} pid={pid}"); } }
+		public void OnCam8(Bitmap bmp, long pid) { if (bmp != null) { AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); Logger.Debug($"[Side] 📷 Cam8入队 右队列={_rightCount} pid={pid}"); } }
 
 		/// <summary>图像入队: ConcurrentQueue原子入队→Interlocked计数, 生产者=相机回调, 消费者=ProcessStream</summary>
 		private void AddImage(ConcurrentQueue<SideImageCtx> q, ref int count, Bitmap bmp, long pid, Side side)
@@ -269,7 +269,7 @@ namespace Stations
 					StartMotion(cts.Token);
 					long tickMotionEnd = DateTime.Now.Ticks;
 					Logger.Debug($"[Side] ⏱ StartMotion结束 耗时={(tickMotionEnd - tickMotionStart) / 10000.0:F1}ms");
-					streamTask.Wait(2000);  // ProcessStream内部有3s无图超时, 这里给2s兜底
+					if (!streamTask.Wait(5000)) { Logger.Warning($"[Side] ⚠ ProcessStream未在5s内完成, 强制汇总! 左结果={_leftResults.Count}/{_sku.P} 右结果={_rightResults.Count}/{_sku.P}"); }  // ProcessStream内部有3s无图超时, 这里给2s兜底
 					FinalizeResults();
 				}
 				catch (OperationCanceledException) { Logger.Warning("[Side] 运动被取消(安全锁)"); FinalizeResults(); }
@@ -519,7 +519,11 @@ namespace Stations
 			double totalInferMs = 0;
 			bool tryLeftFirst = true;  // 交替优先，无偏处理：按收到顺序
 			int noImgCount = 0;        // 连续无图计数(每1ms+1, 超3000即3秒退出)
+			int displayThrottle = 0;   // UI显示节流: 每3张推一次实时图
+			int statusThrottle = 0;    // UI状态节流: 每4张推一次状态
+			long firstImgTicks = 0;    // 首张图片到达Ticks(诊断用)
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
+			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount}");
 			while (!cancel.IsCancellationRequested && processed < p * 2)
 			{
 				SideImageCtx ctx;
@@ -548,6 +552,7 @@ namespace Stations
 					continue;
 				}
 				noImgCount = 0;  // 有图就重置计数
+					if (firstImgTicks == 0) { firstImgTicks = DateTime.Now.Ticks; Logger.Info($"[Side] ⏱ 首张图片到达, 已等待={swTotal.Elapsed.TotalMilliseconds:F0}ms 左队列≈{Interlocked.CompareExchange(ref _leftCount, 0, 0)} 右队列≈{Interlocked.CompareExchange(ref _rightCount, 0, 0)}"); }
 
 				bool isLeft = ctx.Side == Side.Left;
 				var targetResults = isLeft ? _leftResults : _rightResults;
@@ -563,10 +568,22 @@ namespace Stations
 				targetList.Add(ctx);
 				int displayIdx = ReverseBoxOrder ? (p - 1 - idx) : idx;
 				Logger.Debug($"[Side] {sideTag}{idx + 1}/{p} 推理={inferMs:F0}ms 结果={res.Status}");
-				try { var renderBmp = RenderSideImage(ctx, displayIdx, p, targetResults); OnRealTimeDisplay?.Invoke(ctx.Side, renderBmp); } catch (Exception rex) { Logger.Error("[Side] 实时渲染异常: " + rex.Message); }
-				EmitPartial(p);
-				processed++;
-				Thread.Sleep(2);  // 从20ms优化到2ms, 减少无谓等待(24张可节省~430ms)
+				displayThrottle++;
+					// UI显示节流: 每3张推送一次实时图(减少UI消息队列压力)
+					if (displayThrottle >= 3 || processed >= p * 2 - 3) {
+						try { var renderBmp = RenderSideImage(ctx, displayIdx, p, targetResults); OnRealTimeDisplay?.Invoke(ctx.Side, renderBmp); } catch (Exception rex) { Logger.Error("[Side] 实时渲染异常: " + rex.Message); }
+						displayThrottle = 0;
+					}
+					// UI状态节流: 每4张推送一次
+					statusThrottle++;
+					if (statusThrottle >= 4 || processed >= p * 2 - 3) {
+						EmitPartial(p);
+						statusThrottle = 0;
+					}
+					// 每6张输出队列深度诊断
+					if (processed % 6 == 5) Logger.Debug($"[Side] 队列深度: 已处理{processed + 1}/{p * 2} 左q={Interlocked.CompareExchange(ref _leftCount, 0, 0)} 右q={Interlocked.CompareExchange(ref _rightCount, 0, 0)} 耗时={swTotal.Elapsed.TotalMilliseconds:F0}ms");
+					processed++;
+					Thread.Sleep(2);  // 从20ms优化到2ms, 减少无谓等待(24张可节省~430ms)
 			}
 			double totalMs = swTotal.Elapsed.TotalMilliseconds;
 				double avgInferMs = processed > 0 ? totalInferMs / processed : 0;

@@ -67,6 +67,7 @@ namespace VisionMeasure
 		private SideStationProcessor _sideStation;
 		private long _sidePendingCount;  // IN13↓排队计数器(Interlocked操作, 替代旧的bool)
 		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中 (int可用Volatile.Read原子读)
+		private long _lastCarouselRefreshTicks = 0;  // 上一次轮播刷新时间(节流用)
 
 		// ========== 数据管理 ==========
 		private SkuDatabase _skuDb;
@@ -1181,6 +1182,11 @@ namespace VisionMeasure
 		/// <summary>侧面状态更新回调: 更新轮播索引标签+RefreshCarouselDisplays刷新显示</summary>
 		private void OnSideStatusUpdate(List<string> leftStatus, List<string> rightStatus, List<string> mergedStatus, int p)
 		{
+			// 节流: 300ms内只刷新一次, 避免UI消息队列过载导致界面卡顿
+			long now = DateTime.Now.Ticks;
+			if (now - Interlocked.Read(ref _lastCarouselRefreshTicks) < 300 * 10000) return;
+			Interlocked.Exchange(ref _lastCarouselRefreshTicks, now);
+
 			this.BeginInvoke(new Action(() =>
 			{
 				if (_sideIndexLabel != null && _sideStation != null)
