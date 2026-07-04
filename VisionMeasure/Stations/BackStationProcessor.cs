@@ -45,6 +45,7 @@ namespace Stations
 		private readonly PerformanceMonitor _perfMonitor;
 		private Mat _leftBuffer, _rightBuffer;
 		private readonly object _syncLock = new object();
+		private int _isProcessing = 0;  // 防重入: 0=空闲, 1=处理中
 		private long _totalCount, _okCount, _ngCount;
 		private long _imgCount = 0;
 		private bool _lastIsOk = true;
@@ -149,11 +150,20 @@ namespace Stations
 				}
 			}
 			if (l == null || r == null) return;
+
+			// 防重入: 上一批未处理完则丢弃当前这组
+			if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) != 0)
+			{
+				Logger.Warning("[Back] 上一批处理未完成, 跳过当前配对(防止并发处理导致数据混乱)");
+				l?.Dispose(); r?.Dispose();
+				return;
+			}
+
 			Logger.Debug("[Back] 配对成功");
 			var sw = System.Diagnostics.Stopwatch.StartNew();
 			try { await Task.Run(() => Process(l, r)); Logger.Info("[Back] 完成 总耗时=" + sw.Elapsed.TotalMilliseconds.ToString("F1") + "ms"); }
 			catch (Exception ex) { Logger.Error("[Back] 异常: " + ex.Message); }
-			finally { l?.Dispose(); r?.Dispose(); }
+			finally { Interlocked.Exchange(ref _isProcessing, 0); l?.Dispose(); r?.Dispose(); }
 		}
 
 		// 从模型best.json加载阈值
@@ -168,6 +178,8 @@ namespace Stations
 
 		private void Process(Mat leftMat, Mat rightMat)
 		{
+			// 防呆: SKU未加载时使用默认值, 避免NPE
+			if (_sku == null) { Logger.Error("[Back] SKU未设置, 无法处理"); return; }
 			long pid = DateTime.Now.Ticks;
 			long tickProcess = DateTime.Now.Ticks;
 			var sw = System.Diagnostics.Stopwatch.StartNew();

@@ -232,6 +232,7 @@ namespace Stations
 		public void StartDetection()
 		{
 			if (_disposed) { Logger.Warning("[Side] 已释放"); return; }
+			if (_sku == null) { Logger.Error("[Side] SKU未设置, 无法启动检测"); return; }
 
 			long myCycleId = Interlocked.Increment(ref _cycleId);
 			long tickStartDetection = DateTime.Now.Ticks;
@@ -523,8 +524,8 @@ namespace Stations
 			int statusThrottle = 0;    // UI状态节流: 每4张推一次状态
 			long firstImgTicks = 0;    // 首张图片到达Ticks(诊断用)
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
-			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount});
-			Logger.Debug($"[Side] ⏱ ProcessStream诊断: isMoving={IsMoving} totalMsElapsed={swTotal.Elapsed.TotalMilliseconds:F0});
+			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount}");
+			Logger.Debug($"[Side] ⏱ ProcessStream诊断: isMoving={IsMoving} totalMsElapsed={swTotal.Elapsed.TotalMilliseconds:F0}");
 			while (!cancel.IsCancellationRequested && processed < p * 2)
 			{
 				SideImageCtx ctx;
@@ -589,7 +590,7 @@ namespace Stations
 			double totalMs = swTotal.Elapsed.TotalMilliseconds;
 				double avgInferMs = processed > 0 ? totalInferMs / processed : 0;
 				double fps = totalMs > 0 ? processed * 1000.0 / totalMs : 0;
-				Logger.Debug($"[Side] ⏱ ProcessStream退出诊断: processed={processed} 期望={p*2} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)});
+				Logger.Debug($"[Side] ⏱ ProcessStream退出诊断: processed={processed} 期望={p*2} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)}");
 				Logger.Info($"[Side] ProcessStream结束 processed={processed} 推理总={totalInferMs:F0}ms 推理均={avgInferMs:F0}ms 吞吐={fps:F1}fps 总耗时={totalMs:F0}ms");
 		}
 
@@ -617,7 +618,7 @@ namespace Stations
 		private void FinalizeResults()
 		{
 			int expectedP = _sku.P;
-			Logger.Debug($"[Side] ⏱ FinalizeResults诊断: P={expectedP} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)} 左已处理={_processedLeftImgs.Count} 右已处理={_processedRightImgs.Count});
+			Logger.Debug($"[Side] ⏱ FinalizeResults诊断: P={expectedP} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)} 左已处理={_processedLeftImgs.Count} 右已处理={_processedRightImgs.Count}");
 			int p = _sku.P;
 
 			// ─── 阶段1: 快速汇总(同步, 不渲染) ───
@@ -1035,7 +1036,7 @@ namespace Stations
 			{
 				if (leftImages == null || rightImages == null) return;
 				bool so = _Config.IsSaveOkImage, sn = _Config.IsSaveNgImage;
-				Logger.Debug($"[Side] 存图诊断: 左图={leftImages.Count} 右图={rightImages.Count} displayBitmaps={_displayBitmaps.Count} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 状态数={status.Count});
+				Logger.Debug($"[Side] 存图诊断: 左图={leftImages.Count} 右图={rightImages.Count} displayBitmaps={_displayBitmaps.Count} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 状态数={status.Count}");
 				Logger.Info("[Side] 存图配置: SaveOk=" + so + " SaveNg=" + sn + " isOk=" + isOk + " L=" + leftImages.Count + " R=" + rightImages.Count);
 				if (isOk && !so) { Logger.Info("[Side] 跳过存图(OK图不存)"); return; }
 				if (!isOk && !sn) { Logger.Info("[Side] 跳过存图(NG图不存)"); return; }

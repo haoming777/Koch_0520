@@ -17,7 +17,7 @@ using VisionMeasure.Utils;using CommonLib;
 namespace AIsdk
 {
 /// <summary>SmartMore ViMo推理封装 — OCR/分割/分类模型(.vimosln), Init→Run, 支持GPU/CPU</summary>
-	public class Vimo
+	public class Vimo : IDisposable
 	{
 		private const int ERROR_OK = 0;
 		private const int ERROR_FAILED = -1;
@@ -424,6 +424,8 @@ namespace AIsdk
 		/// </summary>
 		/// <param name="mat"></param>
 		/// <returns></returns>
+		public void Dispose() { try { (pipelines1 as IDisposable)?.Dispose(); (module as IDisposable)?.Dispose(); (module_segmentation as IDisposable)?.Dispose(); (module_class as IDisposable)?.Dispose(); (solution as IDisposable)?.Dispose(); } catch { } pipelines1 = null; module = null; module_segmentation = null; module_class = null; solution = null; }
+
 		private Bitmap Visualize(Mat mat)
 		{
 			Bitmap bitmap = new Bitmap(mat.Cols, mat.Rows, (int)mat.Step(), PixelFormat.Format24bppRgb, mat.Data);

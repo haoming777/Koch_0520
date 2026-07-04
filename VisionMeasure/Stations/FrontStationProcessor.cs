@@ -43,6 +43,7 @@ namespace VisionMeasure.Stations
 		private Mat _leftBuffer = null;
 		private Mat _rightBuffer = null;
 		private readonly object _syncLock = new object();
+		private int _isProcessing = 0;  // 防重入: 0=空闲, 1=处理中
 
 		private long _okCount = 0;
 		private long _ngCount = 0;
@@ -157,6 +158,14 @@ namespace VisionMeasure.Stations
 			}
 			if (leftToProcess == null || rightToProcess == null) return;
 
+			// 防重入: 上一批未处理完则丢弃当前这组(保留最新buffer已被清空, 新图会填充)
+			if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) != 0)
+			{
+				Logger.Warning("[Front] 上一批处理未完成, 跳过当前配对(防止并发处理导致数据混乱)");
+				leftToProcess?.Dispose(); rightToProcess?.Dispose();
+				return;
+			}
+
 			var swTotal = System.Diagnostics.Stopwatch.StartNew();
 			Mat leftProc = null, rightProc = null;
 			try
@@ -265,6 +274,7 @@ namespace VisionMeasure.Stations
 			catch (Exception ex) { Logger.Error($"[Front] 处理异常: {ex.Message}\r\n{ex.StackTrace}"); }
 			finally
 			{
+				Interlocked.Exchange(ref _isProcessing, 0);  // 防重入锁释放
 				leftToProcess?.Dispose(); rightToProcess?.Dispose();
 				if (leftProc != null && leftProc != leftToProcess) leftProc.Dispose();
 				if (rightProc != null && rightProc != rightToProcess) rightProc.Dispose();

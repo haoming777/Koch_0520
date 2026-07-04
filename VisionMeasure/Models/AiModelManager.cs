@@ -335,14 +335,23 @@ namespace Models
 			if (_disposed) return;
 			_disposed = true;
 
+			// YOLO ONNX模型
 			FrontBoxBreakModel?.Dispose();
 			EndFaceUpperModel?.Dispose();
 			EndFaceLowerModel?.Dispose();
 			BackBarcodeModel?.Dispose();
 			BackHookModel?.Dispose();
 			HookSlightModel?.Dispose();
+			SideDefectModel?.Dispose();
 
-			Logger.Info("AI模型管理器已释放");
+			// ViMo模型 (SmartMore SDK, 释放pipeline/module引用让GC回收)
+			FrontOcrModel?.Dispose();
+			BackDateCodeSegModel?.Dispose();
+			BackDateCodeClsModel?.Dispose();
+			BackDateCodeOcrModel?.Dispose();
+			BackCutCharModel?.Dispose();
+
+			Logger.Info("AI模型管理器已释放(YOLO+ViMo共11个模型)");
 		}
 
 		private Vimo LoadVimoModel(string modelPath, string name, string moduleId = "0")
