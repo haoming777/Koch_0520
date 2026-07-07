@@ -43,6 +43,9 @@ namespace Config
 		// ========== Yolo模型专用GPU (盒子破、挂钩、端面、侧面等) ==========
 		public int YoloGpuDeviceId { get; set; } = 0;     // Yolo模型用显卡0
 
+		// ========== Yolo推理BatchSize (跟随当前P值, 取所有SKU最大P) ==========
+		public int MaxBatchSize { get; set; } = 12;       // 默认12, 覆盖常见P=4/6/8/10/12
+
 		/// <summary>拼接完整模型路径: ModelRootPath + 相对路径 → 绝对路径</summary>
 		public string GetFullPath(string modelFile)
 		{
@@ -87,6 +90,7 @@ namespace Config
 			config.DefaultGpuDeviceId = _Config.DefaultGpuDeviceId;
 			config.VimoGpuDeviceId = _Config.VimoGpuDeviceId;
 			config.YoloGpuDeviceId = _Config.YoloGpuDeviceId;
+			config.MaxBatchSize = _Config.MaxBatchSize;
 
 			return config;
 		}
@@ -112,6 +116,7 @@ namespace Config
 			_Config.DefaultGpuDeviceId = DefaultGpuDeviceId;
 			_Config.VimoGpuDeviceId = VimoGpuDeviceId;
 			_Config.YoloGpuDeviceId = YoloGpuDeviceId;
+			_Config.MaxBatchSize = MaxBatchSize;
 		}
 	}
 }

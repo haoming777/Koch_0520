@@ -367,7 +367,7 @@ namespace VisionMeasure.Stations
 			dict[idx].Add(new BoxDefect(idx, type, box));
 		}
 
-		/// <summary>盒子破损检测: 按SKU.P切分左右图为子图→左右各自PredictBatch批量推理→子图索引=盒索引→返回缺陷(盒子破损+Score)</summary>
+		/// <summary>盒子破损检测: 3×2网格裁图(重叠覆盖)→逐张Predict(batch=1)→centerX分盒→盒内NMS去重→返回缺陷(盒子破损+Score)</summary>
 		private Dictionary<int, List<BoxDefect>> DetectBoxDamage(Mat left, Mat right)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -378,88 +378,154 @@ namespace VisionMeasure.Stations
 
 			try
 			{
-				// 1. 按halfP等宽切分左图 (每子图对应一个盒子)
-				int lw = left.Width, lh = left.Height;
-				var leftSubs = new List<Mat>();
-				for (int i = 0; i < halfP; i++)
+				// 本地函数: 处理单侧图像 (3×2网格裁图 → 逐张Predict → 坐标映射 → 分盒)
+				void ProcessSide(Mat sourceImage, bool isLeft)
 				{
-					int x = i * lw / halfP;
-					int w = (i == halfP - 1) ? (lw - x) : (lw / halfP);
-					leftSubs.Add(new Mat(left, new CvRect(x, 0, w, lh)).Clone());
-				}
+					int currentW = sourceImage.Width;
+					int currentH = sourceImage.Height;
+					int baseIdx = isLeft ? 0 : halfP;
 
-				// 2. 按halfP等宽切分右图 (每子图对应一个盒子)
-				int rw = right.Width, rh = right.Height;
-				var rightSubs = new List<Mat>();
-				for (int i = 0; i < halfP; i++)
-				{
-					int x = i * rw / halfP;
-					int w = (i == halfP - 1) ? (rw - x) : (rw / halfP);
-					rightSubs.Add(new Mat(right, new CvRect(x, 0, w, rh)).Clone());
-				}
+					var (patches, offsets) = GetCropPatchesAndOffsets(sourceImage, pCount);
 
-				Logger.Debug($"[Front] 盒子破损: 左{leftSubs.Count}张+右{rightSubs.Count}张子图(P={pCount})");
-
-				// 3. 逐张单图推理(替代batch): 避免batch拼接导致小图坐标映射偏差
-				var lr = new List<YoloInference.YoloResult>();
-				foreach (var sub in leftSubs)
-				{
-					var r = _models.FrontBoxBreakModel.Predict(sub, ConfThreshold, IouThreshold);
-					lr.Add(r);
-				}
-				Logger.Debug($"[Front DetectBoxDamage] 左侧单张推理完成 {leftSubs.Count}张, 检出 {lr.Sum(r => r?.BoxesN?.Length ?? 0)} 框");
-
-				var rr = new List<YoloInference.YoloResult>();
-				foreach (var sub in rightSubs)
-				{
-					var r = _models.FrontBoxBreakModel.Predict(sub, ConfThreshold, IouThreshold);
-					rr.Add(r);
-				}
-				Logger.Debug($"[Front DetectBoxDamage] 右侧单张推理完成 {rightSubs.Count}张, 检出 {rr.Sum(r => r?.BoxesN?.Length ?? 0)} 框");
-
-				// 4. 映射左图结果: 子图索引i → 盒索引i (0~halfP-1)
-				//    BoxesN是子图内归一化坐标[0~1], 需转换为整图归一化坐标(X方向÷halfP)
-				for (int i = 0; i < lr.Count && i < halfP; i++)
-				{
-					var result = lr[i];
-					if (result == null || result.BoxesN == null) continue;
-					for (int j = 0; j < result.BoxesN.Length; j++)
+					for (int i = 0; i < patches.Count; i++)
 					{
-						var box = result.BoxesN[j];
-						float score = (result.Scores != null && j < result.Scores.Length) ? result.Scores[j] : 1.0f;
-						if (!results.ContainsKey(i)) results[i] = new List<BoxDefect>();
-						float fullX1 = (i + box.X) / halfP;
-						float fullX2 = (i + box.X + box.Width) / halfP;
-						results[i].Add(new BoxDefect(i, "盒子破损",
-							new float[] { fullX1, box.Y, fullX2, box.Y + box.Height }, score));
+						Mat patch = patches[i];
+						CvPoint offset = offsets[i];
+
+						try
+						{
+							var result = _models.FrontBoxBreakModel.Predict(patch, ConfThreshold, IouThreshold);
+
+							for (int j = 0; j < result.Boxes.Length; j++)
+							{
+								var box = result.Boxes[j];
+								float score = result.Scores[j];
+
+								// 映射回原图绝对坐标
+								float origX1 = box.Left + offset.X;
+								float origY1 = box.Top + offset.Y;
+								float origX2 = box.Right + offset.X;
+								float origY2 = box.Bottom + offset.Y;
+
+								// 归一化到整图坐标
+								float nx1 = origX1 / currentW, ny1 = origY1 / currentH;
+								float nx2 = origX2 / currentW, ny2 = origY2 / currentH;
+
+								// centerX 确定盒子索引
+								float centerX = (origX1 + origX2) / 2f;
+								int boxLocal = (int)(centerX / currentW * halfP);
+								boxLocal = Math.Max(0, Math.Min(boxLocal, halfP - 1));
+								int globalIdx = baseIdx + boxLocal;
+
+								if (!results.ContainsKey(globalIdx))
+									results[globalIdx] = new List<BoxDefect>();
+								results[globalIdx].Add(new BoxDefect(globalIdx, "盒子破损",
+									new float[] { nx1, ny1, nx2, ny2 }, score));
+							}
+						}
+						finally { patch?.Dispose(); }  // 每张用完即释放
 					}
 				}
 
-				// 5. 映射右图结果: 子图索引i → 盒索引i+halfP (halfP~pCount-1)
-				//    BoxesN转换同上, i为右图内子图索引(0~halfP-1)
-				for (int i = 0; i < rr.Count && i < halfP; i++)
-				{
-					int boxIdx = halfP + i;
-					var result = rr[i];
-					if (result == null || result.BoxesN == null) continue;
-					for (int j = 0; j < result.BoxesN.Length; j++)
-					{
-						var box = result.BoxesN[j];
-						float score = (result.Scores != null && j < result.Scores.Length) ? result.Scores[j] : 1.0f;
-						if (!results.ContainsKey(boxIdx)) results[boxIdx] = new List<BoxDefect>();
-						float fullX1 = (i + box.X) / halfP;
-						float fullX2 = (i + box.X + box.Width) / halfP;
-						results[boxIdx].Add(new BoxDefect(boxIdx, "盒子破损",
-							new float[] { fullX1, box.Y, fullX2, box.Y + box.Height }, score));
-					}
-				}
+				// 处理左右两侧
+				Logger.Info($"[Front BatchLog] ▶ 盒子破推理: batch=1 逐张Predict, 左3×2={3*2}patch 右3×2={3*2}patch (P={pCount})");
+				ProcessSide(left, isLeft: true);
+				ProcessSide(right, isLeft: false);
 
-				// 释放子图
-				foreach (var img in leftSubs) img?.Dispose();
-				foreach (var img in rightSubs) img?.Dispose();
+				// 盒内NMS去重 (重叠patch导致同一缺陷被多次检出)
+				int totalBeforeNms = results.Values.Sum(v => v.Count);
+				ApplyNmsPerBox(results, IouThreshold);
+				int totalAfterNms = results.Values.Sum(v => v.Count);
+				Logger.Info($"[Front BatchLog] ◀ 盒子破推理完成: P={pCount}, 检出框={totalBeforeNms}→{totalAfterNms}(NMS后)");
 			}
 			catch (Exception ex) { Logger.Error($"盒子破损检测异常: {ex.Message}"); }
 			return results;
+		}
+
+		/// <summary>3×2网格裁图: 水平3段+垂直2段(带10%重叠), 返回patch列表+偏移量</summary>
+		private static (List<Mat> Patches, List<CvPoint> Offsets) GetCropPatchesAndOffsets(Mat image, int P)
+		{
+			int h = image.Height, w = image.Width;
+			var xBoundaries = new List<(int start, int end)>();
+
+			if (P / 2 == 5)
+			{
+				xBoundaries.Add((0, (int)(w * 0.4)));
+				xBoundaries.Add(((int)(w * 0.4), (int)(w * 0.8)));
+				xBoundaries.Add(((int)(w * 0.8), w));
+			}
+			else
+			{
+				int wThird = w / 3;
+				xBoundaries.Add((0, wThird));
+				xBoundaries.Add((wThird, wThird * 2));
+				xBoundaries.Add((wThird * 2, w));
+			}
+
+			var yBoundaries = new List<(int start, int end)>
+			{
+				(0, (int)(h * 0.55)),
+				((int)(h * 0.45), h)
+			};
+
+			var patches = new List<Mat>();
+			var offsets = new List<CvPoint>();
+
+			foreach (var xb in xBoundaries)
+				foreach (var yb in yBoundaries)
+				{
+					int pw = xb.end - xb.start, ph = yb.end - yb.start;
+					CvRect roi = new CvRect(xb.start, yb.start, pw, ph);
+					patches.Add(new Mat(image, roi).Clone());
+					offsets.Add(new CvPoint(xb.start, yb.start));
+				}
+
+			return (patches, offsets);
+		}
+
+		/// <summary>盒内NMS去重: 重叠patch可能让同一缺陷被多次检出, 每盒独立做NMS</summary>
+		private static void ApplyNmsPerBox(Dictionary<int, List<BoxDefect>> results, float iouThreshold)
+		{
+			foreach (var kvp in results.ToList())
+			{
+				var defects = kvp.Value;
+				if (defects.Count <= 1) continue;
+
+				var boxesWithScore = defects.Select(d => new float[] {
+					d.BoundingBox[0], d.BoundingBox[1], d.BoundingBox[2], d.BoundingBox[3], d.Score
+				}).ToList();
+
+				var sorted = boxesWithScore
+					.Select((b, i) => (box: b, idx: i))
+					.OrderByDescending(x => x.box[4]).ToList();
+				var removed = new bool[sorted.Count];
+				var keep = new List<int>();
+
+				for (int i = 0; i < sorted.Count; i++)
+				{
+					if (removed[i]) continue;
+					keep.Add(sorted[i].idx);
+					float ax1 = sorted[i].box[0], ay1 = sorted[i].box[1];
+					float ax2 = sorted[i].box[2], ay2 = sorted[i].box[3];
+					float areaA = (ax2 - ax1) * (ay2 - ay1);
+
+					for (int j = i + 1; j < sorted.Count; j++)
+					{
+						if (removed[j]) continue;
+						float bx1 = sorted[j].box[0], by1 = sorted[j].box[1];
+						float bx2 = sorted[j].box[2], by2 = sorted[j].box[3];
+						float xx1 = Math.Max(ax1, bx1), yy1 = Math.Max(ay1, by1);
+						float xx2 = Math.Min(ax2, bx2), yy2 = Math.Min(ay2, by2);
+						float iw = Math.Max(0, xx2 - xx1), ih = Math.Max(0, yy2 - yy1);
+						float inter = iw * ih;
+						float areaB = (bx2 - bx1) * (by2 - by1);
+						float iou = inter / (areaA + areaB - inter);
+						if (iou > iouThreshold) removed[j] = true;
+					}
+				}
+
+				results[kvp.Key] = keep.Select(k => defects[k]).ToList();
+			}
 		}
 
 		/// <summary>YOLO结果→分盒映射: BoxesN归一化→centerX*n确定盒索引(startIdx~endIdx-1)→构建BoxDefect(归一化坐标+缺陷类型+置信度)</summary>

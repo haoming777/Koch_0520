@@ -171,7 +171,7 @@ namespace Stations
 					BuildDisplayImages(leftImgs, rightImgs, _sku.P);
 					var result = new ProductResult { ProductId = pid, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = merged.Where(s => s != "OK").Distinct().ToList() };
 					lock (_resultLock) { if (_displayBitmaps.Count > 0) result.SideRenderImage = (Bitmap)_displayBitmaps[0].Clone(); }
-					SaveImages(leftImgs, rightImgs, merged, isOk);
+					SaveImages(leftImgs, rightImgs, merged, isOk, _leftResults.ToList(), _rightResults.ToList());
 					OnResultReady?.Invoke(result);
 					OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), merged, _sku.P);
 				}
@@ -234,6 +234,7 @@ namespace Stations
 			if (_disposed) { Logger.Warning("[Side] 已释放"); return; }
 			if (_sku == null) { Logger.Error("[Side] SKU未设置, 无法启动检测"); return; }
 
+			if (IsMoving) { Logger.Warning("[Side] 上一周期未完成, 跳过本次触发(防重入)"); return; }
 			long myCycleId = Interlocked.Increment(ref _cycleId);
 			long tickStartDetection = DateTime.Now.Ticks;
 			Logger.Debug($"[Side] ⏱ StartDetection入口 Ticks={tickStartDetection} 时间={DateTime.Now:HH:mm:ss.fff}");
@@ -673,7 +674,7 @@ namespace Stations
 					result.SideRenderImage = leftRender;
 					result.SideLeftRenderImage = leftRender;
 					result.SideRightRenderImage = rightRender;
-					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk);
+					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk, savedLeftRes, savedRightRes);
 				}
 				catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
 			});
@@ -734,7 +735,7 @@ namespace Stations
 				try {
 					BuildDisplayImages(pli, pri, p);
 					lock (_resultLock) { if (_displayBitmaps.Count > 0) { result.SideRenderImage = (Bitmap)_displayBitmaps[0].Clone(); result.SideLeftRenderImage = result.SideRenderImage; } }
-					SaveImages(pli, pri, pms, pisOk);
+					SaveImages(pli, pri, pms, pisOk, plr, prr);
 				} catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
 			});
 		}
@@ -1030,7 +1031,8 @@ namespace Stations
 		public void NavigateNext() { }
 
 	/// <summary>保存侧面工位图片: 左/右原图+渲染图 → JPEG 85% → Images/{日期}/{班次}/侧面工位/{OK|NG}/{左/右侧面}/</summary>
-		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk)
+		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk,
+			List<SideResult> leftResults, List<SideResult> rightResults)
 		{
 			try
 			{
@@ -1047,10 +1049,10 @@ namespace Stations
 				Directory.CreateDirectory(leftDir); Directory.CreateDirectory(rightDir);
 				long pid = DateTime.Now.Ticks; string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
 				string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-				// 左侧原图
-				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) { bool ln = isOk || (j < _leftResults.Count && _leftResults[j].Status != "OK"); if (ln) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); } }
-				// 右侧原图
-				for (int j = 0; j < rightImages.Count; j++) { if (rightImages[j].Image != null) { bool rn = isOk || (j < _rightResults.Count && _rightResults[j].Status != "OK"); if (rn) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), rightImages[j].Image.ToJpegBytesFast(85), true, 85); } }
+				// 左侧原图 (使用缓存leftResults, 避免后台Task访问已被Clear的共享列表)
+				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) { bool ln = isOk || (j < leftResults.Count && leftResults[j].Status != "OK"); if (ln) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); } }
+				// 右侧原图 (使用缓存rightResults, 避免后台Task访问已被Clear的共享列表)
+				for (int j = 0; j < rightImages.Count; j++) { if (rightImages[j].Image != null) { bool rn = isOk || (j < rightResults.Count && rightResults[j].Status != "OK"); if (rn) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), rightImages[j].Image.ToJpegBytesFast(85), true, 85); } }
 				// 渲染图：左侧渲染图存左目录，右侧存右目录
 				int savedRender = 0;
 				lock (_resultLock)
@@ -1062,12 +1064,12 @@ namespace Stations
 						if (_displayBitmaps[i] == null) continue;
 						bool isLeft = i < count;
 						int boxIdx = isLeft ? i : (i - count);
-						bool ng = isOk || (isLeft ? (boxIdx < _leftResults.Count && _leftResults[boxIdx].Status != "OK") : (boxIdx < _rightResults.Count && _rightResults[boxIdx].Status != "OK")); if (!ng) continue;
+						bool ng = isOk || (isLeft ? (boxIdx < leftResults.Count && leftResults[boxIdx].Status != "OK") : (boxIdx < rightResults.Count && rightResults[boxIdx].Status != "OK")); if (!ng) continue;
 						var d = isLeft ? leftDir : rightDir;
 						int idx = boxIdx + 1;
 						_imageSaver.AddSaveTask(Path.Combine(d, ts + "_渲染_" + idx + "_" + nt + ".jpg"), _displayBitmaps[i].ToJpegBytesFast(85), true, 85);
 						savedRender++;
-						Logger.Debug("[Side] 存渲染图: " + (isLeft ? "左" : "右") + "盒" + idx + " 状态=" + (isLeft ? _leftResults[boxIdx].Status : _rightResults[boxIdx].Status));
+						Logger.Debug("[Side] 存渲染图: " + (isLeft ? "左" : "右") + "盒" + idx + " 状态=" + (isLeft ? leftResults[boxIdx].Status : rightResults[boxIdx].Status));
 					}
 				}
 				Logger.Info("[Side] 存图完成: 左原图" + leftImages.Count + " 右原图" + rightImages.Count + " 渲染图" + savedRender);

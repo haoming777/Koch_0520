@@ -94,10 +94,13 @@ namespace YoloInference
 		/// <summary>
 		/// 构造函数
 		/// </summary>
-		public YoloOnnx(string modelPath, string metaJsonPath, int expectedBatchSize = 1, int gpuDeviceId = 0)
+		public YoloOnnx(string modelPath, string metaJsonPath, int expectedBatchSize = 1, int gpuDeviceId = 0, string modelName = null)
 		{
 			if (!File.Exists(metaJsonPath))
 				throw new FileNotFoundException($"找不到配置文件: {metaJsonPath}");
+
+			ModelName = modelName ?? Path.GetFileNameWithoutExtension(modelPath);
+			Logger.Info($"[GPU] ▶ 开始加载模型: {ModelName} (batch={expectedBatchSize}, GPU={gpuDeviceId})");
 
 			// 1. 解析 Metadata 配置 - 使用不变的区域设置
 			string jsonContent = File.ReadAllText(metaJsonPath);
@@ -226,7 +229,7 @@ namespace YoloInference
 			{
 				using (var results = _session.Run(inputs)) { }
 			}
-			Logger.Info("[GPU] 模型预热完毕，硬件已就绪！\n");
+			Logger.Info("[GPU] 模型预热完毕，硬件已就绪！");
 		}
 
 		/// <summary>单张预测: 预处理→ONNX推理→后处理解析Box→NMS去重→返回YoloResult</summary>

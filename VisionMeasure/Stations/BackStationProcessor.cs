@@ -186,6 +186,7 @@ namespace Stations
 			var result = new ProductResult { ProductId = pid, CreateTime = DateTime.Now };
 			int p = _sku.P, hp = p / 2;
 			var status = new List<string>(p); for (int i = 0; i < p; i++) status.Add("OK");
+			Mat leftProc = null, rightProc = null;
 
 			try
 			{
@@ -194,7 +195,7 @@ namespace Stations
 				Logger.Trace("[Back] ▶ ====== 开始推理 P=" + p + " 图=" + leftMat.Width + "x" + leftMat.Height);
 
 				// 步骤0: 裁图
-				Mat leftProc = leftMat, rightProc = rightMat;
+				leftProc = leftMat; rightProc = rightMat;
 				if (!SkipCrop) try
 					{
 						if (_sku.BackLeft_LeftPx > 0 || _sku.BackLeft_RightPx > 0)
@@ -317,6 +318,12 @@ namespace Stations
 				Logger.Error("[Back] 异常 Pid=" + pid + ": " + ex.Message);
 				result.BackResult = false;
 				OnResultReady?.Invoke(result);
+			}
+			finally
+			{
+				// 释放裁图产生的 Mat (与原始 leftMat/rightMat 不同时才需释放, 原始由调用方释放)
+				if (leftProc != null && leftProc != leftMat) leftProc.Dispose();
+				if (rightProc != null && rightProc != rightMat) rightProc.Dispose();
 			}
 		}
 

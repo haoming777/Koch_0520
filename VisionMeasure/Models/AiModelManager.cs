@@ -54,7 +54,7 @@ namespace Models
 			try
 			{
 				Logger.Info("========== 开始加载AI模型 ==========");
-				Logger.Info($"GPU配置: Vimo模型使用显卡{_config.VimoGpuDeviceId}, Yolo模型使用显卡{_config.YoloGpuDeviceId}");
+				Logger.Info($"GPU配置: Vimo模型使用显卡{_config.VimoGpuDeviceId}, Yolo模型使用显卡{_config.YoloGpuDeviceId}, 最大BatchSize={_config.MaxBatchSize}");
 
 				bool allSuccess = true;
 
@@ -115,7 +115,7 @@ namespace Models
 					{
 						try
 						{
-							FrontBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1) { ModelName = "FrontBoxBreak" }; // batch=1: 单张小图推理;
+							FrontBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1, modelName: "FrontBoxBreak"); // batch=1: 逐张Predict(3×2网格裁图, 每patch单图推理)
 							Logger.Info($"正面盒子破检测模型加载成功: {fullPath}");
 						}
 						catch (Exception ex)
@@ -152,7 +152,7 @@ namespace Models
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						EndFaceUpperModel = new YoloOnnx(fullPath, metaPath, 8, gpuDeviceId: _config.VimoGpuDeviceId) { ModelName = "EndFaceUpper" };
+						EndFaceUpperModel = new YoloOnnx(fullPath, metaPath, _config.MaxBatchSize, gpuDeviceId: _config.VimoGpuDeviceId, modelName: "EndFaceUpper");
 						Logger.Info($"上端面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 					}
 					else
@@ -170,7 +170,7 @@ namespace Models
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						EndFaceLowerModel = new YoloOnnx(fullPath, metaPath, 8, gpuDeviceId: _config.VimoGpuDeviceId) { ModelName = "EndFaceLower" };
+						EndFaceLowerModel = new YoloOnnx(fullPath, metaPath, _config.MaxBatchSize, gpuDeviceId: _config.VimoGpuDeviceId, modelName: "EndFaceLower");
 						Logger.Info($"下端面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 					}
 					else
@@ -205,7 +205,7 @@ namespace Models
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						BackBarcodeModel = new YoloOnnx(fullPath, metaPath, 2) { ModelName = "BackBarcode" };
+						BackBarcodeModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackBarcode");
 						Logger.Info($"背面条形码检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
 					}
 					else
@@ -228,7 +228,7 @@ namespace Models
 
 					if (File.Exists(fullPath) && File.Exists(metaPath))
 					{
-						BackHookModel = new YoloOnnx(fullPath, metaPath, 2) { ModelName = "BackHook" };
+						BackHookModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackHook");
 						Logger.Info($"背面挂钩明显错位检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
 					}
 					else
@@ -301,7 +301,7 @@ namespace Models
 					{
 						try
 						{
-							SideDefectModel = new YoloOnnx(fullPath, metaPath, 1, gpuDeviceId: _config.VimoGpuDeviceId) { ModelName = "SideDefect" }; // batch=1: 单张推理;
+							SideDefectModel = new YoloOnnx(fullPath, metaPath, 1, gpuDeviceId: _config.VimoGpuDeviceId, modelName: "SideDefect"); // batch=1: 单张推理;
 							Logger.Info($"侧面缺陷检测模型加载成功(显卡{_config.VimoGpuDeviceId})");
 						}
 						catch (Exception ex)

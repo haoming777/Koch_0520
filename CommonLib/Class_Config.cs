@@ -152,6 +152,12 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "YoloGpuDeviceId", value.ToString());
 		}
 
+		public int MaxBatchSize
+		{
+			get => GetPrivateProfileInt("AI_Models", "MaxBatchSize", 12, _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "MaxBatchSize", value.ToString());
+		}
+
 		
 		/// <summary>
 		/// 当前产品ID

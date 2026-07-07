@@ -276,11 +276,11 @@ namespace Stations
 			long firstProductId = upperImages.FirstOrDefault()?.ProductId ?? 0;
 			Logger.Debug($"[EndFace] ⏱ ProcessBatch开始 Upper={upperImages.Count}张 Lower={lowerImages.Count}张 P={p}");
 
+			List<Mat> upperMats = null, lowerMats = null;
+
 			try
 			{
 				double cropTime = 0, inferenceTime = 0;
-
-				List<Mat> upperMats = null, lowerMats = null;
 				using (var cropScope = new StopwatchScope(t => cropTime = t))
 				{
 					// 上端面: 左裁边(裁掉左边像素) + 右裁边(裁掉右边像素)
@@ -300,13 +300,13 @@ namespace Stations
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
 				using (var inferScope = new StopwatchScope(t => inferenceTime = t))
 				{
-					Logger.Debug($"[EndFace] ⏱ 推理开始: 上端面 batch={upperMats.Count} 下端面 batch={lowerMats.Count} 并行");
+					Logger.Info($"[EndFace BatchLog] ▶ 端面推理: 上端面batch={upperMats.Count}(P={p}) 下端面batch={lowerMats.Count}(P={p}), 并行送入GPU");
 					var upperTask = Task.Run(() => EnableUpperDefectCheck ? RunInference(upperMats, _models.EndFaceUpperModel) : new List<YoloInference.YoloResult>());
 					var lowerTask = Task.Run(() => RunInference(lowerMats, _models.EndFaceLowerModel));
 					Task.WaitAll(upperTask, lowerTask);
 					upperResults = upperTask.Result;
 					lowerResults = lowerTask.Result;
-					Logger.Debug($"[EndFace] ⏱ 推理完成 耗时={inferenceTime:F1}ms 上检出={upperResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框 下检出={lowerResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框");
+					Logger.Info($"[EndFace BatchLog] ◀ 端面推理完成: 上batch={upperResults.Count}=P={p} 下batch={lowerResults.Count}=P={p}, 上检出={upperResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框 下检出={lowerResults?.Sum(r => r?.BoxesN?.Length ?? 0) ?? 0}框");
 				}
 
 				var upperDefects = ParseResults(upperResults);
@@ -436,6 +436,9 @@ namespace Stations
 			}
 			finally
 			{
+				// 释放裁图产生的 Mat 列表
+				if (upperMats != null) { foreach (var m in upperMats) m?.Dispose(); }
+				if (lowerMats != null) { foreach (var m in lowerMats) m?.Dispose(); }
 				foreach (var img in upperImages) img.Dispose();
 				foreach (var img in lowerImages) img.Dispose();
 			}
