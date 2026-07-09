@@ -89,6 +89,10 @@ namespace Stations
 		public int CurrentIndex => _currentDisplayIndex;
 		public int ImageCount => _currentDisplayImages.Count;
 
+		private static readonly string _efp = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "EndFace_Error.log");
+		private static void WEF(string m) { try { var d = System.IO.Path.GetDirectoryName(_efp); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_efp, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
+		private int _cmb = 0; private const int McmAlarm = 3;
+
 		public EndFaceStationProcessor(AiModelManager models, string savePath, int pCount,
 			HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
 		{
@@ -144,7 +148,7 @@ namespace Stations
 			{
 				// 新批次检测: 第一次入队记录firstProductId, 后续ProductId跳变>P*3视为新批次
 				if (_firstBatchProductId < 0) _firstBatchProductId = productId;
-				if (productId - _firstBatchProductId > _pCount * 3)
+				if (productId - _firstBatchProductId > _pCount * 30)
 				{
 					Logger.Info($"[EndFace] 新批次到达 ProductId={productId}(首={_firstBatchProductId}), 强制结束当前批次 Upper={_upperCount} Lower={_lowerCount}");
 					// 取出当前不完整批次并送入处理队列

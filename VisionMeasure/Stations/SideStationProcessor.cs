@@ -71,6 +71,10 @@ namespace Stations
 		private CancellationTokenSource _motionCts;        // 运动周期取消令牌
 		/// <summary>代际号: 防止旧批次finally覆盖新批次IsMoving</summary>
 		private long _cycleId;
+		private volatile int _fip = 0; private int _cmc = 0; private const int Mcm3 = 3;
+		private static readonly string _sep = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "Side_Error.log");
+		private static void WSE(string m) { try { var d = System.IO.Path.GetDirectoryName(_sep); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_sep, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
+
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, List<string>, List<string>, int> OnStatusUpdate;
@@ -262,7 +266,7 @@ namespace Stations
 						if (cts.Token.IsCancellationRequested) { Logger.Warning("[Side] 安全锁等待被取消"); return; }
 						Logger.Info("[Side] 安全锁已释放(门关) IN" + SafetyLockPort + "=1，继续执行");
 					}
-					Logger.Info("[Side] ====== 侧面检测开始 P=" + _sku.P + " ======");
+				Logger.Info("[Side] DETECT start P=" + _sku.P + " at " + DateTime.Now.ToString("HH:mm:ss.fff"));
 					ClearBatch();
 					lock (_resultLock) { _leftResults.Clear(); _rightResults.Clear(); }
 					var streamTask = Task.Run(() => ProcessStream(cts.Token));
@@ -303,38 +307,35 @@ namespace Stations
 			WaitForSafetyLock(cancel);
 			long tickPhase1 = DateTime.Now.Ticks;
 			SetAxisSpeed(ReturnSpeed);
-			Logger.Debug($"[Side] ⏱ 阶段1-到起点: SetSpeed={ReturnSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, StartPosition);
-			Logger.Debug($"[Side] ⏱ 阶段1-MoveAbs发出: target={StartPosition}");
+			Logger.Info("[Side] MOTION p1: MoveAbs to " + StartPosition + " at " + DateTime.Now.ToString("HH:mm:ss.fff"));
 			if (!WaitForMove(SideAxis, StartPosition, 10000, cancel)) return;
 			long tickPhase1End = DateTime.Now.Ticks;
 			float posAfterPhase1 = _motion.GetPosition(SideAxis);
-			Logger.Debug($"[Side] ⏱ 阶段1-到起点完成 耗时={(tickPhase1End - tickPhase1) / 10000.0:F1}ms 当前位置={posAfterPhase1:F1}");
+			Logger.Info("[Side] MOTION p1 done: pos=" + _motion.GetPosition(SideAxis).ToString("F1") + " took " + ((tickPhase1End - tickPhase1) / 10000.0).ToString("F0") + "ms");
 
 			// ── 阶段2: 前进到终点 ──
 			WaitForSafetyLock(cancel);
 			long tickPhase2 = DateTime.Now.Ticks;
 			SetAxisSpeed(ForwardSpeed);
-			Logger.Debug($"[Side] ⏱ 阶段2-前进: SetSpeed={ForwardSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, EndPosition);
-			Logger.Debug($"[Side] ⏱ 阶段2-MoveAbs发出: target={EndPosition}");
+			Logger.Info("[Side] MOTION p2: MoveAbs to " + EndPosition + " at " + DateTime.Now.ToString("HH:mm:ss.fff"));
 			if (!WaitForMove(SideAxis, EndPosition, 60000, cancel)) return;
 			long tickPhase2End = DateTime.Now.Ticks;
 			float posAfterPhase2 = _motion.GetPosition(SideAxis);
-			Logger.Debug($"[Side] ⏱ 阶段2-前进完成 耗时={(tickPhase2End - tickPhase2) / 10000.0:F1}ms 当前位置={posAfterPhase2:F1}");
+			Logger.Info("[Side] MOTION p2 done: pos=" + _motion.GetPosition(SideAxis).ToString("F1") + " took " + ((tickPhase2End - tickPhase2) / 10000.0).ToString("F0") + "ms");
 
 			// ── 阶段3: 返回起点 ──
 			Logger.Info("[Side] 返回起始位 L=" + _leftCount + " R=" + _rightCount);
 			WaitForSafetyLock(cancel);
 			long tickPhase3 = DateTime.Now.Ticks;
 			SetAxisSpeed(ReturnSpeed);
-			Logger.Debug($"[Side] ⏱ 阶段3-返回: SetSpeed={ReturnSpeed} Accel={Accel} Decel={Decel}");
 			_motion.MoveAbs(SideAxis, StartPosition);
-			Logger.Debug($"[Side] ⏱ 阶段3-MoveAbs发出: target={StartPosition}");
+			Logger.Info("[Side] MOTION p3: MoveAbs to " + StartPosition + " at " + DateTime.Now.ToString("HH:mm:ss.fff"));
 			WaitForMove(SideAxis, StartPosition, 10000, cancel);
 			long tickPhase3End = DateTime.Now.Ticks;
 			float posAfterPhase3 = _motion.GetPosition(SideAxis);
-			Logger.Debug($"[Side] ⏱ 阶段3-返回完成 耗时={(tickPhase3End - tickPhase3) / 10000.0:F1}ms 当前位置={posAfterPhase3:F1}");
+			Logger.Info("[Side] MOTION p3 done: pos=" + _motion.GetPosition(SideAxis).ToString("F1") + " took " + ((tickPhase3End - tickPhase3) / 10000.0).ToString("F0") + "ms");
 
 			long tickMotionTotal = DateTime.Now.Ticks;
 			double totalMotionMs = (tickMotionTotal - tickMotionBegin) / 10000.0;
@@ -343,11 +344,9 @@ namespace Stations
 				float distance = Math.Abs(EndPosition - StartPosition);
 				double fwdAvgSpeed = phase2Ms > 0 ? distance / phase2Ms * 1000.0 : 0;
 				double retAvgSpeed = phase3Ms > 0 ? distance / phase3Ms * 1000.0 : 0;
-				Logger.Info($"[Side] ⚡ 运动性能: 总={totalMotionMs:F0}ms " +
-					$"前进={phase2Ms:F0}ms(实际均速={fwdAvgSpeed:F0}/s vs 设定{ForwardSpeed}) " +
-					$"返回={phase3Ms:F0}ms(实际均速={retAvgSpeed:F0}/s vs 设定{ReturnSpeed}) " +
-					$"加速={Accel} 减速={Decel}");
-				Logger.Debug($"[Side] ⏱ StartMotion总耗时={totalMotionMs:F1}ms");
+			Logger.Info("[Side] MOTION done: total=" + totalMotionMs.ToString("F0") + "ms fwd=" + phase2Ms.ToString("F0") + "ms ret=" + phase3Ms.ToString("F0") + "ms avgSpeed=" + fwdAvgSpeed.ToString("F0") + "/" + retAvgSpeed.ToString("F0") + "/s");
+			// Cancel ProcessStream after motion completes + 2.5s grace period (prevents cross-cycle image consumption)
+			Task.Delay(2500).ContinueWith(_ => { try { _motionCts?.Cancel(); } catch { } });
 		}
 
 		/// <summary>等待安全锁释放: 门开(IN8=0)则阻塞等待，门关(IN8=1)则通过</summary>
@@ -513,89 +512,59 @@ namespace Stations
 		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
 
 	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出
-	/// 防止死等: 连续3秒无新图片到达则退出(运动可能已提前结束或被中断)</summary>
+		/// <summary>按数量把控: 收够p*2张立即退出, 不够运动完成后500ms退出. 多余图ClearBatch清理</summary>
 		private void ProcessStream(CancellationToken cancel)
 		{
-			int p = _sku.P, processed = 0;
+			int p = _sku.P, processed = 0, procL = 0, procR = 0;
+			int expect = p * 2;
 			var swTotal = Stopwatch.StartNew();
 			double totalInferMs = 0;
-			bool tryLeftFirst = true;  // 交替优先，无偏处理：按收到顺序
-			int noImgCount = 0;        // 连续无图计数(每1ms+1, 超3000即3秒退出)
-			int displayThrottle = 0;   // UI显示节流: 每3张推一次实时图
-			int statusThrottle = 0;    // UI状态节流: 每4张推一次状态
-			long firstImgTicks = 0;    // 首张图片到达Ticks(诊断用)
+			bool tryLeftFirst = true;
+			int noImgCount = 0;
+			int dispT = 0, statT = 0;
+			long firstImgTicks = 0;
+			string exitReason = "count";
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
-			Logger.Info($"[Side]  ProcessStream启动: 期望={p*2}张 P={p} 左队列={_leftCount} 右队列={_rightCount}");
-			Logger.Debug($"[Side] ⏱ ProcessStream诊断: isMoving={IsMoving} totalMsElapsed={swTotal.Elapsed.TotalMilliseconds:F0}");
-			while (!cancel.IsCancellationRequested && processed < p * 2)
+			Logger.Info("[Side] PS start: need=" + expect + " P=" + p + " Lq=" + _leftCount + " Rq=" + _rightCount + " busy=" + IsMoving);
+			while (!cancel.IsCancellationRequested && processed < expect)
 			{
-				SideImageCtx ctx;
-				bool gotOne;
-				// 交替优先尝试的队列，避免永远先取左；任一侧空则取另一侧
-				if (tryLeftFirst)
-					gotOne = _leftQueue.TryDequeue(out ctx) || _rightQueue.TryDequeue(out ctx);
-				else
-					gotOne = _rightQueue.TryDequeue(out ctx) || _leftQueue.TryDequeue(out ctx);
+				SideImageCtx ctx; bool gotOne;
+				if (tryLeftFirst) gotOne = _leftQueue.TryDequeue(out ctx) || _rightQueue.TryDequeue(out ctx);
+				else gotOne = _rightQueue.TryDequeue(out ctx) || _leftQueue.TryDequeue(out ctx);
 				tryLeftFirst = !tryLeftFirst;
-
-				if (!gotOne) {
-					Thread.Sleep(1);
-					noImgCount++;
-					// Cancel或连续3秒无新图片 → 退出等待(缺失由FinalizeResults→MissingAsNg填NG)
-					if (cancel.IsCancellationRequested)
-					{
-						Logger.Info($"[Side] ProcessStream 收到取消信号，退出(已处理{processed}/期望{p*2})");
-						break;
-					}
-					if (noImgCount > 10000)  // 10秒超时, 防止运动未完成过早退出
-					{
-						Logger.Warning($"[Side] ProcessStream {noImgCount}ms无新图片，退出等待(可能运动已结束或相机触发异常)(已处理{processed}/期望{p*2})");
-						break;
-					}
+				if (!gotOne)
+				{
+					if (processed >= expect) { exitReason = "count"; break; }
+					Thread.Sleep(1); noImgCount++;
+					if (cancel.IsCancellationRequested) { exitReason = "cancel"; break; }
+					if (firstImgTicks > 0 && noImgCount > 500) { exitReason = "idle500ms"; break; }
+					if (firstImgTicks == 0 && noImgCount > 3000) { exitReason = "no1st_3s"; break; }
 					continue;
 				}
-				noImgCount = 0;  // 有图就重置计数
-					if (firstImgTicks == 0) { firstImgTicks = DateTime.Now.Ticks; Logger.Info($"[Side] ⏱ 首张图片到达, 已等待={swTotal.Elapsed.TotalMilliseconds:F0}ms 左队列≈{Interlocked.CompareExchange(ref _leftCount, 0, 0)} 右队列≈{Interlocked.CompareExchange(ref _rightCount, 0, 0)}"); }
-
+				noImgCount = 0;
+				if (firstImgTicks == 0) { firstImgTicks = DateTime.Now.Ticks; }
 				bool isLeft = ctx.Side == Side.Left;
-				var targetResults = isLeft ? _leftResults : _rightResults;
-				var targetList = isLeft ? _processedLeftImgs : _processedRightImgs;
-				string sideTag = isLeft ? "L" : "R";
-				int idx = targetResults.Count;
-
+				if (isLeft) procL++; else procR++;
+				var tr = isLeft ? _leftResults : _rightResults;
+				var tl = isLeft ? _processedLeftImgs : _processedRightImgs;
+				int idx = tr.Count;
 				var sw = Stopwatch.StartNew();
 				var res = InferSingle(ctx, idx);
-				double inferMs = sw.Elapsed.TotalMilliseconds;
-				totalInferMs += inferMs;
-				lock (_resultLock) targetResults.Add(res);
-				targetList.Add(ctx);
-				int displayIdx = ReverseBoxOrder ? (p - 1 - idx) : idx;
-				Logger.Debug($"[Side] {sideTag}{idx + 1}/{p} 推理={inferMs:F0}ms 结果={res.Status}");
-				displayThrottle++;
-					// UI显示节流: 每3张推送一次实时图(减少UI消息队列压力)
-					if (displayThrottle >= 3 || processed >= p * 2 - 3) {
-						try { var renderBmp = RenderSideImage(ctx, displayIdx, p, targetResults); OnRealTimeDisplay?.Invoke(ctx.Side, renderBmp); } catch (Exception rex) { Logger.Error("[Side] 实时渲染异常: " + rex.Message); }
-						displayThrottle = 0;
-					}
-					// UI状态节流: 每4张推送一次
-					statusThrottle++;
-					if (statusThrottle >= 4 || processed >= p * 2 - 3) {
-						EmitPartial(p);
-						statusThrottle = 0;
-					}
-					// 每6张输出队列深度诊断
-					if (processed % 6 == 5) Logger.Debug($"[Side] 队列深度: 已处理{processed + 1}/{p * 2} 左q={Interlocked.CompareExchange(ref _leftCount, 0, 0)} 右q={Interlocked.CompareExchange(ref _rightCount, 0, 0)} 耗时={swTotal.Elapsed.TotalMilliseconds:F0}ms");
-					processed++;
-					Thread.Sleep(2);  // 从20ms优化到2ms, 减少无谓等待(24张可节省~430ms)
+				double ims = sw.Elapsed.TotalMilliseconds;
+				totalInferMs += ims;
+				lock (_resultLock) tr.Add(res);
+				tl.Add(ctx);
+				Logger.Debug("[Side] " + (isLeft ? "L" : "R") + (idx+1) + "/" + p + " " + ims.ToString("F0") + "ms " + res.Status);
+				dispT++; statT++;
+				if (dispT >= 3 || processed >= expect - 3) { try { var rb = RenderSideImage(ctx, idx, p, tr); OnRealTimeDisplay?.Invoke(ctx.Side, rb); } catch { } dispT = 0; }
+				if (statT >= 4 || processed >= expect - 3) { EmitPartial(p); statT = 0; }
+				processed++;
+				Thread.Sleep(2);
 			}
 			double totalMs = swTotal.Elapsed.TotalMilliseconds;
-				double avgInferMs = processed > 0 ? totalInferMs / processed : 0;
-				double fps = totalMs > 0 ? processed * 1000.0 / totalMs : 0;
-				Logger.Debug($"[Side] ⏱ ProcessStream退出诊断: processed={processed} 期望={p*2} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)}");
-				Logger.Info($"[Side] ProcessStream结束 processed={processed} 推理总={totalInferMs:F0}ms 推理均={avgInferMs:F0}ms 吞吐={fps:F1}fps 总耗时={totalMs:F0}ms");
+			double avgMs = processed > 0 ? totalInferMs / processed : 0;
+			Logger.Info("[Side] PS exit: got=" + processed + "/" + expect + " L=" + procL + " R=" + procR + " reason=" + exitReason + " infer=" + totalInferMs.ToString("F0") + "ms avg=" + avgMs.ToString("F0") + "ms time=" + totalMs.ToString("F0") + "ms Lq=" + _leftCount + " Rq=" + _rightCount);
 		}
-
-	/// <summary>实时推送部分结果: 取左右结果最大数量, 逐索引合并左右状态→OnStatusUpdate通知UI更新轮播图索引</summary>
 		private void EmitPartial(int p)
 		{
 			lock (_resultLock)
@@ -618,6 +587,10 @@ namespace Stations
 	///   阶段2完成后再通过OnResultReady补发渲染图</summary>
 		private void FinalizeResults()
 		{
+			if (System.Threading.Interlocked.CompareExchange(ref _fip, 1, 0) != 0)
+			{ Logger.Warning("[Side] FinalizeResults re-entry blocked"); return; }
+			try
+			{
 			int expectedP = _sku.P;
 			Logger.Debug($"[Side] ⏱ FinalizeResults诊断: P={expectedP} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)} 左已处理={_processedLeftImgs.Count} 右已处理={_processedRightImgs.Count}");
 			int p = _sku.P;
@@ -658,7 +631,7 @@ namespace Stations
 			var savedMerged = mergedStatus.ToList();
 			bool savedIsOk = isOk;
 
-			Task.Run(() =>
+			new System.Threading.Thread(() =>
 			{
 				try
 				{
@@ -676,8 +649,10 @@ namespace Stations
 					result.SideRightRenderImage = rightRender;
 					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk, savedLeftRes, savedRightRes);
 				}
-				catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
-			});
+				catch (Exception ex) { Logger.Error("[Side] render: " + ex.Message); }
+				}) { Name = "SideRender", IsBackground = true, Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
+			}
+			finally { System.Threading.Interlocked.Exchange(ref _fip, 0); }
 		}
 
 		/// <summary>保存渲染图（带文字+缺陷框）</summary>

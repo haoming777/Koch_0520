@@ -43,6 +43,7 @@ namespace Hardware
 		/// <summary>脉冲输出队列(容量100), 生产者=MonitorLoop, 消费者=PulseOutputLoop</summary>
 		private readonly BlockingCollection<PulseTask> _pulseQueue = new BlockingCollection<PulseTask>(100);
 		private volatile bool _isRunning;
+		private long _monitorCrashCount;  // MonitorLoop异常崩溃计数
 		private CancellationTokenSource _cts;
 		private Thread _monitorThread;
 		private Thread _pulseThread;

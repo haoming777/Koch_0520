@@ -71,6 +71,7 @@ namespace VisionMeasure
 		private long _lastFrontImageTicks = 0;  // 最后一次正面收到图像的Ticks(用于侧面活件判断)
 		private const long NoProductTimeoutTicks = 5 * 10000 * 1000; // 5秒内无正面图像→认为无盒
 		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中 (int可用Volatile.Read原子读)
+		private long _lastIn13Tick = 0;  // 上一次IN13↓的Ticks, 用于计算两次信号间隔
 		private long _lastCarouselRefreshTicks = 0;  // 上一次轮播刷新时间(节流用)
 
 		// ========== 数据管理 ==========
@@ -604,8 +605,11 @@ namespace VisionMeasure
 			if (cameraId == 8 && SideEnabled && IsAxisInitialized() && _sideStation != null && _sideStation.MotionEnabled)
 			{
 				long tickIn13 = DateTime.Now.Ticks;
-				Logger.Debug($"[Side] ⏱ IN13↓ 收到下降沿信号 Ticks={tickIn13} 时间={DateTime.Now:HH:mm:ss.fff}");
-									Logger.Info("[Side] IN13↓ 检测到工件");
+				long lastIn13 = Interlocked.Read(ref _lastIn13Tick);
+				double sinceLastIn13Ms = lastIn13 > 0 ? (tickIn13 - lastIn13) / 10000.0 : -1;
+				Interlocked.Exchange(ref _lastIn13Tick, tickIn13);
+				// Compact timing log: signal interval + state
+				Logger.Info("[Side] IN13 at " + DateTime.Now.ToString("HH:mm:ss.fff") + (sinceLastIn13Ms > 0 ? " interval=" + sinceLastIn13Ms.ToString("F0") + "ms" : " (first)") + " pending=" + Interlocked.Read(ref _sidePendingCount) + " busy=" + (_sideStation?.IsMoving ?? false));
 					Logger.Debug("[Side] ⏱ IN13↓触发诊断: 前方排队=" + Interlocked.Read(ref _sidePendingCount) + " 侧面忙=" + (_sideStation?.IsMoving ?? false) + " 空触发连续=" + Interlocked.Read(ref _sideEmptyCycleCount) + " 上次收图=" + Interlocked.Read(ref _lastSideImageCount));
 
 				// ── 活件检测: 正面最近N秒内无图像 → 判定为假触发, 拒绝启动运动 ──

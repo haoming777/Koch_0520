@@ -68,6 +68,9 @@ namespace VisionMeasure.Stations
 		public bool EnableBoxBreakCheck = true;
 		public bool SkipCrop = false;
 
+		private static readonly string _frp = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "Front_Error.log");
+		private static void WFR(string m) { try { var d = System.IO.Path.GetDirectoryName(_frp); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_frp, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
+
 		public FrontStationProcessor(AiModelManager modelManager, DetectionParameters detectionParams)
 		{
 			_models = modelManager;

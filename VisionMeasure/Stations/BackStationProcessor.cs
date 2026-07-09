@@ -64,6 +64,9 @@ namespace Stations
 		public bool EnableHookCheck = true;
 		public bool SkipCrop = false;
 
+		private static readonly string _bkp = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "Back_Error.log");
+		private static void WBK(string m) { try { var d = System.IO.Path.GetDirectoryName(_bkp); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_bkp, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
+
 		public BackStationProcessor(AiModelManager models, string savePath, SkuData sku,
 			HighSpeedImageSaver imageSaver, PerformanceMonitor perfMonitor)
 		{
