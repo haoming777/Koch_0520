@@ -184,8 +184,10 @@ namespace Stations
 			});
 		}
 
-		public void OnCam7(Bitmap bmp, long pid) { if (bmp != null) { AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); Logger.Debug($"[Side] 📷 Cam7入队 左队列={_leftCount} pid={pid}"); } }
-		public void OnCam8(Bitmap bmp, long pid) { if (bmp != null) { AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); Logger.Debug($"[Side] 📷 Cam8入队 右队列={_rightCount} pid={pid}"); } }
+		private bool _safetyAlarmSet = false;  // 安全锁硬件绑定只设一次
+		private long _cam7ThisCycle = 0, _cam8ThisCycle = 0;  // 本周期收图计数(诊断用)
+		public void OnCam7(Bitmap bmp, long pid) { Interlocked.Increment(ref _cam7ThisCycle); if (bmp != null) { AddImage(_leftQueue, ref _leftCount, bmp, pid, Side.Left); if (_cam7ThisCycle <= 3 || _cam7ThisCycle % 4 == 0) Logger.Info("[Side] Cam7 img #" + _cam7ThisCycle + " pid=" + pid); } }
+		public void OnCam8(Bitmap bmp, long pid) { Interlocked.Increment(ref _cam8ThisCycle); if (bmp != null) { AddImage(_rightQueue, ref _rightCount, bmp, pid, Side.Right); if (_cam8ThisCycle <= 3 || _cam8ThisCycle % 4 == 0) Logger.Info("[Side] Cam8 img #" + _cam8ThisCycle + " pid=" + pid); } }
 
 		/// <summary>图像入队: ConcurrentQueue原子入队→Interlocked计数, 生产者=相机回调, 消费者=ProcessStream</summary>
 		private void AddImage(ConcurrentQueue<SideImageCtx> q, ref int count, Bitmap bmp, long pid, Side side)
@@ -346,7 +348,8 @@ namespace Stations
 				double retAvgSpeed = phase3Ms > 0 ? distance / phase3Ms * 1000.0 : 0;
 			Logger.Info("[Side] MOTION done: total=" + totalMotionMs.ToString("F0") + "ms fwd=" + phase2Ms.ToString("F0") + "ms ret=" + phase3Ms.ToString("F0") + "ms avgSpeed=" + fwdAvgSpeed.ToString("F0") + "/" + retAvgSpeed.ToString("F0") + "/s");
 			// Cancel ProcessStream after motion completes + 2.5s grace period (prevents cross-cycle image consumption)
-			Task.Delay(2500).ContinueWith(_ => { try { _motionCts?.Cancel(); } catch { } });
+			var myCts = _motionCts;
+			Task.Delay(2000).ContinueWith(_ => { try { myCts?.Cancel(); } catch { } });
 		}
 
 		/// <summary>等待安全锁释放: 门开(IN8=0)则阻塞等待，门关(IN8=1)则通过</summary>
@@ -399,18 +402,27 @@ namespace Stations
 					Logger.Debug($"[Side] ⏱ WaitForMove进行中 target={targetPos:F1} curPos={curPos:F1} isMoving={moving} 已等待={sw.ElapsedMilliseconds}ms 循环={loopCount}");
 					lastLogTick = nowTicks;
 				}
-
-				// ── 安全锁检查(硬件IO读取，不受PC CPU影响) ──
-				if (!CheckSafetyLock())
+				// 安全锁检查 + 防抖(200ms内恢复则忽略传感器抖动)
+				bool isDoorSafe = CheckSafetyLock();
+				if (!isDoorSafe)
 				{
 					if (!stopped)
 					{
-						Logger.Warning("[Side] 运动中安全锁触发! 急停轴" + axis);
-						_motion.EmergencyStop(axis);
-						stopped = true;
+						int dw = 0;
+						while (dw < 200 && !cancel.IsCancellationRequested)
+						{
+							Thread.Sleep(20); dw += 20;
+							if (CheckSafetyLock()) { isDoorSafe = true; break; }
+						}
+						if (!isDoorSafe)
+						{
+							float cp = _motion.GetPosition(axis);
+							Logger.Warning("[Side] SAFETY TRIP: IN8=0 axis=" + axis + " pos=" + cp.ToString("F1") + " tgt=" + targetPos.ToString("F1") + " dw=" + dw + "ms (check door/sensor)");
+							_motion.EmergencyStop(axis);
+							stopped = true;
+						}
 					}
-					Thread.Sleep(5);
-					continue;
+					if (stopped) { Thread.Sleep(5); continue; }
 				}
 
 				// 安全锁已恢复
@@ -495,7 +507,8 @@ namespace Stations
 					Logger.Warning("[Side] 限位设置失败: " + ex.Message);
 				}
 			}
-			if (SafetyLockPort > 0) _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort);
+			// 安全锁硬件绑定只在首次调用, 不每周期重设(重设会短暂解除保护导致误触发)
+				if (SafetyLockPort > 0 && !_safetyAlarmSet) { _motion.SetHardwareSafetyAlarm(SideAxis, SafetyLockPort); _safetyAlarmSet = true; }
 		}
 	/// <summary>设置轴运行参数: 速度+加速度+减速度, 每次运动段切换前调用(前进/返回各自速度)</summary>
 		private void SetAxisSpeed(float speed) { _motion.SetSpeed(SideAxis, speed); _motion.SetAccel(SideAxis, Accel); _motion.SetDecel(SideAxis, Decel); Logger.Debug($"[Side] SetAxisSpeed: axis={SideAxis} speed={speed} accel={Accel} decel={Decel}"); }
@@ -537,8 +550,8 @@ namespace Stations
 					if (processed >= expect) { exitReason = "count"; break; }
 					Thread.Sleep(1); noImgCount++;
 					if (cancel.IsCancellationRequested) { exitReason = "cancel"; break; }
-					if (firstImgTicks > 0 && noImgCount > 500) { exitReason = "idle500ms"; break; }
-					if (firstImgTicks == 0 && noImgCount > 3000) { exitReason = "no1st_3s"; break; }
+					if (firstImgTicks > 0 && noImgCount > 500) { exitReason = "idle500ms"; Logger.Warning("[Side] PS: no image for " + noImgCount + "ms, got " + processed + "/" + expect + " (ZMC trigger stopped?)"); break; }
+					if (firstImgTicks == 0 && noImgCount > 3000) { exitReason = "no1st_3s"; Logger.Warning("[Side] PS: no first image for 3s (ZMC not triggering?)"); break; }
 					continue;
 				}
 				noImgCount = 0;
@@ -617,7 +630,7 @@ namespace Stations
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats2.ContainsKey(sr.Status)) rStats2[sr.Status]++; else rStats2[sr.Status] = 1; } }
 			string defStr2 = " | 左侧面:" + (lStats2.Count > 0 ? string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
-			Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr2}");
+			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr2 + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle);
 
 			// 立即触发事件(统计+状态, 渲染图稍后由阶段2补充)
 			OnResultReady?.Invoke(result);
@@ -698,7 +711,7 @@ namespace Stations
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats.ContainsKey(sr.Status)) rStats[sr.Status]++; else rStats[sr.Status] = 1; } }
 			string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
-			Logger.Info($"[Side] 完成 P={p} OK={mergedStatus.Count(s => s == "OK")} NG={mergedStatus.Count(s => s != "OK")}{defStr} | 耗时={sw.Elapsed.TotalMilliseconds:F0}ms");
+			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle + " | time=" + sw.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
 
@@ -1064,6 +1077,7 @@ namespace Stations
 			}
 			_leftResults.Clear();
 			_rightResults.Clear();
+				_cam7ThisCycle = 0; _cam8ThisCycle = 0;
 
 			// 在锁内快速收集旧引用后Clear, Dispose移到锁外(避免长时间持锁阻塞StartMotion)
 			Bitmap[] oldLeft, oldRight, oldDisplay;

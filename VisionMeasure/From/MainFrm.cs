@@ -69,9 +69,10 @@ namespace VisionMeasure
 		private long _sideEmptyCycleCount = 0;  // 侧面空触发连续计数(用于检测没有盒子空跑)
 		private long _lastSideImageCount = 0;   // 上一次侧面检测周期收图总数(诊断漏拍)
 		private long _lastFrontImageTicks = 0;  // 最后一次正面收到图像的Ticks(用于侧面活件判断)
-		private const long NoProductTimeoutTicks = 5 * 10000 * 1000; // 5秒内无正面图像→认为无盒
+		private const long NoProductTimeoutTicks = 120L * 10000 * 1000; // 2分钟全工位无图→才认为产线已停(应对变速和暂停,不拦截正常生产)
 		private int _sidePollingActive = 0;  // 轮询Task互斥锁: 0=无轮询Task, 1=已有轮询Task运行中 (int可用Volatile.Read原子读)
 		private long _lastIn13Tick = 0;  // 上一次IN13↓的Ticks, 用于计算两次信号间隔
+		private long _lastAcceptedIn13Tick = 0;  // 上一次被接受的IN13↓(用于去抖, <2s的重复信号忽略)
 		private long _lastCarouselRefreshTicks = 0;  // 上一次轮播刷新时间(节流用)
 
 		// ========== 数据管理 ==========
@@ -610,17 +611,25 @@ namespace VisionMeasure
 				Interlocked.Exchange(ref _lastIn13Tick, tickIn13);
 				// Compact timing log: signal interval + state
 				Logger.Info("[Side] IN13 at " + DateTime.Now.ToString("HH:mm:ss.fff") + (sinceLastIn13Ms > 0 ? " interval=" + sinceLastIn13Ms.ToString("F0") + "ms" : " (first)") + " pending=" + Interlocked.Read(ref _sidePendingCount) + " busy=" + (_sideStation?.IsMoving ?? false));
-					Logger.Debug("[Side] ⏱ IN13↓触发诊断: 前方排队=" + Interlocked.Read(ref _sidePendingCount) + " 侧面忙=" + (_sideStation?.IsMoving ?? false) + " 空触发连续=" + Interlocked.Read(ref _sideEmptyCycleCount) + " 上次收图=" + Interlocked.Read(ref _lastSideImageCount));
+
+				// IN13去抖: 同产品第二次下降沿(<2s)直接忽略
+				long lastAccepted = Interlocked.Read(ref _lastAcceptedIn13Tick);
+				if (lastAccepted > 0 && (tickIn13 - lastAccepted) / 10000.0 < 2000)
+				{
+					Logger.Info("[Side] IN13 debounce: skip duplicate (" + ((tickIn13 - lastAccepted) / 10000.0).ToString("F0") + "ms)");
+					return;
+				}
+				Interlocked.Exchange(ref _lastAcceptedIn13Tick, tickIn13);
 
 				// ── 活件检测: 正面最近N秒内无图像 → 判定为假触发, 拒绝启动运动 ──
 				long lastFrontTicks = Interlocked.Read(ref _lastFrontImageTicks);
 				long sinceLastFrontMs = (DateTime.Now.Ticks - lastFrontTicks) / 10000;
-				Logger.Debug("[Side] ⏱ 活件检测: 距上次正面收图=" + (sinceLastFrontMs) + "ms (阈值=" + (NoProductTimeoutTicks / 10000) + "ms)");
 				if (lastFrontTicks == 0 || (DateTime.Now.Ticks - lastFrontTicks) > NoProductTimeoutTicks)
 				{
 					long emptyCnt = Interlocked.Increment(ref _sideEmptyCycleCount);
-					Logger.Warning("[Side] ⚠ 拒绝启动: 距上次正面收图" + sinceLastFrontMs + "ms, 疑似无盒假触发! (连续空触发=" + emptyCnt + "次)");
-					return;  // 不进排队也不启动运动, 直接丢弃此触发
+					if (emptyCnt <= 3 || emptyCnt % 10 == 0)
+						Logger.Warning("[Side] line idle " + (sinceLastFrontMs/1000) + "s, skip IN13 (cnt=" + emptyCnt + ")");
+					return;
 				}
 
 				// 空闲且无轮询Task → 立即启动(不经过pending计数器, 避免跟轮询Task抢Decrement)
