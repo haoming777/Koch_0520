@@ -292,6 +292,7 @@
     <Compile Include="Utils\SQLiteHelper.cs" />
     <Compile Include="Utils\StopwatchScope.cs" />
     <Compile Include="Utils\ResultDrawer.cs" />
+    <Compile Include="Utils\SystemResourceMonitor.cs" />
     <EmbeddedResource Include="From\Loading.resx">
       <DependentUpon>Loading.cs</DependentUpon>
     </EmbeddedResource>

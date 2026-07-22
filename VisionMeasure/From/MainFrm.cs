@@ -79,6 +79,7 @@ namespace VisionMeasure
 		private SkuDatabase _skuDb;
 		private SkuData _currentSku;
 		private PerformanceMonitor _perfMonitor;
+		private SystemResourceMonitor _sysResMonitor;
 		private DetectionParameters _detectionParams;
 		private SQLiteHelper _dbHelper;
 
@@ -200,6 +201,18 @@ namespace VisionMeasure
 				Logger.Info("正在初始化性能监控...");
 				_perfMonitor = new PerformanceMonitor();
 
+				// 初始化系统资源监控（每5s采样CPU/内存, 每30s输出报告）
+				_sysResMonitor = new SystemResourceMonitor(5000, 30);
+
+				// 配置ThreadPool以充分利用14核CPU (i5-14600K: 6P+8E)
+				// 默认min threads过少会导致Task.Run排队等待
+				int minWorker, minIo;
+				System.Threading.ThreadPool.GetMinThreads(out minWorker, out minIo);
+				int cores = Environment.ProcessorCount;
+				int newMinWorker = Math.Max(minWorker, cores * 2); // 每核2线程
+				System.Threading.ThreadPool.SetMinThreads(newMinWorker, minIo);
+				Logger.Info($"[Sys] ThreadPool: cores={cores} minWorker={minWorker}→{newMinWorker}");
+
 				// 初始化高速保存器
 				UpdateLoadingProgress(25, "正在初始化图像保存器...");
 				Logger.Info("正在初始化图像保存器...");
@@ -248,11 +261,12 @@ namespace VisionMeasure
 				StartShiftCheckTimer();
 
 				// 改用System.Timers.Timer(后台线程)替代Forms.Timer(UI线程), 硬件IO不再阻塞UI
-				var _statusBgTimer = new System.Timers.Timer(500);
+				// 轮询间隔从500ms提升到1000ms, 状态灯是给人看的, 1秒刷新足够了
+				var _statusBgTimer = new System.Timers.Timer(1000);
 				_statusBgTimer.Elapsed += (_, evt) => StatusPollTick();
 				_statusBgTimer.AutoReset = true;
 				_statusBgTimer.Start();
-				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 500 }; // 保留引用兼容
+				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 1000 }; // 保留引用兼容
 
 				// 刷新显示
 				RefreshCarouselDisplays();
@@ -2144,6 +2158,7 @@ namespace VisionMeasure
 				_motionMgr?.Disconnect();
 				_plcComm?.Disconnect();
 				_perfMonitor?.Dispose();
+				_sysResMonitor?.Dispose();
 				_imageSaver?.Dispose();
 				_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
 				_shiftCheckTimer?.Stop();

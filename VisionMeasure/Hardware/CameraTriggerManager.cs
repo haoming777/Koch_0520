@@ -235,6 +235,10 @@ namespace Hardware
 
 					// 控制扫描速率 ≈2000Hz，防止纯忙循环把ZMC打崩
 					Thread.SpinWait(2000);
+					// 外部触发模式: PC不输出脉冲, 仅监听IN13, 无需2000Hz高速扫描
+					// 降低到~200Hz(每5ms扫一次), 节省CPU但IN13延迟仍<5ms(产线节拍2.5s无影响)
+					if (ExternalTriggerEnabled)
+						Thread.Sleep(4);
 
 					// 每30秒自检一次实际扫描频率
 					long nowTicks = DateTime.Now.Ticks;

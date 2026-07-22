@@ -497,14 +497,15 @@ namespace Stations
 			return defects;
 		}
 
-	/// <summary>批量绘制: 遍历每张图像→DrawDefectOnImage(缺陷框+状态标签+序号)→存入ImageContext.RenderBitmap</summary>
+	/// <summary>批量绘制: 多核并行渲染每张图像(独立Bitmap+Graphics, GDI+安全并行)</summary>
 		private void DrawResultsBatch(List<ImageContext> images, List<Mat> mats, Dictionary<int, List<BoxDefect>> defects, List<string> status)
 		{
-			for (int i = 0; i < images.Count; i++)
+			int n = images.Count;
+			System.Threading.Tasks.Parallel.For(0, n, i =>
 			{
-				var drawn = DrawDefectOnImage(mats[i], defects.ContainsKey(i) ? defects[i] : new List<BoxDefect>(), status[i], i, images.Count);
+				var drawn = DrawDefectOnImage(mats[i], defects.ContainsKey(i) ? defects[i] : new List<BoxDefect>(), status[i], i, n);
 				images[i].RenderBitmap = drawn;
-			}
+			});
 		}
 
 	/// <summary>绘制单张端面缺陷图: 填充半透明框+实线边框(破损红/搭舌橙/边缘紫)+缺陷类型标签+OK/NG状态(右上角)+序号(右下角)</summary>

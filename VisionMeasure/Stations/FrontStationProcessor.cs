@@ -550,23 +550,18 @@ namespace VisionMeasure.Stations
 			}
 		}
 
-		/// <summary>绘制+合并: 左图DrawDefects(P号框/破损框/状态/序号)+右图DrawDefects→MergeImages(水平拼接+OK/NG大字)</summary>
+		/// <summary>绘制+合并: 左右图并行渲染→MergeImages(水平拼接+OK/NG大字)</summary>
 		private Bitmap DrawAndMergeResults(Mat left, Mat right,
 			Dictionary<int, List<BoxDefect>> pNumberResults, Dictionary<int, List<BoxDefect>> damageResults,
 			List<string> statusList, int halfP, bool isOk)
 		{
 			var lb = left.ToBitmap(); var rb = right.ToBitmap();
 			int p = _currentSku?.P ?? 8;
-			using (var g = Graphics.FromImage(lb))
-			{
-				g.SmoothingMode = SmoothingMode.AntiAlias;
-				DrawDefects(g, pNumberResults, damageResults, statusList, 0, halfP, lb.Width, lb.Height);
-			}
-			using (var g = Graphics.FromImage(rb))
-			{
-				g.SmoothingMode = SmoothingMode.AntiAlias;
-				DrawDefects(g, pNumberResults, damageResults, statusList, halfP, p, rb.Width, rb.Height);
-			}
+			// 左右图独立Bitmap, Graphics无共享, GDI+安全并行
+			System.Threading.Tasks.Parallel.Invoke(
+				() => { using (var g = Graphics.FromImage(lb)) { g.SmoothingMode = SmoothingMode.AntiAlias; DrawDefects(g, pNumberResults, damageResults, statusList, 0, halfP, lb.Width, lb.Height); } },
+				() => { using (var g = Graphics.FromImage(rb)) { g.SmoothingMode = SmoothingMode.AntiAlias; DrawDefects(g, pNumberResults, damageResults, statusList, halfP, p, rb.Width, rb.Height); } }
+			);
 			return MergeImages(lb, rb, isOk);
 		}
 
