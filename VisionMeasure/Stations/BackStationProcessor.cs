@@ -62,6 +62,7 @@ namespace Stations
 		public bool EnableDateCodeCheck = false;
 		public bool EnableBarcodeCheck = true;
 		public bool EnableHookCheck = true;
+		public bool EnableBoxBreakCheck = true;
 		public bool SkipCrop = false;
 
 		private static readonly string _bkp = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "Back_Error.log");
@@ -78,6 +79,7 @@ namespace Stations
 			EnableBarcodeCheck = DetectionParameters.Instance.Back.EnableBarcodeCheck;
 			EnableHookCheck = DetectionParameters.Instance.Back.EnableHookCheck;
 			HangHoleClassId = hookParams.HookHoleClassId;
+			EnableBoxBreakCheck = DetectionParameters.Instance.Back.EnableBoxBreakCheck;
 			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
 		}
 
@@ -94,6 +96,7 @@ namespace Stations
 			HangHoleClassId = hookParams.HookHoleClassId;
 			if (hookParams.Confidence > 0) ConfThreshold = hookParams.Confidence;
 			if (hookParams.Iou > 0) IouThreshold = hookParams.Iou;
+			EnableBoxBreakCheck = DetectionParameters.Instance.Back.EnableBoxBreakCheck;
 			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
 			Logger.Info($"[Back] ModelParams已重新加载 Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 		}
@@ -108,6 +111,8 @@ namespace Stations
 		public long NgCount => _ngCount;
 		/// <summary>收图累计数</summary>
 		public long ImgCount => _imgCount;
+		/// <summary>最近一次逐盒状态列表(供PLC读取)</summary>
+		public List<string> StatusList { get; private set; } = new List<string>();
 
 		/// <summary>相机5(背面左)图像回调</summary>
 		/// <summary>相机5(背面左)图像回调 — 图像→Mat→配对缓冲→CheckAndProcess触发处理</summary>
@@ -224,6 +229,9 @@ namespace Stations
 				if (EnableDateCodeCheck && _models.BackDateCodeSegModel != null && _models.BackDateCodeClsModel != null && _models.BackDateCodeOcrModel != null)
 					tasks.Add(Task.Run(() => { dateCodeDict = RecognizeDateCodes(leftProc, rightProc, hp); }));
 				tasks.Add(Task.Run(() => { hookDict = DetectHookDamage(leftProc, rightProc, p); }));
+				Dictionary<int, List<BoxDefect>> boxBreakDict = null;
+				if (EnableBoxBreakCheck && _models.BackBoxBreakModel != null)
+					tasks.Add(Task.Run(() => { boxBreakDict = DetectBoxBreak(leftProc, rightProc, p); }));
 				Task.WaitAll(tasks.ToArray());
 				var inferMs = sw1.Elapsed.TotalMilliseconds;
 				Logger.Info("[Back] 步骤1完成: 推理=" + inferMs.ToString("F1") + "ms");
@@ -231,7 +239,7 @@ namespace Stations
 
 				// 步骤2: 汇总
 				var all = new List<BoxDefect>();
-				int bc = 0, ho = 0, hs = 0, dc = 0;
+				int bc = 0, ho = 0, hs = 0, dc = 0, bb = 0;
 				if (barcodeDict != null)
 				{
 					var its = barcodeDict.Values.SelectMany(v => v).ToList();
@@ -251,7 +259,13 @@ namespace Stations
 					ho = its.Count(d => d.DefectType == "挂钩明显错位");
 					hs = its.Count(d => d.DefectType.Contains("轻微挂钩错位"));
 				}
-				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 总计=" + all.Count);
+				if (boxBreakDict != null)
+				{
+					var its = boxBreakDict.Values.SelectMany(v => v).ToList();
+					all.AddRange(its);
+					bb = its.Count;
+				}
+				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 盒子破=" + bb + " 总计=" + all.Count);
 				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
 				foreach (var d in all)
 				{
@@ -261,6 +275,7 @@ namespace Stations
 				}
 				Logger.Info("[Back]   " + string.Join(" ", Enumerable.Range(1, status.Count).Select(i => i.ToString().PadLeft(2))));
 				Logger.Info("[Back]   " + string.Join("  ", status.Select(s => s == "OK" ? "O" : "X")));
+				StatusList = new List<string>(status);  // 保存副本供PLC读取
 				bool isOk = status.All(s => s == "OK");
 				result.BackResult = isOk;
 				result.BackDefects = status.Where(s => s != "OK").Distinct().ToList();
@@ -808,6 +823,7 @@ namespace Stations
 					Color c = isOk ? Color.Lime : Color.Red;
 					if (d.DefectType.StartsWith("条码错") || d.DefectType.Contains("条码错误") || d.DefectType.Contains("条码缺少")) c = Color.Orange;
 					if (d.DefectType.Contains("日期码错误") || d.DefectType.Contains("日期码不完全") || d.DefectType.Contains("日期码重影")) c = Color.Orange;
+					if (d.DefectType.Contains("盒子破损")) c = Color.Red;
 					if (d.DefectType.Contains("明显")) c = Color.DarkRed;
 					if (d.DefectType.Contains("轻微")) c = Color.OrangeRed;
 					bool isBcOrDc = d.DefectType.StartsWith("条码") || d.DefectType.StartsWith("日期码");

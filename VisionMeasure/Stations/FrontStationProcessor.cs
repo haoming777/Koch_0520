@@ -60,6 +60,10 @@ namespace VisionMeasure.Stations
 
 		public event Action<Bitmap, bool[], long, long> OnResultReady;
 		public event Action<List<string>, int> OnStatusUpdate;
+		/// <summary>PLC结果发送事件: defectCodes数组 + pCount + okCount + ngCount</summary>
+		public event Action<int[], int, long, long> OnPlcResult;
+		/// <summary>最近一次的逐盒状态列表(供外部读取)</summary>
+		public List<string> StatusList { get; private set; } = new List<string>();
 
 		public float ConfThreshold { get; set; } = 0.5f;
 		public float IouThreshold { get; set; } = 0.45f;
@@ -230,6 +234,7 @@ namespace VisionMeasure.Stations
 					ngArray[i] = defects.Count > 0;
 					statusList.Add(defects.Count > 0 ? string.Join(",", defects) : "OK");
 				}
+				StatusList = new List<string>(statusList); // 保存副本供PLC读取
 				Logger.Info("[Front]  " + string.Join(" ", Enumerable.Range(1,statusList.Count).Select(i => i.ToString().PadLeft(2))));
 				Logger.Info("[Front]  " + string.Join("  ", statusList.Select(s => s == "OK" ? "O" : "X")));
 
@@ -271,8 +276,9 @@ namespace VisionMeasure.Stations
 				SaveImages(leftProc, rightProc, merged, ngArray);
 				Logger.Info($"[Front] 步骤4完成: 保存={sw4.Elapsed.TotalMilliseconds:F1}ms");
 
-				// 步骤5: 发射结果事件(更新UI)
+				// 步骤5: 发射结果事件(更新UI + PLC)
 				OnResultReady?.Invoke(merged, ngArray, _okCount, _ngCount);
+				OnPlcResult?.Invoke(null, pCount, _okCount, _ngCount); // OnPlcResult订阅方会从StatusList读取
 			}
 			catch (Exception ex) { Logger.Error($"[Front] 处理异常: {ex.Message}\r\n{ex.StackTrace}"); }
 			finally

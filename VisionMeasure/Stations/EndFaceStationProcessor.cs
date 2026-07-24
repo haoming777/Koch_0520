@@ -88,6 +88,8 @@ namespace Stations
 		public long ImgLowerCount => _imgLowerCount;
 		public int CurrentIndex => _currentDisplayIndex;
 		public int ImageCount => _currentDisplayImages.Count;
+		/// <summary>最近一次上下端面合并状态列表(供PLC读取)</summary>
+		public List<string> StatusList { get; private set; } = new List<string>();
 
 		private static readonly string _efp = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "EndFace_Error.log");
 		private static void WEF(string m) { try { var d = System.IO.Path.GetDirectoryName(_efp); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_efp, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
@@ -339,6 +341,7 @@ namespace Stations
 				if (missingCount > 0)
 					Logger.Warning($"[EndFace] 缺失{missingCount}个工件位 → 标记为缺少");
 
+				StatusList = new List<string>(mergedStatus);  // 保存副本供PLC读取
 				bool isOk = mergedStatus.All(s => s == "OK");
 				var result = new ProductResult
 				{

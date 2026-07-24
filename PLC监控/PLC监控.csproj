@@ -69,6 +69,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Class\HCModbusClass.cs" />
+    <Compile Include="Class\ModbusClass.cs" />
     <Compile Include="Class\S7-1500Class.cs" />
     <Compile Include="ControlFrm.cs">
       <SubType>Form</SubType>

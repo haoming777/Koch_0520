@@ -112,6 +112,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Class_Config.cs" />
+    <Compile Include="PlcLogger.cs" />
     <Compile Include="GlobalVar.cs" />
     <Compile Include="HighSpeedImageSaver.cs" />
     <Compile Include="IFormPlugin.cs" />

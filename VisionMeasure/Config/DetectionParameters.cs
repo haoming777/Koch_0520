@@ -90,7 +90,7 @@ namespace Config
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;
 		}
 
-	/// <summary>背面工位参数: 通用Conf/IOU, 条码/日期码/挂钩各自Conf阈值, 挂钩分类ID, 三个检测启停开关</summary>
+	/// <summary>背面工位参数: 通用Conf/IOU, 条码/日期码/挂钩各自Conf阈值, 挂钩分类ID, 四个检测启停开关</summary>
 		public class BackParams
 		{
 			[JsonProperty("置信度阈值")] public float ConfThreshold { get; set; } = 0.5f;
@@ -103,6 +103,7 @@ namespace Config
 			[JsonProperty("日期码检测启用")] public bool EnableDateCodeCheck { get; set; } = true;
 			[JsonProperty("条码检测启用")] public bool EnableBarcodeCheck { get; set; } = true;
 			[JsonProperty("挂钩检测启用")] public bool EnableHookCheck { get; set; } = true;
+			[JsonProperty("盒子破检测启用")] public bool EnableBoxBreakCheck { get; set; } = true;
 			[JsonProperty("显示OK数")] public long OkCount { get; set; } = 0;
 			[JsonProperty("显示NG数")] public long NgCount { get; set; } = 0;
 			[JsonProperty("良率")] public double YieldRate { get; set; } = 0;

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using static System.Windows.Forms.AxHost;
 using static CommonLib.Class_Config;
 using XL.Tool;
+
 using HslCommunication.Profinet.Siemens;
 using HslCommunication;
 using System.Xml.Serialization;
@@ -217,8 +218,52 @@ namespace PLC调试.Class
 		}
 
 
+		/// <summary>批量写Int16到S7-1500 DB (用于发送逐盒缺陷码)</summary>
+		public void WriteStationResult(string dbAddr, int[] values)
+		{
+			try
+			{
+				if (!plcState)
+				{
+					CommonLib.PlcLogger.Warn($"[S7-1500] 写入跳过(未连接) addr={dbAddr} values=[{string.Join(",", values)}]");
+					return;
+				}
+				short[] shorts = Array.ConvertAll(values, v => (short)v);
+				plc.Write(dbAddr, shorts);
+				CommonLib.PlcLogger.Info($"[S7-1500] 写入成功 addr={dbAddr} count={values.Length} values=[{string.Join(",", values)}]");
+			}
+			catch (Exception ex)
+			{
+				plcState = false;
+				CommonLib.PlcLogger.Error($"[S7-1500] 写入失败 addr={dbAddr}: {ex.Message}");
+				EventConnectState(false, "S7-1500批量写异常: " + ex.Message);
+			}
+		}
+
+		/// <summary>写单个Bool到S7-1500 DB (用于发送完成信号)</summary>
+		public void WriteBool(string dbAddr, bool value)
+		{
+			try
+			{
+				if (!plcState)
+				{
+					CommonLib.PlcLogger.Warn($"[S7-1500] 写Bool跳过(未连接) addr={dbAddr} value={value}");
+					return;
+				}
+				plc.Write(dbAddr, value);
+				CommonLib.PlcLogger.Info($"[S7-1500] 写Bool成功 addr={dbAddr} value={value}");
+			}
+			catch (Exception ex)
+			{
+				plcState = false;
+				CommonLib.PlcLogger.Error($"[S7-1500] 写Bool失败 addr={dbAddr}: {ex.Message}");
+				EventConnectState(false, "S7-1500写Bool异常: " + ex.Message);
+			}
+		}
+
 		bool bRunning = false;
 		int ReconnectCount = 0;
+
 
 		public void Reconnect()
 		{

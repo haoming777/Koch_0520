@@ -124,6 +124,8 @@ namespace Stations
 		public long TotalCount => _totalCount; public long OkCount => _okCount; public long NgCount => _ngCount;
 		public long TriggerCount, OutLeftCount, OutRightCount, ImgLeftCount, ImgRightCount;
 		public int ImageCount => _displayImages.Count;
+		/// <summary>最近一次左右侧面合并状态列表(供PLC读取)</summary>
+		public List<string> StatusList { get; private set; } = new List<string>();
 		public bool IsMoving { get; private set; }
 
 		public SideStationProcessor(AiModelManager models, string savePath, SkuData sku,

@@ -28,6 +28,7 @@ namespace Config
 		public string BackHookSlightModel { get; set; }
 		public string BackCutCharModel { get; set; }
 		public string BackCutCharModuleId { get; set; } = "0";     // Vimo模型的moduleId
+		public string BackBoxBreakModel { get; set; }
 
 		// ========== 侧面模型 ==========
 		public string SideDefectModel { get; set; }
@@ -80,6 +81,7 @@ namespace Config
 			config.BackHookSlightModel = _Config.BackHookSlightModel ?? @"背面\轻微挂钩错位\best.onnx";
 			config.BackCutCharModel = _Config.BackCutCharModel ?? @"背面\切字识别\model.vimosln";
 			config.BackCutCharModuleId = _Config.BackCutCharModuleId ?? "0";
+			config.BackBoxBreakModel = _Config.BackBoxBreakModel ?? @"背面\盒子破检测est.onnx";
 
 			// 侧面模型
 			config.SideDefectModel = _Config.SideDefectModel ?? @"侧面\缺陷检测\best.onnx";
@@ -110,6 +112,7 @@ namespace Config
 			_Config.BackHookSlightModel = BackHookSlightModel;
 			_Config.BackCutCharModel = BackCutCharModel;
 			_Config.BackCutCharModuleId = BackCutCharModuleId;
+			_Config.BackBoxBreakModel = BackBoxBreakModel;
 			_Config.SideDefectModel = SideDefectModel;
 			_Config.SideDefectModuleId = SideDefectModuleId;
 			_Config.UseGpu = UseGpu;

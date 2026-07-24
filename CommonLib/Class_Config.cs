@@ -1301,6 +1301,12 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "BackCutCharModuleId", value);
 		}
 
+		public string BackBoxBreakModel
+		{
+			get => GetPrivateProfileString("AI_Models", "BackBoxBreakModel", "", _iniPath);
+			set => INIWriteValue(_iniPath, "AI_Models", "BackBoxBreakModel", value);
+		}
+
 		// 侧面模型
 		public string SideDefectModel
 		{
@@ -1322,6 +1328,64 @@ namespace CommonLib
 			set => INIWriteValue(_iniPath, "AI_Models", "GpuDeviceId", value.ToString());
 		}
 
+		#endregion
+
+		#region PLC结果发送地址
+		public string PlcProtocolType
+		{
+			get => GetPrivateProfileString("plc", "ProtocolType", "Modbus", _iniPath);
+			set => INIWriteValue(_iniPath, "plc", "ProtocolType", value);
+		}
+		public string FrontCompleteAddr
+		{
+			get => GetPrivateProfileString("plc_result", "FrontCompleteAddr", "D10000", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "FrontCompleteAddr", value);
+		}
+		public string BackCompleteAddr
+		{
+			get => GetPrivateProfileString("plc_result", "BackCompleteAddr", "D10001", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "BackCompleteAddr", value);
+		}
+		public string EndFaceCompleteAddr
+		{
+			get => GetPrivateProfileString("plc_result", "EndFaceCompleteAddr", "D10002", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "EndFaceCompleteAddr", value);
+		}
+		public string SideCompleteAddr
+		{
+			get => GetPrivateProfileString("plc_result", "SideCompleteAddr", "D10003", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "SideCompleteAddr", value);
+		}
+		public string FrontDefectStartAddr
+		{
+			get => GetPrivateProfileString("plc_result", "FrontDefectStartAddr", "D10100", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "FrontDefectStartAddr", value);
+		}
+		public string BackDefectStartAddr
+		{
+			get => GetPrivateProfileString("plc_result", "BackDefectStartAddr", "D10124", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "BackDefectStartAddr", value);
+		}
+		public string EndFaceDefectStartAddr
+		{
+			get => GetPrivateProfileString("plc_result", "EndFaceDefectStartAddr", "D10148", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "EndFaceDefectStartAddr", value);
+		}
+		public string SideDefectStartAddr
+		{
+			get => GetPrivateProfileString("plc_result", "SideDefectStartAddr", "D10172", _iniPath);
+			set => INIWriteValue(_iniPath, "plc_result", "SideDefectStartAddr", value);
+		}
+		public string DatabaseDataSource
+		{
+			get => GetPrivateProfileString("database", "DataSource", "LocalCsv", _iniPath);
+			set => INIWriteValue(_iniPath, "database", "DataSource", value);
+		}
+		public string DatabaseConnectionString
+		{
+			get => GetPrivateProfileString("database", "ConnectionString", "", _iniPath);
+			set => INIWriteValue(_iniPath, "database", "ConnectionString", value);
+		}
 		#endregion
 	}
 }

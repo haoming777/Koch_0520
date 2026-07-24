@@ -48,6 +48,8 @@ namespace VisionMeasure
 		private MotionControlManager _motionMgr;
 		private CameraTriggerManager _triggerMgr;
 		private PlcCommunication _plcComm;
+		private Hardware.PlcResultService _plcResultService;
+		private Config.DefectPriorityConfig _defectPriority;
 
 		// ========== AI模型管理层 ==========
 		private AiModelManager _aiModels;
@@ -359,6 +361,11 @@ namespace VisionMeasure
 				if (PlcState != null) PlcState.State = UILightState.Off;
 				Logger.Warning("PLC连接失败，将使用模拟模式");
 			}
+
+			// 初始化PLC结果发送服务 + 缺陷优先级配置
+			_defectPriority = Config.DefectPriorityConfig.Load();
+			_plcResultService = new Hardware.PlcResultService(null, null, useSimulateMode);
+			Logger.Info("PlcResultService和DefectPriorityConfig已初始化");
 		}
 
 		/// <summary>
@@ -777,6 +784,15 @@ namespace VisionMeasure
 			_frontStation.UpdateSku(_currentSku);
 			_frontStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
 			_frontStation.EnableBoxBreakCheck = _detectionParams.Front.EnableBoxBreakCheck;
+			_frontStation.OnPlcResult += (codes, p, ok, ng) =>
+			{
+				if (_plcResultService != null && _frontStation.StatusList != null && _frontStation.StatusList.Count > 0)
+				{
+					var frontCodes = _defectPriority.ResolveCodes("Front", _frontStation.StatusList);
+					_plcResultService.SendStationResult(Hardware.StationType.Front, frontCodes, p);
+					_plcResultService.SendStationComplete(Hardware.StationType.Front);
+				}
+			};
 			_frontStation.Start();
 
 			_endFaceStation = new EndFaceStationProcessor(_aiModels, imgPath, _currentSku.P, _imageSaver, _perfMonitor);
@@ -794,6 +810,7 @@ namespace VisionMeasure
 			_backStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
 			_backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck;
 			_backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck;
+			_backStation.EnableBoxBreakCheck = _detectionParams.Back.EnableBoxBreakCheck;
 			_backStation.Start();
 
 			_sideStation = new SideStationProcessor(_aiModels, imgPath, _currentSku, _motionMgr, _imageSaver, _perfMonitor);
@@ -1185,13 +1202,34 @@ namespace VisionMeasure
 			this.BeginInvoke(new Action(() =>
 			{
 				// 显示渲染图像到对应控件
+				if (result.BackResult.HasValue && _plcResultService != null && _backStation?.StatusList != null)
+				{
+					int p = _currentSku?.P ?? 8;
+					var codes = _defectPriority.ResolveCodes("Back", _backStation.StatusList);
+					_plcResultService.SendStationResult(Hardware.StationType.Back, codes, p);
+					_plcResultService.SendStationComplete(Hardware.StationType.Back);
+				}
 				if (result.BackRenderImage != null)
 					UpdatePictureBox(xlPictureBox2, result.BackRenderImage);
+				if (result.EndFaceResult.HasValue && _plcResultService != null && _endFaceStation?.StatusList != null)
+				{
+					int p = _currentSku?.P ?? 8;
+					var codes = _defectPriority.ResolveCodes("EndFace", _endFaceStation.StatusList);
+					_plcResultService.SendStationResult(Hardware.StationType.EndFace, codes, p);
+					_plcResultService.SendStationComplete(Hardware.StationType.EndFace);
+				}
 				if (result.EndFaceRenderImage != null)
 					UpdatePictureBox(xlPictureBox3, result.EndFaceRenderImage);
 				if (result.EndFaceLowerRenderImage != null)
 					UpdatePictureBox(xlPictureBox4, result.EndFaceLowerRenderImage);
 				// SideRenderImage/SideLeftRenderImage是同一张图, 避免重复更新xlPic5
+				if (result.SideResult.HasValue && _plcResultService != null && _sideStation?.StatusList != null)
+				{
+					int p = _currentSku?.P ?? 8;
+					var codes = _defectPriority.ResolveCodes("Side", _sideStation.StatusList);
+					_plcResultService.SendStationResult(Hardware.StationType.Side, codes, p);
+					_plcResultService.SendStationComplete(Hardware.StationType.Side);
+				}
 				if (result.SideLeftRenderImage != null)
 					UpdatePictureBox(xlPictureBox5, result.SideLeftRenderImage);
 				if (result.SideRightRenderImage != null)
@@ -1673,6 +1711,36 @@ namespace VisionMeasure
 			};
 		}
 		/// <summary>应用SKU切换: 更新显示标签→推送到4个工位处理器→端面更新P值</summary>
+		/// <summary>从数据库拉取最新SKU数据</summary>
+		public void RefreshSkuFromDatabase()
+		{
+			try
+			{
+				_skuDb.CurrentDataSource = SkuDatabase.DataSourceType.SqlServer;
+				_skuDb.SqlConnectionString = Class_Config._Config.DatabaseConnectionString ?? "";
+				if (string.IsNullOrEmpty(_skuDb.SqlConnectionString))
+				{
+					MessageBox.Show("数据库连接字符串未配置，请先在 setup.ini [database] 中设置 ConnectionString",
+						"提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+					return;
+				}
+				bool ok = _skuDb.Refresh();
+				if (ok)
+					MessageBox.Show("SKU数据已从数据库刷新成功!", "刷新成功",
+						MessageBoxButtons.OK, MessageBoxIcon.Information);
+				else
+					MessageBox.Show("从数据库刷新失败，请检查连接配置和网络。" + Environment.NewLine +
+						"已自动降级为本地CSV加载。", "刷新失败",
+						MessageBoxButtons.OK, MessageBoxIcon.Warning);
+			}
+			catch (Exception ex)
+			{
+				Logger.Error("数据库刷新异常: " + ex.Message);
+				MessageBox.Show("刷新异常: " + ex.Message, "错误",
+					MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		}
+
 		private void ApplySkuChange()
 		{
 			if (_currentSku == null) return;
@@ -1905,7 +1973,7 @@ namespace VisionMeasure
 						_endFaceStation?.ReloadModelParams();
 						_sideStation?.ReloadModelParams();
 						if (_frontStation != null) { _frontStation.EnablePNumberCheck = _detectionParams.Front.EnablePNumberCheck; _frontStation.EnableBoxBreakCheck = _detectionParams.Front.EnableBoxBreakCheck; }
-						if (_backStation != null) { _backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck; _backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck; }
+						if (_backStation != null) { _backStation.EnableBarcodeCheck = _detectionParams.Back.EnableBarcodeCheck; _backStation.EnableHookCheck = _detectionParams.Back.EnableHookCheck; _backStation.EnableBoxBreakCheck = _detectionParams.Back.EnableBoxBreakCheck; }
 						if (_endFaceStation != null) _endFaceStation.EnableUpperDefectCheck = _detectionParams.EndFace.EnableUpperDefectCheck;
 						if (_sideStation != null)
 						{

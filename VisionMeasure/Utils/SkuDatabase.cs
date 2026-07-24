@@ -30,7 +30,11 @@ namespace VisionMeasure.Utils
 		{
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 			CsvPath = Path.Combine(baseDir, "Config", "主数据.csv");
-			Logger.Info($"SKU数据库初始化，CSV路径: {CsvPath}");
+			// 从 setup.ini 读取数据库配置
+			string dataSource = Class_Config._Config.DatabaseDataSource ?? "LocalCsv";
+			CurrentDataSource = dataSource == "SqlServer" ? DataSourceType.SqlServer : DataSourceType.LocalCsv;
+			SqlConnectionString = Class_Config._Config.DatabaseConnectionString ?? "";
+			Logger.Info($"SKU数据库初始化，数据源={CurrentDataSource}, CSV路径: {CsvPath}");
 		}
 
 		public bool LoadData()
@@ -259,8 +263,49 @@ namespace VisionMeasure.Utils
 
 		private bool LoadFromSqlServer()
 		{
-			Logger.Info("SQL Server数据加载接口预留");
-			return false;
+			if (string.IsNullOrEmpty(SqlConnectionString))
+			{
+				Logger.Error("SQL Server连接字符串为空");
+				return false;
+			}
+			try
+			{
+				using (var conn = new System.Data.SqlClient.SqlConnection(SqlConnectionString))
+				{
+					conn.Open();
+					Logger.Info($"SQL Server连接成功: {conn.DataSource}");
+					var sql = "SELECT SKU号, 背卡条码, 背卡P号, PZMM, 打码格式 FROM 主数据表";
+					using (var cmd = new System.Data.SqlClient.SqlCommand(sql, conn))
+					using (var reader = cmd.ExecuteReader())
+					{
+						lock (_lock)
+						{
+							_skuList.Clear();
+							while (reader.Read())
+							{
+								var sku = new SkuData
+								{
+									SkuNumber = reader["SKU号"]?.ToString() ?? "",
+									PZInfo = reader["PZMM"]?.ToString() ?? "",
+									CodingFormat = reader["打码格式"]?.ToString() ?? "",
+									FrontPCode = reader["背卡P号"]?.ToString() ?? "",
+									BackBarcode = reader["背卡条码"]?.ToString() ?? "",
+								};
+								ParsePZInfo(sku);
+								_skuList.Add(sku);
+							}
+						}
+					}
+				}
+				Logger.Info($"从SQL Server加载了 {_skuList.Count} 个SKU");
+				OnDataChanged?.Invoke();
+				return true;
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"从SQL Server加载SKU失败: {ex.Message}");
+				return false;
+			}
 		}
 
 		private Dictionary<string, List<SkuData>> _searchCache = new Dictionary<string, List<SkuData>>();
@@ -309,7 +354,7 @@ namespace VisionMeasure.Utils
 			}
 		}
 
-		public void Refresh() => LoadData();
+		public bool Refresh() => LoadData();
 
 		/// <summary>按SKU当前P值重新匹配裁图比例.csv, 更新裁图像素字段</summary>
 		public void ApplyCropData(SkuData sku)

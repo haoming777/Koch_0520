@@ -184,6 +184,7 @@
     <Compile Include="Config\DetectionParameters.cs" />
     <Compile Include="Config\ModelPathConfig.cs" />
     <Compile Include="Config\ModelParams.cs" />
+    <Compile Include="Config\DefectPriorityConfig.cs" />
     <Compile Include="DeleteDir.cs" />
     <Compile Include="Detection\DefectDetectionService.cs" />
     <Compile Include="Detection\FrontDamageInspection.cs" />
@@ -269,6 +270,7 @@
     <Compile Include="Hardware\CameraTriggerManager.cs" />
     <Compile Include="Hardware\MotionControlManager.cs" />
     <Compile Include="Hardware\PlcCommunication.cs" />
+    <Compile Include="Hardware\PlcResultService.cs" />
     <Compile Include="Models\AiModelManager.cs" />
     <Compile Include="Models\BatchResult.cs" />
     <Compile Include="Models\ImageContext.cs" />

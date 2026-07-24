@@ -10,10 +10,10 @@ using CommonLib;
 namespace Models
 {
 /// <summary>
-/// AI模型管理器, 统一加载所有AI模型(11个), 分配GPU资源.
+/// AI模型管理器, 统一加载所有AI模型(12个), 分配GPU资源.
 /// GPU分配: 显卡0=YOLO目标检测, 显卡1=ViMo(OCR/分割/分类).
 /// 模型: FrontOcr/FrontBoxBreak/EndFaceUpper/EndFaceLower/BackBarcode/
-///   BackDateCodeSeg/Cls/Ocr/BackHook/HookSlight/SideDefect.
+///   BackDateCodeSeg/Cls/Ocr/BackHook/HookSlight/BackBoxBreak/SideDefect.
 /// 加载顺序: Front->EndFace->Back->Side. ViMo优先GPU, 失败降级CPU.
 /// </summary>
 	public class AiModelManager : IDisposable
@@ -37,6 +37,7 @@ namespace Models
 		public YoloOnnx BackHookModel { get; private set; }        // Yolo -> .onnx + meta.json
 		public YoloOnnxSegmentation HookSlightModel { get; private set; } // 分割 -> .onnx
 		public Vimo BackCutCharModel { get; private set; }         // Vimo -> .vimosln
+		public YoloOnnx BackBoxBreakModel { get; private set; }   // Yolo -> .onnx + meta.json
 
 		// 侧面模型
 		public YoloOnnx SideDefectModel { get; private set; }        // Yolo -> .onnx + meta.json
@@ -49,7 +50,7 @@ namespace Models
 		}
 
 		public bool LoadAllModels()
-		/// <summary>加载所有AI模型(共11个): 按顺序 Front→EndFace→Back→Side, 返回全部成功标志, 记录GPU配置日志</summary>
+		/// <summary>加载所有AI模型(共12个): 按顺序 Front→EndFace→Back→Side, 返回全部成功标志, 记录GPU配置日志</summary>
 		{
 			try
 			{
@@ -276,6 +277,24 @@ namespace Models
 					}
 				}
 
+				// 盒子破损检测模型 (Yolo -> .onnx + meta.json, 显卡0)
+				if (!string.IsNullOrEmpty(_config.BackBoxBreakModel))
+				{
+					string fullPath = _config.GetFullPath(_config.BackBoxBreakModel);
+					string metaPath = Path.ChangeExtension(fullPath, "json");
+					ReportProgress($"正在加载背面盒子破损检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 87, 100);
+
+					if (File.Exists(fullPath) && File.Exists(metaPath))
+					{
+						BackBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1, modelName: "BackBoxBreak");
+						Logger.Info($"背面盒子破损检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+					}
+					else
+					{
+						Logger.Warning($"背面盒子破损检测模型文件不存在: {fullPath} 或 {metaPath}");
+					}
+				}
+
 				return true;
 			}
 			catch (Exception ex)
@@ -350,6 +369,7 @@ namespace Models
 			BackDateCodeClsModel?.Dispose();
 			BackDateCodeOcrModel?.Dispose();
 			BackCutCharModel?.Dispose();
+			BackBoxBreakModel?.Dispose();
 
 			Logger.Info("AI模型管理器已释放(YOLO+ViMo共11个模型)");
 		}
