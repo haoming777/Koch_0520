@@ -264,15 +264,80 @@ namespace Hardware
 		}
 
 		/// <summary>设置轴运行速度</summary>
-		public void SetSpeed(int axis, float speed) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetSpeed(_handle, axis, speed); Logger.Debug($"[ZMC] SetSpeed axis={axis} speed={speed}"); } catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); } }
+		public void SetSpeed(int axis, float speed)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				ZAux_Direct_SetSpeed(_handle, axis, speed);
+				Logger.Debug($"[ZMC] SetSpeed axis={axis} speed={speed}");
+			}
+			catch (Exception ex) { Logger.Error("SetSpeed: " + ex.Message); }
+		}
+
 		/// <summary>设置轴加速度</summary>
-		public void SetAccel(int axis, float accel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetAccel(_handle, axis, accel); Logger.Debug($"[ZMC] SetAccel axis={axis} accel={accel}"); } catch (Exception ex) { Logger.Error("SetAccel: " + ex.Message); } }
+		public void SetAccel(int axis, float accel)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				ZAux_Direct_SetAccel(_handle, axis, accel);
+				Logger.Debug($"[ZMC] SetAccel axis={axis} accel={accel}");
+			}
+			catch (Exception ex) { Logger.Error("SetAccel: " + ex.Message); }
+		}
+
 		/// <summary>设置轴减速度</summary>
-		public void SetDecel(int axis, float decel) { if (!_simulateMode && IsConnected) try { ZAux_Direct_SetDecel(_handle, axis, decel); Logger.Debug($"[ZMC] SetDecel axis={axis} decel={decel}"); } catch (Exception ex) { Logger.Error("SetDecel: " + ex.Message); } }
+		public void SetDecel(int axis, float decel)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				ZAux_Direct_SetDecel(_handle, axis, decel);
+				Logger.Debug($"[ZMC] SetDecel axis={axis} decel={decel}");
+			}
+			catch (Exception ex) { Logger.Error("SetDecel: " + ex.Message); }
+		}
+
 		/// <summary>设置轴限位IO: 正限/负限/原点分别绑定到指定IN端口</summary>
-		public void SetLimitIn(int axis, int fwd, int rev, int datum) { if (_simulateMode || !IsConnected) return; try { ZAux_Direct_SetFwdIn(_handle, axis, fwd); ZAux_Direct_SetRevIn(_handle, axis, rev); ZAux_Direct_SetDatumIn(_handle, axis, datum); Logger.Info("限位设置: 轴" + axis + " FWD=IN" + fwd + " REV=IN" + rev + " DATUM=IN" + datum); } catch (Exception ex) { Logger.Error("SetLimitIn: " + ex.Message); } }
+		public void SetLimitIn(int axis, int fwd, int rev, int datum)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				ZAux_Direct_SetFwdIn(_handle, axis, fwd);
+				ZAux_Direct_SetRevIn(_handle, axis, rev);
+				ZAux_Direct_SetDatumIn(_handle, axis, datum);
+				Logger.Info("限位设置: 轴" + axis
+					+ " FWD=IN" + fwd + " REV=IN" + rev + " DATUM=IN" + datum);
+			}
+			catch (Exception ex) { Logger.Error("SetLimitIn: " + ex.Message); }
+		}
+
 		/// <summary>批量应用轴参数(类型/脉冲当量/速度/加速度/限位等)，从AxisParamConfig读取</summary>
-		public void ApplyAxisParams(CommonLib.AxisParamConfig p) { if (_simulateMode || !IsConnected) return; try { int a = p.Axis; ZAux_Direct_SetAtype(_handle, a, p.Atype); ZAux_Direct_SetUnits(_handle, a, p.Units); ZAux_Direct_SetSpeed(_handle, a, p.Speed); ZAux_Direct_SetAccel(_handle, a, p.Accel); ZAux_Direct_SetDecel(_handle, a, p.Decel); ZAux_Direct_SetLspeed(_handle, a, p.Lspeed); ZAux_Direct_SetSramp(_handle, a, p.Sramp); ZAux_Direct_SetCreep(_handle, a, p.CreepSpeed); ZAux_Direct_SetFwdIn(_handle, a, p.FwdIn); ZAux_Direct_SetRevIn(_handle, a, p.RevIn); ZAux_Direct_SetDatumIn(_handle, a, p.DatumIn); Logger.Info("轴" + a + "参数已应用: 类型=" + p.Atype + " 速度=" + p.Speed + " 限位IN" + p.FwdIn + "/" + p.RevIn + "/" + p.DatumIn); } catch (Exception ex) { Logger.Error("ApplyAxisParams: " + ex.Message); } }
+		public void ApplyAxisParams(CommonLib.AxisParamConfig p)
+		{
+			if (_simulateMode || !IsConnected) return;
+			try
+			{
+				int a = p.Axis;
+				ZAux_Direct_SetAtype(_handle, a, p.Atype);
+				ZAux_Direct_SetUnits(_handle, a, p.Units);
+				ZAux_Direct_SetSpeed(_handle, a, p.Speed);
+				ZAux_Direct_SetAccel(_handle, a, p.Accel);
+				ZAux_Direct_SetDecel(_handle, a, p.Decel);
+				ZAux_Direct_SetLspeed(_handle, a, p.Lspeed);
+				ZAux_Direct_SetSramp(_handle, a, p.Sramp);
+				ZAux_Direct_SetCreep(_handle, a, p.CreepSpeed);
+				ZAux_Direct_SetFwdIn(_handle, a, p.FwdIn);
+				ZAux_Direct_SetRevIn(_handle, a, p.RevIn);
+				ZAux_Direct_SetDatumIn(_handle, a, p.DatumIn);
+				Logger.Info("轴" + a + "参数已应用: 类型=" + p.Atype
+					+ " 速度=" + p.Speed
+					+ " 限位IN" + p.FwdIn + "/" + p.RevIn + "/" + p.DatumIn);
+			}
+			catch (Exception ex) { Logger.Error("ApplyAxisParams: " + ex.Message); }
+		}
 
 		/// <summary>设置单个输出端口</summary>
 		public bool SetOutput(int port, bool on)

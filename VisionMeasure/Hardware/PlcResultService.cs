@@ -20,169 +20,140 @@ namespace Hardware
     }
 
     /// <summary>
-    /// 统一PLC结果发送服务 — 内部双通道(Modbus TCP / S7-1500)
-    /// 根据 setup.ini [plc] ProtocolType 决定当前使用哪个协议。
-    /// 发送流程: 各工位处理完成 → SendStationResult(逐盒缺陷码) → SendStationComplete(脉冲Bool)
+    /// 统一PLC结果发送服务 — 纯 S7-1500 DB47
+    /// 发送流程: 各工位处理完成 → SendStationResult(rejectBits + stopLevel) → SendStationComplete(Bool)
+    /// DB47 地址:
+    ///   DBW0/2/4/6   = 1#~4# 相机反馈 Word (bit0~bit15 逐盒剔除)
+    ///   DBB8/9/10/11 = 1#~4# 停机标识 Byte (0/1/2/3)
+    ///   DBX12.0~12.3  = 1#~4# 拍照完成 Bool
+    ///   DBX12.4       = CameraReady Bool
+    ///   DBX12.5       = CameraOnline 心跳 (由 S7_1500Class 管理)
+    /// 日志: 主Logger记录结果摘要(便于关联推断日志)，PlcLogger记录详细地址级写入(便于排查PLC通讯问题)
     /// </summary>
     public class PlcResultService : IDisposable
     {
-        private readonly ModbusClass _modbus;
         private readonly S7_1500Class _s7;
-        private readonly string _protocolType;
         private readonly bool _simulateMode;
         private bool _disposed;
 
-        // ── 地址配置 ──
-        public string FrontCompleteAddr { get; set; }
-        public string BackCompleteAddr { get; set; }
-        public string EndFaceCompleteAddr { get; set; }
-        public string SideCompleteAddr { get; set; }
-        public string FrontDefectStartAddr { get; set; }
-        public string BackDefectStartAddr { get; set; }
-        public string EndFaceDefectStartAddr { get; set; }
-        public string SideDefectStartAddr { get; set; }
+        // ── DB47 地址常量 ──
+        private static readonly string[] FeedbackWordAddrs = { "DB47.DBW0", "DB47.DBW2", "DB47.DBW4", "DB47.DBW6" };
+        private static readonly string[] FailureByteAddrs = { "DB47.DBB8", "DB47.DBB9", "DB47.DBB10", "DB47.DBB11" };
+        private static readonly string[] WorkDoneBoolAddrs = { "DB47.DBX12.0", "DB47.DBX12.1", "DB47.DBX12.2", "DB47.DBX12.3" };
+        private const string CAMERA_READY_ADDR = "DB47.DBX12.4";
 
-        /// <summary>完成信号脉冲宽度(ms)</summary>
-        public int CompletePulseMs { get; set; } = 50;
-
-        public PlcResultService(ModbusClass modbus = null, S7_1500Class s7 = null, bool simulateMode = true)
+        public PlcResultService(S7_1500Class s7 = null, bool simulateMode = true)
         {
-            _modbus = modbus;
             _s7 = s7;
             _simulateMode = simulateMode;
 
-            _protocolType = Class_Config._Config.PlcProtocolType ?? "Modbus";
-
-            // 从 setup.ini 读取地址
-            FrontCompleteAddr = Class_Config._Config.FrontCompleteAddr ?? "D10000";
-            BackCompleteAddr = Class_Config._Config.BackCompleteAddr ?? "D10001";
-            EndFaceCompleteAddr = Class_Config._Config.EndFaceCompleteAddr ?? "D10002";
-            SideCompleteAddr = Class_Config._Config.SideCompleteAddr ?? "D10003";
-            FrontDefectStartAddr = Class_Config._Config.FrontDefectStartAddr ?? "D10100";
-            BackDefectStartAddr = Class_Config._Config.BackDefectStartAddr ?? "D10124";
-            EndFaceDefectStartAddr = Class_Config._Config.EndFaceDefectStartAddr ?? "D10148";
-            SideDefectStartAddr = Class_Config._Config.SideDefectStartAddr ?? "D10172";
-
-            CommonLib.PlcLogger.Info($"[PlcResultService] 初始化, 协议={_protocolType}, 模拟={_simulateMode}");
+            PlcLogger.Info($"[PlcResultService] 初始化 S7-1500 DB47, 模拟={_simulateMode}");
+            Logger.Info($"[PlcResultService] 初始化完成, 协议=S7-1500, 模拟={_simulateMode}");
         }
 
-        /// <summary>发送单工位逐盒缺陷码 (P个Int16)</summary>
-        public bool SendStationResult(StationType station, int[] defectCodes, int pCount)
+        /// <summary>发送单工位结果: 剔除位(Word) + 停机标识(Byte)</summary>
+        public bool SendStationResult(StationType station, ushort rejectBits, int stopLevel, int pCount)
         {
-            if (defectCodes == null || defectCodes.Length == 0)
-            {
-                CommonLib.PlcLogger.Warn($"[PlcResultService] {station}缺陷码为空, 跳过发送");
-                return false;
-            }
+            int idx = (int)station;
+            string wordAddr = FeedbackWordAddrs[idx];
+            string byteAddr = FailureByteAddrs[idx];
 
-            string startAddr = GetDefectStartAddr(station);
-            if (string.IsNullOrEmpty(startAddr))
-            {
-                CommonLib.PlcLogger.Warn($"[PlcResultService] {station}缺陷码起始地址未配置");
-                return false;
-            }
-
-            // 截断或补零到P个
-            var codes = new int[pCount];
-            for (int i = 0; i < pCount; i++)
-                codes[i] = (i < defectCodes.Length) ? defectCodes[i] : 0;
+            byte stopByte = (byte)Math.Min(stopLevel, 3);
 
             try
             {
                 if (_simulateMode)
                 {
-                    CommonLib.PlcLogger.Info($"[PlcResultService] [模拟] {station} 发送缺陷码: [{string.Join(",", codes)}] P={pCount} → {startAddr}");
+                    PlcLogger.Info($"[PLC-{station}] [模拟] {wordAddr}=0x{rejectBits:X4}(bit0~{pCount-1}) {byteAddr}={stopByte} P={pCount}");
                     return true;
                 }
 
-                if (_protocolType == "S7-1500" && _s7 != null)
+                if (_s7 == null)
                 {
-                    // TODO: S7-1500 DB地址格式需后续配置
-                    CommonLib.PlcLogger.Info($"[PlcResultService] [S7-1500] {station} 发送缺陷码: [{string.Join(",", codes)}] P={pCount}");
-                    return true;
-                }
-                else if (_modbus != null)
-                {
-                    _modbus.WriteStationResult(startAddr, codes);
-                    CommonLib.PlcLogger.Info($"[PlcResultService] [Modbus] {station} 发送缺陷码: [{string.Join(",", codes)}] P={pCount} → {startAddr}");
-                    return true;
-                }
-                else
-                {
-                    CommonLib.PlcLogger.Warn($"[PlcResultService] 协议={_protocolType} 但对应实例为null");
+                    PlcLogger.Warn($"[PLC-{station}] S7实例为null, 跳过发送");
+                    Logger.Warning($"[PLC-{station}] S7实例为null, 无法发送PLC结果");
                     return false;
                 }
-            }
-            catch (Exception ex)
-            {
-                CommonLib.PlcLogger.Error($"[PlcResultService] {station}发送缺陷码失败: {ex.Message}");
-                return false;  // 防御性: PLC故障不影响检测
-            }
-        }
 
-        /// <summary>发送工位拍照完成信号 (bool脉冲: true→延时→false)</summary>
-        public bool SendStationComplete(StationType station)
-        {
-            string addr = GetCompleteAddr(station);
-            if (string.IsNullOrEmpty(addr))
-            {
-                CommonLib.PlcLogger.Warn($"[PlcResultService] {station}完成信号地址未配置");
-                return false;
-            }
+                // 1. 写剔除位 Word
+                PlcLogger.Info($"[PLC-{station}] → {wordAddr}=0x{rejectBits:X4} (剔除位, P={pCount})");
+                _s7.WriteStationResult(wordAddr, new[] { (int)(short)rejectBits });
 
-            try
-            {
-                if (_simulateMode)
-                {
-                    CommonLib.PlcLogger.Info($"[PlcResultService] [模拟] {station} 拍照完成 → {addr}");
-                    return true;
-                }
+                // 2. 写停机标识 Byte
+                PlcLogger.Info($"[PLC-{station}] → {byteAddr}={stopByte} (停机标识)");
+                _s7.WriteByte(byteAddr, stopByte);
 
-                // 脉冲发送: true
-                WriteBoolInternal(addr, true);
-                // 短暂延时后恢复
-                Task.Run(async () =>
-                {
-                    await Task.Delay(CompletePulseMs);
-                    try { WriteBoolInternal(addr, false); }
-                    catch (Exception ex) { CommonLib.PlcLogger.Error($"[PlcResultService] 完成信号复位失败: {ex.Message}"); }
-                });
-
-                CommonLib.PlcLogger.Info($"[PlcResultService] {station} 拍照完成信号已发送 → {addr}");
                 return true;
             }
             catch (Exception ex)
             {
-                CommonLib.PlcLogger.Error($"[PlcResultService] {station}发送完成信号失败: {ex.Message}");
+                PlcLogger.Error($"[PLC-{station}] 发送失败: {ex.Message}");
+                Logger.Error($"[PLC-{station}] 发送PLC结果异常: wordAddr={wordAddr} byteAddr={byteAddr} rejectBits=0x{rejectBits:X4} stopLevel={stopByte} err={ex.Message}");
                 return false;
             }
         }
 
-        private void WriteBoolInternal(string addr, bool value)
+        /// <summary>发送工位拍照完成信号 (写 true, PLC端清除)</summary>
+        public bool SendStationComplete(StationType station)
         {
-            if (_protocolType == "S7-1500" && _s7 != null)
-                _s7.WriteBool(addr, value);
-            else if (_modbus != null)
-                _modbus.WriteBool(addr, value);
+            string addr = WorkDoneBoolAddrs[(int)station];
+
+            try
+            {
+                if (_simulateMode)
+                {
+                    PlcLogger.Info($"[PLC-{station}] [模拟] {addr}=true (拍照完成)");
+                    return true;
+                }
+
+                if (_s7 == null)
+                {
+                    PlcLogger.Warn($"[PLC-{station}] S7实例为null, 跳过完成信号");
+                    return false;
+                }
+
+                PlcLogger.Info($"[PLC-{station}] → {addr}=true (拍照完成)");
+                _s7.WriteBool(addr, true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PlcLogger.Error($"[PLC-{station}] 完成信号发送失败: {ex.Message}");
+                Logger.Error($"[PLC-{station}] 发送完成信号异常: addr={addr} err={ex.Message}");
+                return false;
+            }
         }
 
-        private string GetCompleteAddr(StationType station) => station switch
+        /// <summary>发送全部相机就绪信号</summary>
+        public bool SendCameraReady()
         {
-            StationType.Front => FrontCompleteAddr,
-            StationType.Back => BackCompleteAddr,
-            StationType.EndFace => EndFaceCompleteAddr,
-            StationType.Side => SideCompleteAddr,
-            _ => null
-        };
+            try
+            {
+                if (_simulateMode)
+                {
+                    PlcLogger.Info($"[PlcResultService] [模拟] {CAMERA_READY_ADDR}=true (CameraReady)");
+                    Logger.Info("[PlcResultService] [模拟] CameraReady 已发送");
+                    return true;
+                }
 
-        private string GetDefectStartAddr(StationType station) => station switch
-        {
-            StationType.Front => FrontDefectStartAddr,
-            StationType.Back => BackDefectStartAddr,
-            StationType.EndFace => EndFaceDefectStartAddr,
-            StationType.Side => SideDefectStartAddr,
-            _ => null
-        };
+                if (_s7 == null)
+                {
+                    PlcLogger.Warn("[PlcResultService] S7实例为null, 跳过CameraReady");
+                    return false;
+                }
+
+                PlcLogger.Info($"[PlcResultService] → {CAMERA_READY_ADDR}=true (CameraReady)");
+                Logger.Info("[PlcResultService] CameraReady 已发送 → " + CAMERA_READY_ADDR);
+                _s7.WriteBool(CAMERA_READY_ADDR, true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PlcLogger.Error($"[PlcResultService] CameraReady发送失败: {ex.Message}");
+                Logger.Error($"[PlcResultService] CameraReady发送异常: {ex.Message}");
+                return false;
+            }
+        }
 
         public void Dispose()
         {

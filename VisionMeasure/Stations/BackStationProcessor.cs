@@ -267,15 +267,19 @@ namespace Stations
 				}
 				Logger.Info("[Back] 步骤2汇总: 条形码=" + bc + " 日期码=" + dc + " 明显=" + ho + " 轻微=" + hs + " 盒子破=" + bb + " 总计=" + all.Count);
 				// 只把真正的NG缺陷写入状态，"条码:xxx"和"日期:xxx"等仅显示标签不覆盖状态
+				// Bug修复: 同一盒子多缺陷改为追加拼接，避免后一个覆盖前一个
 				foreach (var d in all)
 				{
 					if (d.BoxIndex < 0 || d.BoxIndex >= status.Count) continue;
 					bool isDisplayOnly = d.DefectType.StartsWith("条码:") || d.DefectType.StartsWith("日期:") || d.DefectType.StartsWith("双排:");
-					if (!isDisplayOnly) status[d.BoxIndex] = d.DefectType;
+					if (isDisplayOnly) continue;
+					status[d.BoxIndex] = status[d.BoxIndex] == "OK"
+						? d.DefectType
+						: status[d.BoxIndex] + "," + d.DefectType;
 				}
 				Logger.Info("[Back]   " + string.Join(" ", Enumerable.Range(1, status.Count).Select(i => i.ToString().PadLeft(2))));
 				Logger.Info("[Back]   " + string.Join("  ", status.Select(s => s == "OK" ? "O" : "X")));
-				StatusList = new List<string>(status);  // 保存副本供PLC读取
+				// 保存副本供PLC读取
 				bool isOk = status.All(s => s == "OK");
 				result.BackResult = isOk;
 				result.BackDefects = status.Where(s => s != "OK").Distinct().ToList();
@@ -464,26 +468,144 @@ namespace Stations
 		}
 
 		/// <summary>条码OpenCV预处理管线: 1.对比度亮度调整 2.灰度化 3.直方图均衡 4.高斯/中值滤波 5.自适应/Otsu/固定阈值 6.反转 7.形态学(闭/开/膨胀/腐蚀)</summary>
+		/// <summary>
+		/// 条码图像预处理管线: 灰度→对比度/亮度→直方图均衡→高斯模糊→中值滤波→阈值化→反色→形态学
+		/// 每步创建新Mat后释放旧Mat，防止内存泄漏
+		/// </summary>
 		private static Mat ApplyBarcodePreprocess(Mat src, Config.ModelParams p)
 		{
-			if (!p.BcEnablePreprocess) { var g2 = new Mat(); Cv2.CvtColor(src, g2, ColorConversionCodes.BGR2GRAY); return g2; }
+			// 预处理关闭: 仅转灰度
+			if (!p.BcEnablePreprocess)
+			{
+				var g2 = new Mat();
+				Cv2.CvtColor(src, g2, ColorConversionCodes.BGR2GRAY);
+				return g2;
+			}
+
 			Mat m = src.Clone();
-			if (Math.Abs(p.BcContrastAlpha - 1.0f) > 0.001f || p.BcBrightnessBeta != 0) { var t = new Mat(); m.ConvertTo(t, -1, p.BcContrastAlpha, p.BcBrightnessBeta); m.Dispose(); m = t; }
-			if (m.Channels() != 1) { var g2 = new Mat(); var cc = m.Channels() == 3 ? ColorConversionCodes.BGR2GRAY : ColorConversionCodes.BGRA2GRAY; Cv2.CvtColor(m, g2, cc); m.Dispose(); m = g2; }
-			if (p.BcEnableEqualizeHist) { var e = new Mat(); Cv2.EqualizeHist(m, e); m.Dispose(); m = e; }
-			if (p.BcEnableGaussianBlur) { var b = new Mat(); Cv2.GaussianBlur(m, b, new OpenCvSharp.Size(5, 5), 0); m.Dispose(); m = b; }
-			if (p.BcEnableMedianBlur) { var b = new Mat(); Cv2.MedianBlur(m, b, 5); m.Dispose(); m = b; }
+
+			// 1. 对比度/亮度调整
+			if (Math.Abs(p.BcContrastAlpha - 1.0f) > 0.001f || p.BcBrightnessBeta != 0)
+			{
+				var t = new Mat();
+				m.ConvertTo(t, -1, p.BcContrastAlpha, p.BcBrightnessBeta);
+				m.Dispose();
+				m = t;
+			}
+
+			// 2. 转灰度（如非单通道）
+			if (m.Channels() != 1)
+			{
+				var g2 = new Mat();
+				var cc = m.Channels() == 3
+					? ColorConversionCodes.BGR2GRAY
+					: ColorConversionCodes.BGRA2GRAY;
+				Cv2.CvtColor(m, g2, cc);
+				m.Dispose();
+				m = g2;
+			}
+
+			// 3. 直方图均衡
+			if (p.BcEnableEqualizeHist)
+			{
+				var e = new Mat();
+				Cv2.EqualizeHist(m, e);
+				m.Dispose();
+				m = e;
+			}
+
+			// 4. 高斯模糊
+			if (p.BcEnableGaussianBlur)
+			{
+				var b = new Mat();
+				Cv2.GaussianBlur(m, b, new OpenCvSharp.Size(5, 5), 0);
+				m.Dispose();
+				m = b;
+			}
+
+			// 5. 中值滤波
+			if (p.BcEnableMedianBlur)
+			{
+				var b = new Mat();
+				Cv2.MedianBlur(m, b, 5);
+				m.Dispose();
+				m = b;
+			}
+
+			// 6. 阈值化
 			int tm = p.BcThresholdMode;
-			if (tm == 1) { int bs = p.BcAdaptiveBlockSize; if (bs % 2 == 0) bs++; var t = new Mat(); Cv2.AdaptiveThreshold(m, t, 255, AdaptiveThresholdTypes.MeanC, ThresholdTypes.Binary, bs, p.BcAdaptiveC); m.Dispose(); m = t; }
-			else if (tm == 2) { var t = new Mat(); Cv2.Threshold(m, t, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary); m.Dispose(); m = t; }
-			else if (tm == 3) { var t = new Mat(); Cv2.Threshold(m, t, p.BcFixedThreshold, 255, ThresholdTypes.Binary); m.Dispose(); m = t; }
-			if (p.BcEnableInvert) { var t = new Mat(); Cv2.BitwiseNot(m, t); m.Dispose(); m = t; }
+			if (tm == 1) // 自适应阈值
+			{
+				int bs = p.BcAdaptiveBlockSize;
+				if (bs % 2 == 0) bs++;
+				var t = new Mat();
+				Cv2.AdaptiveThreshold(m, t, 255,
+					AdaptiveThresholdTypes.MeanC,
+					ThresholdTypes.Binary, bs, p.BcAdaptiveC);
+				m.Dispose();
+				m = t;
+			}
+			else if (tm == 2) // OTSU
+			{
+				var t = new Mat();
+				Cv2.Threshold(m, t, 0, 255,
+					ThresholdTypes.Otsu | ThresholdTypes.Binary);
+				m.Dispose();
+				m = t;
+			}
+			else if (tm == 3) // 固定阈值
+			{
+				var t = new Mat();
+				Cv2.Threshold(m, t, p.BcFixedThreshold, 255,
+					ThresholdTypes.Binary);
+				m.Dispose();
+				m = t;
+			}
+
+			// 7. 反色
+			if (p.BcEnableInvert)
+			{
+				var t = new Mat();
+				Cv2.BitwiseNot(m, t);
+				m.Dispose();
+				m = t;
+			}
+
+			// 8. 形态学操作
 			var k = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(3, 3));
-			if (p.BcEnableMorphClose) { var t = new Mat(); Cv2.MorphologyEx(m, t, MorphTypes.Close, k); m.Dispose(); m = t; }
-			if (p.BcEnableMorphOpen) { var t = new Mat(); Cv2.MorphologyEx(m, t, MorphTypes.Open, k); m.Dispose(); m = t; }
-			if (p.BcEnableMorphDilate) { var t = new Mat(); Cv2.MorphologyEx(m, t, MorphTypes.Dilate, k); m.Dispose(); m = t; }
-			if (p.BcEnableMorphErode) { var t = new Mat(); Cv2.MorphologyEx(m, t, MorphTypes.Erode, k); m.Dispose(); m = t; }
-			k.Dispose();
+			try
+			{
+				if (p.BcEnableMorphClose)
+				{
+					var t = new Mat();
+					Cv2.MorphologyEx(m, t, MorphTypes.Close, k);
+					m.Dispose();
+					m = t;
+				}
+				if (p.BcEnableMorphOpen)
+				{
+					var t = new Mat();
+					Cv2.MorphologyEx(m, t, MorphTypes.Open, k);
+					m.Dispose();
+					m = t;
+				}
+				if (p.BcEnableMorphDilate)
+				{
+					var t = new Mat();
+					Cv2.MorphologyEx(m, t, MorphTypes.Dilate, k);
+					m.Dispose();
+					m = t;
+				}
+				if (p.BcEnableMorphErode)
+				{
+					var t = new Mat();
+					Cv2.MorphologyEx(m, t, MorphTypes.Erode, k);
+					m.Dispose();
+					m = t;
+				}
+			}
+			finally { k.Dispose(); }
+
 			return m;
 		}
 
@@ -499,7 +621,9 @@ namespace Stations
 			for (int j = 0; j <= lb; j++) dp[0, j] = j;
 			for (int i = 1; i <= la; i++)
 				for (int j = 1; j <= lb; j++)
-					dp[i, j] = Math.Min(Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1), dp[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+					dp[i, j] = Math.Min(
+					Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1),
+					dp[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
 			return dp[la, lb];
 		}
 
@@ -632,7 +756,18 @@ namespace Stations
 								foreach (var blk in rt.Item2.Blocks)
 									if (!string.IsNullOrWhiteSpace(blk.Label)) texts.Add(blk.Label);
 							}
-							if (c2Shadow) { if (!r.ContainsKey(boxIdx)) r[boxIdx] = new List<BoxDefect>(); r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影", new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fullH, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fullH })); }
+							if (c2Shadow)
+							{
+								if (!r.ContainsKey(boxIdx))
+									r[boxIdx] = new List<BoxDefect>();
+								r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影",
+									new float[] {
+										(float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+										(float)my / fullH,
+										(float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+										(float)(my + mh) / fullH
+									}));
+							}
 							if (texts.Count == 0) continue;
 
 							string allText = string.Join(" ", texts);
@@ -650,7 +785,10 @@ namespace Stations
 							if (result == 0)
 								label = codingFormat.Contains("双排") ? "双排:" + allText : "日期:" + allText;
 							else
-								label = result == 1 ? "日期码错误(" + allText + ")" : "日期码不完全正确(" + allText + ")";
+							if (result == 1)
+								label = "日期码错误(" + allText + ")";
+							else
+								label = "日期码不完全正确(" + allText + ")";
 							r[boxIdx].Add(new BoxDefect(boxIdx, label, normBox));
 						}
 					}
@@ -661,18 +799,90 @@ namespace Stations
 		}
 
 		/// <summary>校验MFG格式日期: "MFG dd/MM/yyyy"→提取日期→比对当天, 0=正确 1=格式错 2=日期不匹配</summary>
-		private int CheckMFG(string text) { var m = MFG_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
+		private int CheckMFG(string text)
+		{
+			var m = MFG_RX.Match(text);
+			if (!m.Success) return 1;
+			if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null,
+				System.Globalization.DateTimeStyles.None, out DateTime dt))
+				return dt.Date == DateTime.Now.Date ? 0 : 2;
+			return 2;
+		}
 		/// <summary>校验LOT格式日期: "LOT yyyy/MM/dd"→提取日期→比对当天</summary>
-		private int CheckLOT(string text) { var m = LOT_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "yyyy/MM/dd", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.Date ? 0 : 2; return 2; }
+		private int CheckLOT(string text)
+		{
+			var m = LOT_RX.Match(text);
+			if (!m.Success) return 1;
+			if (DateTime.TryParseExact(m.Groups[1].Value, "yyyy/MM/dd", null,
+				System.Globalization.DateTimeStyles.None, out DateTime dt))
+				return dt.Date == DateTime.Now.Date ? 0 : 2;
+			return 2;
+		}
 		/// <summary>
 /// 挂钩缺陷检测: YOLO检测+分割厚度计算.
 /// 明显错位(classId=1): 直接映射到DarkRed框.
 /// 轻微错位(classId=0): 分割->DistanceTransform->厚度>阈值->OrangeRed框.
 /// 轻微检测仅在无明显错位时进行(避免重复标记).
 /// </summary>
-		private int CheckDoubleRow(List<string> lines) { if (lines.Count < 2) return 1; string mfgLine = null, expLine = null; foreach (var line in lines) { string s3 = line.Length >= 3 ? line.Substring(0, 3) : line; if (mfgLine == null && Regex.IsMatch(s3, "[MFG]")) mfgLine = line; if (expLine == null && Regex.IsMatch(s3, "[EXP]")) expLine = line; } if (mfgLine == null || expLine == null) return 1; int mfgR = CheckMFG(mfgLine); return mfgR != 0 ? mfgR : CheckEXP(expLine); }
+		private int CheckDoubleRow(List<string> lines)
+		{
+			if (lines.Count < 2) return 1;
+			string mfgLine = null, expLine = null;
+			foreach (var line in lines)
+			{
+				string s3 = line.Length >= 3 ? line.Substring(0, 3) : line;
+				if (mfgLine == null && Regex.IsMatch(s3, "[MFG]")) mfgLine = line;
+				if (expLine == null && Regex.IsMatch(s3, "[EXP]")) expLine = line;
+			}
+			if (mfgLine == null || expLine == null) return 1;
+			int mfgR = CheckMFG(mfgLine);
+			return mfgR != 0 ? mfgR : CheckEXP(expLine);
+		}
 		/// <summary>校验EXP格式日期: "EXP dd/MM/yyyy"→提取日期→比对(加10年)</summary>
-		private int CheckEXP(string text) { var m = EXP_RX.Match(text); if (!m.Success) return 1; if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime dt)) return dt.Date == DateTime.Now.AddYears(10).Date ? 0 : 2; return 2; }
+		private int CheckEXP(string text)
+		{
+			var m = EXP_RX.Match(text);
+			if (!m.Success) return 1;
+			if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null,
+				System.Globalization.DateTimeStyles.None, out DateTime dt))
+				return dt.Date == DateTime.Now.AddYears(10).Date ? 0 : 2;
+			return 2;
+		}
+
+		// ====== 盒子破损检测 (BackBoxBreakModel YOLO) ======
+		/// <summary>
+		/// 背面盒子破损检测: YOLO 推理 -> "盒子破损".
+		/// 左/右半图独立推理，centerX映射到全局盒号.
+		/// </summary>
+		private Dictionary<int, List<BoxDefect>> DetectBoxBreak(Mat left, Mat right, int p)
+		{
+			var results = new Dictionary<int, List<BoxDefect>>();
+			if (_models.BackBoxBreakModel == null) return results;
+			try
+			{
+				int hp = p / 2;
+				var images = new[] { left, right };
+				int[] offsets = { 0, hp };
+				for (int side = 0; side < 2; side++)
+				{
+					var detResult = _models.BackBoxBreakModel.Predict(images[side], ConfThreshold, IouThreshold);
+					if (detResult?.BoxesN == null || detResult.BoxesN.Length == 0) continue;
+					float imgW = images[side].Width;
+					for (int j = 0; j < detResult.BoxesN.Length; j++)
+					{
+						var bn = detResult.BoxesN[j];
+						float centerX = bn.X + bn.Width / 2f;
+						int gi = (int)(centerX / imgW * hp) + offsets[side];
+						gi = Math.Max(0, Math.Min(gi, p - 1));
+						float score = (detResult.Scores != null && j < detResult.Scores.Length) ? detResult.Scores[j] : 1.0f;
+						AddDefect(results, gi, "盒子破损",
+							new float[] { bn.X, bn.Y, bn.X + bn.Width, bn.Y + bn.Height }, score);
+					}
+				}
+			}
+			catch (Exception ex) { Logger.Error("背面盒子破损异常: " + ex.Message); }
+			return results;
+		}
 
 		// ====== 挂钩缺陷检测 (原有代码不变) ======
 	/// <summary>

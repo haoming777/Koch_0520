@@ -73,7 +73,19 @@ namespace Stations
 		private long _cycleId;
 		private volatile int _fip = 0; private int _cmc = 0; private const int Mcm3 = 3;
 		private static readonly string _sep = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "Side_Error.log");
-		private static void WSE(string m) { try { var d = System.IO.Path.GetDirectoryName(_sep); if (!System.IO.Directory.Exists(d)) System.IO.Directory.CreateDirectory(d); System.IO.File.AppendAllText(_sep, m + Environment.NewLine, System.Text.Encoding.UTF8); } catch { } }
+		/// <summary>侧面工位错误日志独立写入</summary>
+	private static void WSE(string m)
+	{
+		try
+		{
+			var d = System.IO.Path.GetDirectoryName(_sep);
+			if (!System.IO.Directory.Exists(d))
+				System.IO.Directory.CreateDirectory(d);
+			System.IO.File.AppendAllText(_sep,
+				m + Environment.NewLine, System.Text.Encoding.UTF8);
+		}
+		catch { }
+	}
 
 
 		public event Action<ProductResult> OnResultReady;
@@ -634,6 +646,9 @@ namespace Stations
 			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr2 + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle);
 
+			// 保存副本供PLC读取（Bug修复: 此前从未赋值StatusList导致PLC收不到侧面数据）
+			StatusList = new List<string>(mergedStatus);
+
 			// 立即触发事件(统计+状态, 渲染图稍后由阶段2补充)
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
@@ -714,6 +729,9 @@ namespace Stations
 			string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
 			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle + " | time=" + sw.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
+			// 保存副本供PLC读取（Bug修复: 此前从未赋值StatusList）
+			StatusList = new List<string>(mergedStatus);
+
 			OnResultReady?.Invoke(result);
 			OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), mergedStatus, p);
 

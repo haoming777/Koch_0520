@@ -424,7 +424,23 @@ namespace AIsdk
 		/// </summary>
 		/// <param name="mat"></param>
 		/// <returns></returns>
-		public void Dispose() { try { (pipelines1 as IDisposable)?.Dispose(); (module as IDisposable)?.Dispose(); (module_segmentation as IDisposable)?.Dispose(); (module_class as IDisposable)?.Dispose(); (solution as IDisposable)?.Dispose(); } catch { } pipelines1 = null; module = null; module_segmentation = null; module_class = null; solution = null; }
+		public void Dispose()
+		{
+			try
+			{
+				(pipelines1 as IDisposable)?.Dispose();
+				(module as IDisposable)?.Dispose();
+				(module_segmentation as IDisposable)?.Dispose();
+				(module_class as IDisposable)?.Dispose();
+				(solution as IDisposable)?.Dispose();
+			}
+			catch { }
+			pipelines1 = null;
+			module = null;
+			module_segmentation = null;
+			module_class = null;
+			solution = null;
+		}
 
 		private Bitmap Visualize(Mat mat)
 		{

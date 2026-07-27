@@ -149,7 +149,13 @@ namespace Config
 		/// <summary>从Config/ModelParams/{key}.json加载参数 → 文件不存在返回默认值</summary>
 		public static ModelParams Load(string key)
 		{
-			try { var p = Path.Combine(Dir, key + ".json"); if (File.Exists(p)) return JsonConvert.DeserializeObject<ModelParams>(File.ReadAllText(p)) ?? CreateDefault(key, key); }
+			try
+			{
+				var p = Path.Combine(Dir, key + ".json");
+				if (File.Exists(p))
+					return JsonConvert.DeserializeObject<ModelParams>(File.ReadAllText(p))
+						?? CreateDefault(key, key);
+			}
 			catch { }
 			return CreateDefault(key, key);
 		}

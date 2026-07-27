@@ -269,7 +269,7 @@
     <Compile Include="Hardware\CameraManager.cs" />
     <Compile Include="Hardware\CameraTriggerManager.cs" />
     <Compile Include="Hardware\MotionControlManager.cs" />
-    <Compile Include="Hardware\PlcCommunication.cs" />
+    <Compile Include="Config\StationDefectConfig.cs" />
     <Compile Include="Hardware\PlcResultService.cs" />
     <Compile Include="Models\AiModelManager.cs" />
     <Compile Include="Models\BatchResult.cs" />

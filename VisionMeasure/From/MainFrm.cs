@@ -1,4 +1,4 @@
-using CommonLib;
+﻿using CommonLib;
 using Config;
 using Hardware;
 using Models;
@@ -47,9 +47,7 @@ namespace VisionMeasure
 		// ========== 硬件管理层 ==========
 		private MotionControlManager _motionMgr;
 		private CameraTriggerManager _triggerMgr;
-		private PlcCommunication _plcComm;
 		private Hardware.PlcResultService _plcResultService;
-		private Config.DefectPriorityConfig _defectPriority;
 
 		// ========== AI模型管理层 ==========
 		private AiModelManager _aiModels;
@@ -346,26 +344,12 @@ namespace VisionMeasure
 				Logger.Warning("运动控制卡连接失败，将使用模拟模式");
 			}
 
-			// PLC通讯
-			string plcIp = SystemConfig.GetValue("PlcIp", "192.168.1.101");
-			int plcPort = SystemConfig.GetInt("PlcPort", 502);
-			_plcComm = new PlcCommunication(plcIp, plcPort, useSimulateMode);
+			// PLC通讯 (由 PlcResultService + S7_1500Class 管理)
 
-			if (_plcComm.Connect())
-			{
-				if (PlcState != null) PlcState.State = UILightState.On;
-				Logger.Info("PLC连接成功");
-			}
-			else
-			{
-				if (PlcState != null) PlcState.State = UILightState.Off;
-				Logger.Warning("PLC连接失败，将使用模拟模式");
-			}
-
-			// 初始化PLC结果发送服务 + 缺陷优先级配置
-			_defectPriority = Config.DefectPriorityConfig.Load();
-			_plcResultService = new Hardware.PlcResultService(null, null, useSimulateMode);
-			Logger.Info("PlcResultService和DefectPriorityConfig已初始化");
+			// 初始化缺陷→PLC配置（触发 Lazy 加载） + PLC结果发送服务
+			var _ = Config.StationDefectConfig.Instance;  // 触发首次加载
+			_plcResultService = new Hardware.PlcResultService(null, useSimulateMode);
+			Logger.Info("StationDefectConfig和PlcResultService已初始化");
 		}
 
 		/// <summary>
@@ -788,9 +772,13 @@ namespace VisionMeasure
 			{
 				if (_plcResultService != null && _frontStation.StatusList != null && _frontStation.StatusList.Count > 0)
 				{
-					var frontCodes = _defectPriority.ResolveCodes("Front", _frontStation.StatusList);
-					_plcResultService.SendStationResult(Hardware.StationType.Front, frontCodes, p);
-					_plcResultService.SendStationComplete(Hardware.StationType.Front);
+					var statusList = _frontStation.StatusList;
+					Config.StationDefectConfig.Instance.Resolve("Front", statusList, out ushort rejectBits, out int stopLevel);
+					Logger.Info($"[PLC-Front] P={p} OK={ok} NG={ng} StatusList=[{string.Join(",", statusList)}] → rejectBits=0x{rejectBits:X4} stopLevel={stopLevel}");
+					if (!_plcResultService.SendStationResult(Hardware.StationType.Front, rejectBits, stopLevel, p))
+						Logger.Error("[PLC-Front] SendStationResult 返回 false! 剔除/停机数据可能未写入PLC");
+					if (!_plcResultService.SendStationComplete(Hardware.StationType.Front))
+						Logger.Error("[PLC-Front] SendStationComplete 返回 false! 拍照完成信号可能未写入PLC");
 				}
 			};
 			_frontStation.Start();
@@ -1205,18 +1193,26 @@ namespace VisionMeasure
 				if (result.BackResult.HasValue && _plcResultService != null && _backStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var codes = _defectPriority.ResolveCodes("Back", _backStation.StatusList);
-					_plcResultService.SendStationResult(Hardware.StationType.Back, codes, p);
-					_plcResultService.SendStationComplete(Hardware.StationType.Back);
+					var statusList = _backStation.StatusList;
+					Config.StationDefectConfig.Instance.Resolve("Back", statusList, out ushort rejectBits, out int stopLevel);
+					Logger.Info($"[PLC-Back] pid={result.ProductId} P={p} StatusList=[{string.Join(",", statusList)}] → rejectBits=0x{rejectBits:X4} stopLevel={stopLevel}");
+					if (!_plcResultService.SendStationResult(Hardware.StationType.Back, rejectBits, stopLevel, p))
+						Logger.Error($"[PLC-Back] pid={result.ProductId} SendStationResult 返回 false!");
+					if (!_plcResultService.SendStationComplete(Hardware.StationType.Back))
+						Logger.Error($"[PLC-Back] pid={result.ProductId} SendStationComplete 返回 false!");
 				}
 				if (result.BackRenderImage != null)
 					UpdatePictureBox(xlPictureBox2, result.BackRenderImage);
 				if (result.EndFaceResult.HasValue && _plcResultService != null && _endFaceStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var codes = _defectPriority.ResolveCodes("EndFace", _endFaceStation.StatusList);
-					_plcResultService.SendStationResult(Hardware.StationType.EndFace, codes, p);
-					_plcResultService.SendStationComplete(Hardware.StationType.EndFace);
+					var statusList = _endFaceStation.StatusList;
+					Config.StationDefectConfig.Instance.Resolve("EndFace", statusList, out ushort rejectBits, out int stopLevel);
+					Logger.Info($"[PLC-EndFace] pid={result.ProductId} P={p} StatusList=[{string.Join(",", statusList)}] → rejectBits=0x{rejectBits:X4} stopLevel={stopLevel}");
+					if (!_plcResultService.SendStationResult(Hardware.StationType.EndFace, rejectBits, stopLevel, p))
+						Logger.Error($"[PLC-EndFace] pid={result.ProductId} SendStationResult 返回 false!");
+					if (!_plcResultService.SendStationComplete(Hardware.StationType.EndFace))
+						Logger.Error($"[PLC-EndFace] pid={result.ProductId} SendStationComplete 返回 false!");
 				}
 				if (result.EndFaceRenderImage != null)
 					UpdatePictureBox(xlPictureBox3, result.EndFaceRenderImage);
@@ -1226,9 +1222,13 @@ namespace VisionMeasure
 				if (result.SideResult.HasValue && _plcResultService != null && _sideStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var codes = _defectPriority.ResolveCodes("Side", _sideStation.StatusList);
-					_plcResultService.SendStationResult(Hardware.StationType.Side, codes, p);
-					_plcResultService.SendStationComplete(Hardware.StationType.Side);
+					var statusList = _sideStation.StatusList;
+					Config.StationDefectConfig.Instance.Resolve("Side", statusList, out ushort rejectBits, out int stopLevel);
+					Logger.Info($"[PLC-Side] pid={result.ProductId} P={p} StatusList=[{string.Join(",", statusList)}] → rejectBits=0x{rejectBits:X4} stopLevel={stopLevel}");
+					if (!_plcResultService.SendStationResult(Hardware.StationType.Side, rejectBits, stopLevel, p))
+						Logger.Error($"[PLC-Side] pid={result.ProductId} SendStationResult 返回 false!");
+					if (!_plcResultService.SendStationComplete(Hardware.StationType.Side))
+						Logger.Error($"[PLC-Side] pid={result.ProductId} SendStationComplete 返回 false!");
 				}
 				if (result.SideLeftRenderImage != null)
 					UpdatePictureBox(xlPictureBox5, result.SideLeftRenderImage);
@@ -1468,16 +1468,52 @@ namespace VisionMeasure
 
 
 		/// <summary>持久化班次计数→Config/counts.json(班次+日期+4工位OK/NG), 关闭时调用</summary>
-		private void SaveCounts() { try { var data = new Dictionary<string, string>() { { "shift", GetCurrentShift() }, { "date", DateTime.Now.ToString("yyyyMMdd") }, { "frontOk", _frontStation?.OkCount.ToString() ?? "0" }, { "frontNg", _frontStation?.NgCount.ToString() ?? "0" }, { "backOk", _backStation?.OkCount.ToString() ?? "0" }, { "backNg", _backStation?.NgCount.ToString() ?? "0" }, { "endOk", _endFaceStation?.OkCount.ToString() ?? "0" }, { "endNg", _endFaceStation?.NgCount.ToString() ?? "0" }, { "sideOk", _sideStation?.OkCount.ToString() ?? "0" }, { "sideNg", _sideStation?.NgCount.ToString() ?? "0" } }; File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json"), Newtonsoft.Json.JsonConvert.SerializeObject(data)); } catch { } }
+		private void SaveCounts()
+		{
+			try
+			{
+				var data = new Dictionary<string, string>()
+				{
+					{ "shift", GetCurrentShift() },
+					{ "date", DateTime.Now.ToString("yyyyMMdd") },
+					{ "frontOk", _frontStation?.OkCount.ToString() ?? "0" },
+					{ "frontNg", _frontStation?.NgCount.ToString() ?? "0" },
+					{ "backOk", _backStation?.OkCount.ToString() ?? "0" },
+					{ "backNg", _backStation?.NgCount.ToString() ?? "0" },
+					{ "endOk", _endFaceStation?.OkCount.ToString() ?? "0" },
+					{ "endNg", _endFaceStation?.NgCount.ToString() ?? "0" },
+					{ "sideOk", _sideStation?.OkCount.ToString() ?? "0" },
+					{ "sideNg", _sideStation?.NgCount.ToString() ?? "0" }
+				};
+				File.WriteAllText(
+					Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json"),
+					Newtonsoft.Json.JsonConvert.SerializeObject(data));
+			}
+			catch { }
+		}
 		/// <summary>恢复班次计数←Config/counts.json, 班次/日期不匹配则从0开始, BeginInvoke恢复UI</summary>
 		private void LoadCounts()
 		{
 			try
 			{
-				var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json"); if (!File.Exists(path)) return; var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path)); if (data == null) return; this.BeginInvoke(new Action(() =>
+				var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "counts.json");
+				if (!File.Exists(path)) return;
+				var data = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path));
+				if (data == null) return;
+				this.BeginInvoke(new Action(() =>
 				{
 					string savedShift = data.ContainsKey("shift") ? data["shift"] : ""; if (!string.IsNullOrEmpty(savedShift) && savedShift != GetCurrentShift() || (data.ContainsKey("date") && data["date"] != DateTime.Now.ToString("yyyyMMdd"))) { Logger.Info("计数班次不匹配(" + savedShift + "!=" + GetCurrentShift() + "),从0开始"); return; }
-					if (data.ContainsKey("frontOk")) { if (OK_zheng_Lb != null) OK_zheng_Lb.Text = data["frontOk"]; if (NG_zheng_Lb != null) NG_zheng_Lb.Text = data["frontNg"]; if (OK_fan_Lb != null) OK_fan_Lb.Text = data["backOk"]; if (NG_fan_Lb != null) NG_fan_Lb.Text = data["backNg"]; if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = data["endOk"]; if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = data["endNg"]; if (OK_cemian_Lb != null) OK_cemian_Lb.Text = data["sideOk"]; if (NG_cemian_Lb != null) NG_cemian_Lb.Text = data["sideNg"]; }
+					if (data.ContainsKey("frontOk"))
+					{
+						if (OK_zheng_Lb != null) OK_zheng_Lb.Text = data["frontOk"];
+						if (NG_zheng_Lb != null) NG_zheng_Lb.Text = data["frontNg"];
+						if (OK_fan_Lb != null) OK_fan_Lb.Text = data["backOk"];
+						if (NG_fan_Lb != null) NG_fan_Lb.Text = data["backNg"];
+						if (OK_duanmian_Lb != null) OK_duanmian_Lb.Text = data["endOk"];
+						if (NG_duanmian_Lb != null) NG_duanmian_Lb.Text = data["endNg"];
+						if (OK_cemian_Lb != null) OK_cemian_Lb.Text = data["sideOk"];
+						if (NG_cemian_Lb != null) NG_cemian_Lb.Text = data["sideNg"];
+					}
 					long fOk = long.Parse(data.ContainsKey("frontOk") ? data["frontOk"] : "0"); long fNg = long.Parse(data.ContainsKey("frontNg") ? data["frontNg"] : "0");
 					long bOk = long.Parse(data.ContainsKey("backOk") ? data["backOk"] : "0"); long bNg = long.Parse(data.ContainsKey("backNg") ? data["backNg"] : "0");
 					long eOk = long.Parse(data.ContainsKey("endOk") ? data["endOk"] : "0"); long eNg = long.Parse(data.ContainsKey("endNg") ? data["endNg"] : "0");
@@ -2224,8 +2260,7 @@ namespace VisionMeasure
 
 				DisposeAllCameras();            // 释放所有相机SDK实例
 				_motionMgr?.Disconnect();
-				_plcComm?.Disconnect();
-				_perfMonitor?.Dispose();
+			_perfMonitor?.Dispose();
 				_sysResMonitor?.Dispose();
 				_imageSaver?.Dispose();
 				_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();

@@ -63,20 +63,25 @@ namespace PLC调试.Class
 				plc.IpAddress = _Config.PlcIP;
 				plc.Port = _Config.PlcPort;
 
+				CommonLib.PlcLogger.Info($"[S7-1500] 正在连接 {_Config.PlcIP}:{_Config.PlcPort} ...");
+				CommonLib.Logger.Info($"[S7-1500] 连接PLC: {_Config.PlcIP}:{_Config.PlcPort}");
+
 				plc?.ConnectClose();
 				OperateResult connectState = plc.ConnectServer();
 				plcState = connectState.IsSuccess;
 
 				if (connectState.IsSuccess)
 				{
-
 					timeOut.Restart();
-
+					CommonLib.PlcLogger.Info($"[S7-1500] 连接成功 {_Config.PlcIP}:{_Config.PlcPort}");
+					CommonLib.Logger.Info($"[S7-1500] PLC连接成功");
 					EventConnectState(true, "PLC连接成功");
 					return true;
 				}
 				else
 				{
+					CommonLib.PlcLogger.Error($"[S7-1500] 连接失败: {connectState.Message}");
+					CommonLib.Logger.Error($"[S7-1500] PLC连接失败: {connectState.Message}");
 					EventConnectState(false, "PLC连接失败");
 					return false;
 				}
@@ -84,23 +89,26 @@ namespace PLC调试.Class
 			catch (Exception ex)
 			{
 				plcState = false;
+				CommonLib.PlcLogger.Error($"[S7-1500] 连接异常: {ex.Message}");
+				CommonLib.Logger.Error($"[S7-1500] PLC连接异常: {ex.Message}");
 				EventConnectState(false, $"连接PLC错误...\r\n {ex.Message} \r\n {ex.StackTrace}");
 				return false;
 			}
-
 		}
 
 		public void CloseModbus()
 		{
 			try
 			{
+				CommonLib.PlcLogger.Info("[S7-1500] 断开PLC连接");
+				CommonLib.Logger.Info("[S7-1500] 断开PLC连接");
 				plc.ConnectClose();
 				plcState = false;
-				toolClass.SaveLog($"关闭PLC连接...");
 			}
 			catch (Exception ex)
 			{
-				toolClass.SaveLog($"关闭PLC时错误...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				CommonLib.PlcLogger.Error($"[S7-1500] 断开连接异常: {ex.Message}");
+				CommonLib.Logger.Error($"[S7-1500] 断开PLC连接异常: {ex.Message}");
 			}
 		}
 
@@ -156,21 +164,24 @@ namespace PLC调试.Class
 		}
 
 
+		// 心跳地址: DB47.DBX12.5 (CameraOnline)
+		private const string HEARTBEAT_ADDR = "DB47.DBX12.5";
+
 		private void WriteKeepAlive()
 		{
 			try
 			{
-				short val = 1;
+				bool toggle = false;
 				while (true)
 				{
-					Thread.Sleep(500);
+					Thread.Sleep(200);  // 200ms 交替 1/0
 
 					if (plcState)
 					{
-						plc.Write("DB1000.DBD48", val);
+						toggle = !toggle;
+						plc.Write(HEARTBEAT_ADDR, toggle);
 					}
 				}
-
 			}
 			catch (Exception ex)
 			{
@@ -182,7 +193,7 @@ namespace PLC调试.Class
 		private void DoStateMethod()
 		{
 			timeOut.Start();
-			short oldVal = 0;
+			bool oldVal = false;
 			try
 			{
 				while (true)
@@ -190,22 +201,19 @@ namespace PLC调试.Class
 					Thread.Sleep(50);
 					if (plcState)
 					{
-						short newVal = plc.ReadInt16("DB1000.DBD48").Content;
+						bool newVal = plc.ReadBool(HEARTBEAT_ADDR).Content;
 						if (oldVal != newVal)
 						{
-							Console.WriteLine($"状态变了 之前{oldVal} 现在{newVal}");
 							oldVal = newVal;
-							//Console.WriteLine(timeOut.ElapsedMilliseconds);
 							timeOut.Restart();
-
-							Console.WriteLine($"状态更新后 时间清空了{timeOut.ElapsedMilliseconds}");
 						}
 
 						if (timeOut.ElapsedMilliseconds > 10000)
 						{
-							Console.WriteLine($"超出十秒状态没有更新了 时间：{timeOut.ElapsedMilliseconds}ms");
 							plcState = false;
-							EventConnectState(false, $"心跳状态超十秒未更新，判定为通讯断开状态，最后一次为[{newVal}]");
+							CommonLib.PlcLogger.Error($"[S7-1500] 心跳超时! {timeOut.ElapsedMilliseconds}ms未变化, 判定通讯断开");
+							CommonLib.Logger.Error($"[S7-1500] 心跳超时 {timeOut.ElapsedMilliseconds}ms, PLC通讯断开");
+							EventConnectState(false, $"心跳状态超十秒未更新，判定为通讯断开");
 						}
 					}
 				}
@@ -213,7 +221,9 @@ namespace PLC调试.Class
 			catch (Exception ex)
 			{
 				plcState = false;
-				EventConnectState(false, $"向PLC写心跳时发生错误...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				CommonLib.PlcLogger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
+				CommonLib.Logger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
+				EventConnectState(false, $"心跳监测异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
 			}
 		}
 
@@ -261,6 +271,27 @@ namespace PLC调试.Class
 			}
 		}
 
+		/// <summary>写单个Byte到S7-1500 DB (用于发送停机标识)</summary>
+		public void WriteByte(string dbAddr, byte value)
+		{
+			try
+			{
+				if (!plcState)
+				{
+					CommonLib.PlcLogger.Warn($"[S7-1500] 写Byte跳过(未连接) addr={dbAddr} value={value}");
+					return;
+				}
+				plc.Write(dbAddr, value);
+				CommonLib.PlcLogger.Info($"[S7-1500] 写Byte成功 addr={dbAddr} value={value}");
+			}
+			catch (Exception ex)
+			{
+				plcState = false;
+				CommonLib.PlcLogger.Error($"[S7-1500] 写Byte失败 addr={dbAddr}: {ex.Message}");
+				EventConnectState(false, "S7-1500写Byte异常: " + ex.Message);
+			}
+		}
+
 		bool bRunning = false;
 		int ReconnectCount = 0;
 
@@ -268,19 +299,21 @@ namespace PLC调试.Class
 		public void Reconnect()
 		{
 			if (bRunning) return;
-			toolClass.SaveLog("尝试重新连接PLC");
+			CommonLib.PlcLogger.Warn("[S7-1500] 开始重连PLC...");
+			CommonLib.Logger.Warning("[S7-1500] 开始PLC重连");
 			Task.Run(() =>
 			{
 				bRunning = true;
 				while (!plcState)
 				{
 					ReconnectCount++;
-					toolClass.SaveLog($"正在尝试第 {ReconnectCount} 次重连");
+					CommonLib.PlcLogger.Info($"[S7-1500] 重连第{ReconnectCount}次...");
 					ConnectModbus();
 					Thread.Sleep(1000);
 				}
 				bRunning = false;
-				toolClass.SaveLog($"在第 {ReconnectCount} 次时重连成功");
+				CommonLib.PlcLogger.Info($"[S7-1500] 重连成功! 共尝试{ReconnectCount}次");
+				CommonLib.Logger.Info($"[S7-1500] PLC重连成功, 共尝试{ReconnectCount}次");
 				ReconnectCount = 0;
 			});
 		}

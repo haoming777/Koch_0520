@@ -321,7 +321,16 @@ namespace Hardware
 				Array.Clear(mask, 0, mask.Length);
 				_motion.SetOutMulti(minPort, maxPort, mask);
 			}
-			catch (Exception ex) { Logger.Error($"批量脉冲输出失败: {ex.Message}"); try { foreach (var t in tasks) _motion.SetOutput(t.OutputPort, false); } catch { } }
+			catch (Exception ex)
+			{
+				Logger.Error($"批量脉冲输出失败: {ex.Message}");
+				try
+				{
+					foreach (var t in tasks)
+						_motion.SetOutput(t.OutputPort, false);
+				}
+				catch { }
+			}
 		}
 
 	/// <summary>单脉冲输出: SetOutput(true)→PreciseDelay(pulseWidthMs)→SetOutput(false), 异常时确保输出关闭</summary>

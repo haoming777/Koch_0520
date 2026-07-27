@@ -365,7 +365,14 @@ namespace VisionMeasure.Stations
 		{
 			if (block.Polygon == null || !block.Polygon.Any()) return new float[] { 0, 0, 0.1f, 0.1f };
 			float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
-			foreach (var pt in block.Polygon) { float gx = pt.X + offsetX, gy = pt.Y + offsetY; if (gx < minX) minX = gx; if (gy < minY) minY = gy; if (gx > maxX) maxX = gx; if (gy > maxY) maxY = gy; }
+			foreach (var pt in block.Polygon)
+			{
+				float gx = pt.X + offsetX, gy = pt.Y + offsetY;
+				if (gx < minX) minX = gx;
+				if (gy < minY) minY = gy;
+				if (gx > maxX) maxX = gx;
+				if (gy > maxY) maxY = gy;
+			}
 			return new float[] { minX / fullW, minY / fullH, maxX / fullW, maxY / fullH };
 		}
 
