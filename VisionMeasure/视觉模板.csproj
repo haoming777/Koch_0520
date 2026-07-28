@@ -270,6 +270,10 @@
     <Compile Include="Hardware\CameraTriggerManager.cs" />
     <Compile Include="Hardware\MotionControlManager.cs" />
     <Compile Include="Config\StationDefectConfig.cs" />
+    <Compile Include="From\PlcTestSendForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Utils\ModelPerfTracker.cs" />
     <Compile Include="Hardware\PlcResultService.cs" />
     <Compile Include="Models\AiModelManager.cs" />
     <Compile Include="Models\BatchResult.cs" />

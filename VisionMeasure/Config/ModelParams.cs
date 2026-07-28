@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
@@ -129,7 +129,11 @@ namespace Config
 									bool match = oldProp.Name.EndsWith(prop.Name)      // _BcContrastAlpha
 										|| oldProp.Name == "_" + prop.Name + "说明"   // _BcContrastAlpha说明
 										|| oldProp.Name == "_说明_" + prop.Name;       // _说明_BcContrastAlpha
-									if (match) { ordered[oldProp.Name] = oldProp.Value; break; }
+									if (match)
+					{
+						ordered[oldProp.Name] = oldProp.Value;
+						break;
+					}
 								}
 							}
 							ordered[prop.Name] = prop.Value;

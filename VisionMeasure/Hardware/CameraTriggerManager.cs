@@ -206,7 +206,11 @@ namespace Hardware
 							if (!stationEnabled) continue;
 
 							bool isSideCam = config.CameraId >= 7 && config.CameraId <= 8 && VisionMeasure.MainFrm.SideEnabled;
-							if (isSideCam) { OnTriggered?.Invoke(config.CameraId); continue; }
+							if (isSideCam)
+					{
+						OnTriggered?.Invoke(config.CameraId);
+						continue;
+					}
 
 						// 外部触发模式：跳过脉冲队列（硬件负责OUT脉冲）
 						if (ExternalTriggerEnabled) { continue; }
@@ -232,6 +236,28 @@ namespace Hardware
 					}
 					foreach (var kv in newStates)
 						_lastStates[kv.Key] = kv.Value;
+					// ── IN5/IN13 边沿日志(Info级别, 排查侧面不触发问题) ──
+					{
+						bool in5Cur = (inBits & (1 << (5 - 4))) != 0;  // IN5 = bit1
+						if (_lastStates.TryGetValue(5, out bool in5Last))
+						{
+							if (!in5Last && in5Cur)
+								Logger.Info("[Trigger] IN5↑ (皮带: 停止→运行)");
+							else if (in5Last && !in5Cur)
+								Logger.Info("[Trigger] IN5↓ (皮带: 运行→停止)");
+						}
+						_lastStates[5] = in5Cur;
+					
+						bool in13Cur = (inBits & (1 << (13 - 4))) != 0;  // IN13 = bit9
+						if (_lastStates.TryGetValue(13, out bool in13Last))
+						{
+							if (!in13Last && in13Cur)
+								Logger.Info("[Trigger] IN13↑ (工件到位)");
+							else if (in13Last && !in13Cur)
+								Logger.Info("[Trigger] IN13↓ (工件离开)");
+						}
+						_lastStates[13] = in13Cur;
+					}
 
 					// 控制扫描速率 ≈2000Hz，防止纯忙循环把ZMC打崩
 					Thread.SpinWait(2000);

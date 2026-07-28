@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommonLib;
 using Config;
+using static CommonLib.Class_Config;
 using Models;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
@@ -97,13 +98,15 @@ namespace VisionMeasure.Stations
 
 		// 从模型best.json加载阈值
 		/// <summary>初始化模型阈值: 从FrontBoxBreakModel加载Conf/Iou阈值覆盖默认值</summary>
-		public void InitThresholdsFromModel() {
-			if (_models.FrontBoxBreakModel != null) {
-				if (_models.FrontBoxBreakModel != null)
+		public void InitThresholdsFromModel()
+		{
+			if (_models.FrontBoxBreakModel != null)
 			{
-				ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres;
-				IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres;
-			}
+				if (_models.FrontBoxBreakModel != null)
+				{
+					ConfThreshold = _models.FrontBoxBreakModel.DefaultConfThres;
+					IouThreshold = _models.FrontBoxBreakModel.DefaultIouThres;
+				}
 				Logger.Info($"[Front] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 			}
 		}
@@ -113,7 +116,7 @@ namespace VisionMeasure.Stations
 		public void RestoreCounts(long ok, long ng) { _okCount = ok; _ngCount = ng; }
 		public void ClearCounters() { _okCount = 0; _ngCount = 0; }
 
-		/// <summary>相机1(正面左)图像回调 — 图像→Mat→Flip(XY翻转)→配对缓冲→CheckAndProcessAsync</summary>
+		/// <summary>相机1(正面左)图像回调 — 图像→Mat→配对缓冲→CheckAndProcessAsync</summary>
 		public void OnCam1(Bitmap leftImg, object extraArg = null)
 		{
 			if (leftImg == null) return;
@@ -123,12 +126,11 @@ namespace VisionMeasure.Stations
 			{
 				_leftBuffer?.Dispose();
 				_leftBuffer = leftImg.ToMat();
-				if (!SkipCrop) Cv2.Flip(_leftBuffer, _leftBuffer, FlipMode.XY);
 			}
 			CheckAndProcessAsync();
 		}
 
-		/// <summary>相机2(正面右)图像回调 — 图像→Mat→Flip(XY翻转)→配对缓冲→CheckAndProcessAsync</summary>
+		/// <summary>相机2(正面右)图像回调 — 图像→Mat→配对缓冲→CheckAndProcessAsync</summary>
 		public void OnCam2(Bitmap rightImg, object extraArg = null)
 		{
 			if (rightImg == null) return;
@@ -138,13 +140,12 @@ namespace VisionMeasure.Stations
 			{
 				_rightBuffer?.Dispose();
 				_rightBuffer = rightImg.ToMat();
-				if (!SkipCrop) Cv2.Flip(_rightBuffer, _rightBuffer, FlipMode.XY);
 			}
 			CheckAndProcessAsync();
 		}
 
 		/// <summary>		
-		/// 配对+异步处理: 左右图都到达→Flip(XY翻转)→裁图→2路并行推理→汇总→绘制→保存		
+		/// 配对+异步处理: 左右图都到达→裁图→2路并行推理→汇总→绘制→保存
 		/// 并行: Task.Run(P号OCR) + Task.Run(盒子破损YOLO) → await Task.WhenAll		
 		/// P号: 逐盒ROI→ViMo OCR→正则匹配Pd+→与参考P号比对(EnablePNumberCheck开关)		
 		/// 破损: YOLO → ProcessYoloResults(按中心X坐标分配盒索引)		
@@ -180,24 +181,31 @@ namespace VisionMeasure.Stations
 				int pCount = _currentSku?.P ?? 8;
 				int halfP = pCount / 2;
 
-				// 步骤0: 裁图
+				// 步骤0: 裁图 (与背面一致: LeftPx=左边界, RightPx=右边界, 直传不做翻转换算)
 				leftProc = leftToProcess; rightProc = rightToProcess;
 				if (_currentSku != null && !SkipCrop)
 				{
 					try
 					{
-						int w = leftToProcess.Width;
 						if (_currentSku.FrontLeft_LeftPx > 0 || _currentSku.FrontLeft_RightPx > 0)
 						{
-							int rawL = _currentSku.FrontLeft_LeftPx, rawR = _currentSku.FrontLeft_RightPx;
-							leftProc = ImageHelper.CropImageHorizontallyCv2(leftToProcess, w - rawR, leftToProcess.Width - (w - rawL));
-							Logger.Debug($"[Front] 左图裁图: 原始{rawL}~{rawR} -> {leftProc.Width}x{leftProc.Height}");
+							int lPx = _currentSku.FrontLeft_LeftPx, rPx = _currentSku.FrontLeft_RightPx;
+							leftProc = ImageHelper.CropImageHorizontallyCv2(leftToProcess, lPx, leftToProcess.Width - rPx);
+							Logger.Info($"[Front] Camera1(正面左) SN={_Config.Camera1SN} 裁图: LeftPx={lPx} RightPx={rPx} 原图={leftToProcess.Width}x{leftToProcess.Height} → 裁后={leftProc.Width}x{leftProc.Height}");
+						}
+						else
+						{
+							Logger.Info($"[Front] Camera1(正面左) SN={_Config.Camera1SN} 裁图: 无需裁图 原图={leftToProcess.Width}x{leftToProcess.Height}");
 						}
 						if (_currentSku.FrontRight_LeftPx > 0 || _currentSku.FrontRight_RightPx > 0)
 						{
-							int rawL = _currentSku.FrontRight_LeftPx, rawR = _currentSku.FrontRight_RightPx;
-							rightProc = ImageHelper.CropImageHorizontallyCv2(rightToProcess, w - rawR, rightToProcess.Width - (w - rawL));
-							Logger.Debug($"[Front] 右图裁图: 原始{rawL}~{rawR} -> {rightProc.Width}x{rightProc.Height}");
+							int lPx = _currentSku.FrontRight_LeftPx, rPx = _currentSku.FrontRight_RightPx;
+							rightProc = ImageHelper.CropImageHorizontallyCv2(rightToProcess, lPx, rightToProcess.Width - rPx);
+							Logger.Info($"[Front] Camera2(正面右) SN={_Config.Camera2SN} 裁图: LeftPx={lPx} RightPx={rPx} 原图={rightToProcess.Width}x{rightToProcess.Height} → 裁后={rightProc.Width}x{rightProc.Height}");
+						}
+						else
+						{
+							Logger.Info($"[Front] Camera2(正面右) SN={_Config.Camera2SN} 裁图: 无需裁图 原图={rightToProcess.Width}x{rightToProcess.Height}");
 						}
 					}
 					catch (Exception ex) { Logger.Warning($"[Front] 裁图失败({ex.Message}), 使用原图"); }
@@ -235,8 +243,7 @@ namespace VisionMeasure.Stations
 					statusList.Add(defects.Count > 0 ? string.Join(",", defects) : "OK");
 				}
 				StatusList = new List<string>(statusList); // 保存副本供PLC读取
-				Logger.Info("[Front]  " + string.Join(" ", Enumerable.Range(1,statusList.Count).Select(i => i.ToString().PadLeft(2))));
-				Logger.Info("[Front]  " + string.Join("  ", statusList.Select(s => s == "OK" ? "O" : "X")));
+				Logger.Info("[Front] 逐盒: [" + string.Join("] [", statusList) + "]");
 
 				int currentNgCount = ngArray.Count(n => n);
 				bool isOk = (currentNgCount == 0);
@@ -275,6 +282,7 @@ namespace VisionMeasure.Stations
 				var sw4 = System.Diagnostics.Stopwatch.StartNew();
 				SaveImages(leftProc, rightProc, merged, ngArray);
 				Logger.Info($"[Front] 步骤4完成: 保存={sw4.Elapsed.TotalMilliseconds:F1}ms");
+				ModelPerfTracker.RecordPipeline("Front", 0, sw1.Elapsed.TotalMilliseconds, sw3.Elapsed.TotalMilliseconds, sw4.Elapsed.TotalMilliseconds, elapsed);
 
 				// 步骤5: 发射结果事件(更新UI + PLC)
 				OnResultReady?.Invoke(merged, ngArray, _okCount, _ngCount);
@@ -291,9 +299,9 @@ namespace VisionMeasure.Stations
 		}
 
 		/// <summary>
-/// P号码OCR识别: 逐盒ROI裁剪(左halfP+右halfP, 取下方1/3),
-/// ViMo OCR -> 正则匹配 -> 与参考P号比对, 返回缺陷列表.
-/// </summary>
+		/// P号码OCR识别: 逐盒ROI裁剪(左halfP+右halfP, 取下方1/3),
+		/// ViMo OCR -> 正则匹配 -> 与参考P号比对, 返回缺陷列表.
+		/// </summary>
 		private Dictionary<int, List<BoxDefect>> RecognizePNumber(Mat left, Mat right, int pCount, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
@@ -303,7 +311,7 @@ namespace VisionMeasure.Stations
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
 				int boxWL = wL / halfP, boxWR = wR / halfP;
 				double pcRatio = (_pcodeParams != null) ? _pcodeParams.StartHeightRatioPCode : (2.0 / 3.0);
-			int startYL = (int)(hL * pcRatio), startYR = (int)(hR * pcRatio);
+				int startYL = (int)(hL * pcRatio), startYR = (int)(hR * pcRatio);
 				string refPNumber = _currentSku?.FrontPCode;
 				bool hasRef = !string.IsNullOrEmpty(refPNumber);
 
@@ -319,7 +327,9 @@ namespace VisionMeasure.Stations
 			int fullW, int fullH, int offsetX, int offsetY, Dictionary<int, List<BoxDefect>> results)
 		{
 			ResponseList<OcrResponse> ocrResults;
+			var ocrSw = System.Diagnostics.Stopwatch.StartNew();
 			int ret = _models.FrontOcrModel.Run(roi, out ocrResults);
+			ModelPerfTracker.Record("Front", "P号OCR", ocrSw.Elapsed.TotalMilliseconds);
 			if (ret != 0 || ocrResults == null || ocrResults.Count == 0)
 			{
 				if (hasRef && EnablePNumberCheck)
@@ -410,7 +420,9 @@ namespace VisionMeasure.Stations
 
 						try
 						{
+							var bbSw = System.Diagnostics.Stopwatch.StartNew();
 							var result = _models.FrontBoxBreakModel.Predict(patch, ConfThreshold, IouThreshold);
+							ModelPerfTracker.Record("Front", "盒子破损", bbSw.Elapsed.TotalMilliseconds);
 
 							for (int j = 0; j < result.Boxes.Length; j++)
 							{
@@ -444,7 +456,7 @@ namespace VisionMeasure.Stations
 				}
 
 				// 处理左右两侧
-				Logger.Info($"[Front BatchLog] ▶ 盒子破推理: batch=1 逐张Predict, 左3×2={3*2}patch 右3×2={3*2}patch (P={pCount})");
+				Logger.Info($"[Front BatchLog] ▶ 盒子破推理: batch=1 逐张Predict, 左3×2={3 * 2}patch 右3×2={3 * 2}patch (P={pCount})");
 				ProcessSide(left, isLeft: true);
 				ProcessSide(right, isLeft: false);
 
@@ -615,7 +627,8 @@ namespace VisionMeasure.Stations
 				for (int i = 0; i < n && startIdx + i < statusList.Count; i++)
 				{
 					string s = statusList[startIdx + i];
-					string disp = s == "OK" ? "OK" : (s.Length > 4 ? s.Substring(0, 4) : s);
+					int maxLen = Math.Min(s.Length, 4);
+					string disp = s == "OK" ? "OK" : s.Substring(0, maxLen);
 					Color c = s == "OK" ? Color.Green : Color.Red;
 					float cx = (i + 0.5f) * imgWidth / n;
 					var sz = g.MeasureString(disp, sf);

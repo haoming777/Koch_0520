@@ -1,4 +1,4 @@
-using Config;
+﻿using Config;
 using Hardware;
 using Models;
 using OpenCvSharp;
@@ -251,10 +251,22 @@ namespace Stations
 		/// </summary>
 		public void StartDetection()
 		{
-			if (_disposed) { Logger.Warning("[Side] 已释放"); return; }
-			if (_sku == null) { Logger.Error("[Side] SKU未设置, 无法启动检测"); return; }
+			if (_disposed)
+			{
+				Logger.Warning("[Side] 已释放");
+				return;
+			}
+			if (_sku == null)
+			{
+				Logger.Error("[Side] SKU未设置, 无法启动检测");
+				return;
+			}
 
-			if (IsMoving) { Logger.Warning("[Side] 上一周期未完成, 跳过本次触发(防重入)"); return; }
+			if (IsMoving)
+			{
+				Logger.Warning("[Side] 上一周期未完成, 跳过本次触发(防重入)");
+				return;
+			}
 			long myCycleId = Interlocked.Increment(ref _cycleId);
 			long tickStartDetection = DateTime.Now.Ticks;
 			Logger.Debug($"[Side] ⏱ StartDetection入口 Ticks={tickStartDetection} 时间={DateTime.Now:HH:mm:ss.fff}");
@@ -279,7 +291,11 @@ namespace Stations
 							Thread.Sleep(5);
 						double lockWaitMs = (DateTime.Now.Ticks - tickLockWait) / 10000.0;
 						Logger.Debug($"[Side] ⏱ 安全锁等待耗时={lockWaitMs:F1}ms");
-						if (cts.Token.IsCancellationRequested) { Logger.Warning("[Side] 安全锁等待被取消"); return; }
+						if (cts.Token.IsCancellationRequested)
+					{
+						Logger.Warning("[Side] 安全锁等待被取消");
+						return;
+					}
 						Logger.Info("[Side] 安全锁已释放(门关) IN" + SafetyLockPort + "=1，继续执行");
 					}
 				Logger.Info("[Side] DETECT start P=" + _sku.P + " at " + DateTime.Now.ToString("HH:mm:ss.fff"));
@@ -294,7 +310,11 @@ namespace Stations
 					if (!streamTask.Wait(5000)) { Logger.Warning($"[Side] ⚠ ProcessStream未在5s内完成, 强制汇总! 左结果={_leftResults.Count}/{_sku.P} 右结果={_rightResults.Count}/{_sku.P}"); }  // ProcessStream内部有3s无图超时, 这里给2s兜底
 					FinalizeResults();
 				}
-				catch (OperationCanceledException) { Logger.Warning("[Side] 运动被取消(安全锁)"); FinalizeResults(); }
+				catch (OperationCanceledException)
+				{
+					Logger.Warning("[Side] 运动被取消(安全锁)");
+					FinalizeResults();
+				}
 				catch (Exception ex) { Logger.Error("[Side] 异常: " + ex.Message); }
 				finally
 				{
@@ -645,9 +665,11 @@ namespace Stations
 			string defStr2 = " | 左侧面:" + (lStats2.Count > 0 ? string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr2 + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle);
+			ModelPerfTracker.Count("Side", "收图", _cam7ThisCycle + _cam8ThisCycle);
 
 			// 保存副本供PLC读取（Bug修复: 此前从未赋值StatusList导致PLC收不到侧面数据）
 			StatusList = new List<string>(mergedStatus);
+			Logger.Info("[Side] 逐盒: [" + string.Join("] [", mergedStatus) + "]");
 
 			// 立即触发事件(统计+状态, 渲染图稍后由阶段2补充)
 			OnResultReady?.Invoke(result);
@@ -787,7 +809,9 @@ namespace Stations
 
 			if (EnableSideDefectCheck && _models.SideDefectModel != null && allCrops.Count > 0)
 			{
+				var batchSw = System.Diagnostics.Stopwatch.StartNew();
 				var results = _models.SideDefectModel.PredictBatch(allCrops, ConfThreshold, IouThreshold);
+				ModelPerfTracker.Record("Side", "缺陷检测(batch)", batchSw.Elapsed.TotalMilliseconds);
 				var imgDefects = new Dictionary<int, List<BoxDefect>>();
 				for (int i = 0; i < results.Count; i++)
 				{
@@ -830,8 +854,12 @@ namespace Stations
 						if (EnableSideDefectCheck && _models.SideDefectModel != null)
 						{
 							// 单张推理: 头尾各自Predict, 避免batch拼接导致坐标映射偏差
-							var headResult = _models.SideDefectModel.Predict(head, ConfThreshold, IouThreshold);
-							var tailResult = _models.SideDefectModel.Predict(tail, ConfThreshold, IouThreshold);
+							var headSw = System.Diagnostics.Stopwatch.StartNew();
+						var headResult = _models.SideDefectModel.Predict(head, ConfThreshold, IouThreshold);
+						ModelPerfTracker.Record("Side", "缺陷检测", headSw.Elapsed.TotalMilliseconds);
+							var tailSw = System.Diagnostics.Stopwatch.StartNew();
+						var tailResult = _models.SideDefectModel.Predict(tail, ConfThreshold, IouThreshold);
+						ModelPerfTracker.Record("Side", "缺陷检测", tailSw.Elapsed.TotalMilliseconds);
 							bool ng = false;
 							// 头部检测：坐标保持原样(0~cropW)
 							if (headResult != null && headResult.BoxesN?.Length > 0)
@@ -862,7 +890,11 @@ namespace Stations
 					}
 				}
 			}
-			catch (Exception ex) { result.Status = "错误"; Logger.Error("[Side] 推理异常: " + ex.Message); }
+			catch (Exception ex)
+			{
+				result.Status = "错误";
+				Logger.Error("[Side] 推理异常: " + ex.Message);
+			}
 			return result;
 		}
 
@@ -898,7 +930,7 @@ namespace Stations
 			for (int i = 0; i < count; i++)
 			{
 				Bitmap bmp = i < leftImages.Count
-					? RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults)
+					? (RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults) ?? CreateMissingBmp(i, count))
 					: CreateMissingBmp(i, count);
 				newLeft.Add(bmp);
 				newDisplay.Add(bmp);
@@ -908,7 +940,7 @@ namespace Stations
 			for (int i = 0; i < count; i++)
 			{
 				Bitmap bmp = i < rightImages.Count
-					? RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults)
+					? (RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults) ?? CreateMissingBmp(i, count))
 					: CreateMissingBmp(i, count);
 				newRight.Add(bmp);
 				newDisplay.Add(bmp);
@@ -1026,7 +1058,11 @@ namespace Stations
 					return bmp;
 				}
 			}
-			catch (Exception ex) { Logger.Error("[Side] 渲染异常: " + ex.Message); return null; }
+			catch (Exception ex)
+			{
+				Logger.Error("[Side] 渲染异常: " + ex.Message);
+				return null;
+			}
 		}
 
 		/// <summary>获取当前显示的Mat图像(Clone副本, 线程安全)</summary>

@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommonLib;
 using PLC调试.Class;
+using VisionMeasure.Utils;
 
 namespace Hardware
 {
@@ -13,21 +14,23 @@ namespace Hardware
     /// </summary>
     public enum StationType
     {
-        Front = 0,
-        Back = 1,
-        EndFace = 2,
-        Side = 3
+        Front = 0,   // 1# 正面
+        EndFace = 1, // 2# 端面
+        Side = 2,    // 3# 侧面
+        Back = 3     // 4# 背面
     }
 
     /// <summary>
     /// 统一PLC结果发送服务 — 纯 S7-1500 DB47
     /// 发送流程: 各工位处理完成 → SendStationResult(rejectBits + stopLevel) → SendStationComplete(Bool)
     /// DB47 地址:
-    ///   DBW0/2/4/6   = 1#~4# 相机反馈 Word (bit0~bit15 逐盒剔除)
-    ///   DBB8/9/10/11 = 1#~4# 停机标识 Byte (0/1/2/3)
-    ///   DBX12.0~12.3  = 1#~4# 拍照完成 Bool
-    ///   DBX12.4       = CameraReady Bool
-    ///   DBX12.5       = CameraOnline 心跳 (由 S7_1500Class 管理)
+    ///   1# 正面: DBW0/DBB8/DBX12.0
+    ///   2# 端面: DBW2/DBB9/DBX12.1
+    ///   3# 侧面: DBW4/DBB10/DBX12.2
+    ///   4# 背面: DBW6/DBB11/DBX12.3
+    ///   DBX12.4 = CameraReady Bool
+    ///   DBX12.5 = CameraOnline 心跳
+    ///   剔除信号: bit=0→OK, bit=1→NG剔除
     /// 日志: 主Logger记录结果摘要(便于关联推断日志)，PlcLogger记录详细地址级写入(便于排查PLC通讯问题)
     /// </summary>
     public class PlcResultService : IDisposable
@@ -88,6 +91,7 @@ namespace Hardware
             catch (Exception ex)
             {
                 PlcLogger.Error($"[PLC-{station}] 发送失败: {ex.Message}");
+                ModelPerfTracker.Count("PLC", station + "失败");
                 Logger.Error($"[PLC-{station}] 发送PLC结果异常: wordAddr={wordAddr} byteAddr={byteAddr} rejectBits=0x{rejectBits:X4} stopLevel={stopByte} err={ex.Message}");
                 return false;
             }

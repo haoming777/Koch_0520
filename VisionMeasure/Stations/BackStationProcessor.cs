@@ -177,7 +177,11 @@ namespace Stations
 		// 从模型best.json加载阈值
 		public void InitThresholdsFromModel()
 		{
-			if (_models.BackHookModel != null) { ConfThreshold = _models.BackHookModel.DefaultConfThres; IouThreshold = _models.BackHookModel.DefaultIouThres; }
+			if (_models.BackHookModel != null)
+			{
+				ConfThreshold = _models.BackHookModel.DefaultConfThres;
+				IouThreshold = _models.BackHookModel.DefaultIouThres;
+			}
 			Logger.Info($"[Back] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 		}
 
@@ -187,7 +191,11 @@ namespace Stations
 		private void Process(Mat leftMat, Mat rightMat)
 		{
 			// 防呆: SKU未加载时使用默认值, 避免NPE
-			if (_sku == null) { Logger.Error("[Back] SKU未设置, 无法处理"); return; }
+			if (_sku == null)
+			{
+				Logger.Error("[Back] SKU未设置, 无法处理");
+				return;
+			}
 			long pid = DateTime.Now.Ticks;
 			long tickProcess = DateTime.Now.Ticks;
 			var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -208,13 +216,23 @@ namespace Stations
 					{
 						if (_sku.BackLeft_LeftPx > 0 || _sku.BackLeft_RightPx > 0)
 						{
-							leftProc = ImageHelper.CropImageHorizontallyCv2(leftMat, _sku.BackLeft_LeftPx, leftMat.Width - _sku.BackLeft_RightPx);
-							Logger.Debug("[Back] 左图裁图: 保留" + _sku.BackLeft_LeftPx + "~" + _sku.BackLeft_RightPx + " -> " + leftProc.Width + "x" + leftProc.Height);
+							int lPx = _sku.BackLeft_LeftPx, rPx = _sku.BackLeft_RightPx;
+							leftProc = ImageHelper.CropImageHorizontallyCv2(leftMat, lPx, leftMat.Width - rPx);
+							Logger.Info($"[Back] Camera5(背面左) SN={_Config.Camera5SN} 裁图: LeftPx={lPx} RightPx={rPx} 原图={leftMat.Width}x{leftMat.Height} → 裁后={leftProc.Width}x{leftProc.Height}");
+						}
+						else
+						{
+							Logger.Info($"[Back] Camera5(背面左) SN={_Config.Camera5SN} 裁图: 无需裁图 原图={leftMat.Width}x{leftMat.Height}");
 						}
 						if (_sku.BackRight_LeftPx > 0 || _sku.BackRight_RightPx > 0)
 						{
-							rightProc = ImageHelper.CropImageHorizontallyCv2(rightMat, _sku.BackRight_LeftPx, rightMat.Width - _sku.BackRight_RightPx);
-							Logger.Debug("[Back] 右图裁图: 保留" + _sku.BackRight_LeftPx + "~" + _sku.BackRight_RightPx + " -> " + rightProc.Width + "x" + rightProc.Height);
+							int lPx = _sku.BackRight_LeftPx, rPx = _sku.BackRight_RightPx;
+							rightProc = ImageHelper.CropImageHorizontallyCv2(rightMat, lPx, rightMat.Width - rPx);
+							Logger.Info($"[Back] Camera6(背面右) SN={_Config.Camera6SN} 裁图: LeftPx={lPx} RightPx={rPx} 原图={rightMat.Width}x{rightMat.Height} → 裁后={rightProc.Width}x{rightProc.Height}");
+						}
+						else
+						{
+							Logger.Info($"[Back] Camera6(背面右) SN={_Config.Camera6SN} 裁图: 无需裁图 原图={rightMat.Width}x{rightMat.Height}");
 						}
 					}
 					catch (Exception ex) { Logger.Warning("[Back] 裁图失败(" + ex.Message + "), 使用原图"); }
@@ -231,7 +249,14 @@ namespace Stations
 				tasks.Add(Task.Run(() => { hookDict = DetectHookDamage(leftProc, rightProc, p); }));
 				Dictionary<int, List<BoxDefect>> boxBreakDict = null;
 				if (EnableBoxBreakCheck && _models.BackBoxBreakModel != null)
+				{
+					Logger.Debug($"[Back] 盒子破损任务已添加 P={p} Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
 					tasks.Add(Task.Run(() => { boxBreakDict = DetectBoxBreak(leftProc, rightProc, p); }));
+				}
+				else
+				{
+					Logger.Warning($"[Back] 盒子破损跳过: EnableBoxBreakCheck={EnableBoxBreakCheck} BackBoxBreakModel={(_models.BackBoxBreakModel != null ? "已加载" : "NULL! 检查setup.ini BackBoxBreakModel路径和best.json")}");
+				}
 				Task.WaitAll(tasks.ToArray());
 				var inferMs = sw1.Elapsed.TotalMilliseconds;
 				Logger.Info("[Back] 步骤1完成: 推理=" + inferMs.ToString("F1") + "ms");
@@ -278,8 +303,8 @@ namespace Stations
 						: status[d.BoxIndex] + "," + d.DefectType;
 				}
 				Logger.Info("[Back]   " + string.Join(" ", Enumerable.Range(1, status.Count).Select(i => i.ToString().PadLeft(2))));
-				Logger.Info("[Back]   " + string.Join("  ", status.Select(s => s == "OK" ? "O" : "X")));
-				// 保存副本供PLC读取
+				Logger.Info("[Back] 逐盒: [" + string.Join("] [", status) + "]");
+				StatusList = new List<string>(status);  // 保存副本供PLC读取
 				bool isOk = status.All(s => s == "OK");
 				result.BackResult = isOk;
 				result.BackDefects = status.Where(s => s != "OK").Distinct().ToList();
@@ -331,6 +356,7 @@ namespace Stations
 					: "条码:0 日期码:0 明显挂钩:0 轻微挂钩:0";
 				defStr = " | " + defStr;
 				Logger.Info($"[Back] 完成 P={p} OK={boxOk} NG={status.Count - boxOk}{defStr} | 耗时={total:F0}ms");
+					ModelPerfTracker.RecordPipeline("Back", 0, inferMs, drawMs, saveMs, total);
 				Logger.Trace("[Back] ✓ 全流程完成 结果=" + (isOk ? "OK" : "NG") + " 总=" + total.ToString("F0") + "ms");
 				OnResultReady?.Invoke(result);
 				OnStatusUpdate?.Invoke(status, p);
@@ -373,7 +399,12 @@ namespace Stations
 					using (var roi = new Mat(left, new CvRect(sx, syL, rw, rh)).Clone())
 					{
 						var def = DecodeBarcodeZxing(roi, refBarcode, sx, syL, wL, hL, i);
-						if (def != null) { if (!r.ContainsKey(i)) r[i] = new List<BoxDefect>(); r[i].Add(def); }
+						if (def != null)
+					{
+						if (!r.ContainsKey(i))
+							r[i] = new List<BoxDefect>();
+						r[i].Add(def);
+					}
 					}
 				}
 
@@ -384,7 +415,12 @@ namespace Stations
 					using (var roi = new Mat(right, new CvRect(sx, syR, rw, rh)).Clone())
 					{
 						var def = DecodeBarcodeZxing(roi, refBarcode, sx, syR, wR, hR, gi);
-						if (def != null) { if (!r.ContainsKey(gi)) r[gi] = new List<BoxDefect>(); r[gi].Add(def); }
+						if (def != null)
+						{
+							if (!r.ContainsKey(gi))
+								r[gi] = new List<BoxDefect>();
+							r[gi].Add(def);
+						}
 					}
 				}
 				Logger.Debug("[Back] 条码: " + r.Count + "盒识别");
@@ -434,7 +470,11 @@ namespace Stations
 						return new BoxDefect(boxIdx, "条码缺少", defBox);
 					string bestText = null;
 					ResultPoint[] bestPts = null;
-					if (results.Length == 1) { bestText = StripLeadingZero(results[0].Text); bestPts = results[0].ResultPoints; }
+					if (results.Length == 1)
+						{
+							bestText = StripLeadingZero(results[0].Text);
+							bestPts = results[0].ResultPoints;
+						}
 					else if (!string.IsNullOrEmpty(refBarcode))
 					{
 						if (results.Any(res => StripLeadingZero(res.Text) == refBarcode))
@@ -446,7 +486,12 @@ namespace Stations
 							{
 								if (string.IsNullOrEmpty(res.Text)) continue;
 								int dist = LevenshteinDistance(StripLeadingZero(res.Text), refBarcode);
-								if (dist < bestDist) { bestDist = dist; bestText = StripLeadingZero(res.Text); bestPts = res.ResultPoints; }
+								if (dist < bestDist)
+						{
+							bestDist = dist;
+							bestText = StripLeadingZero(res.Text);
+							bestPts = res.ResultPoints;
+						}
 							}
 						}
 					}
@@ -464,7 +509,18 @@ namespace Stations
 					return new BoxDefect(boxIdx, "条码错:" + bestText, normBox);
 				}
 			}
-			catch (Exception ex) { Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message); float pad2 = roi.Width * 0.03f; return new BoxDefect(boxIdx, "条码缺少", new float[] { (float)(ox + pad2) / fw, (float)oy / fh, (float)(ox + roi.Width - pad2) / fw, (float)(oy + roi.Height) / fh }); }
+			catch (Exception ex)
+			{
+				Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message);
+				float pad2 = roi.Width * 0.03f;
+				return new BoxDefect(boxIdx, "条码缺少",
+					new float[] {
+						(float)(ox + pad2) / fw,
+						(float)oy / fh,
+						(float)(ox + roi.Width - pad2) / fw,
+						(float)(oy + roi.Height) / fh
+					});
+			}
 		}
 
 		/// <summary>条码OpenCV预处理管线: 1.对比度亮度调整 2.灰度化 3.直方图均衡 4.高斯/中值滤波 5.自适应/Otsu/固定阈值 6.反转 7.形态学(闭/开/膨胀/腐蚀)</summary>
@@ -678,7 +734,9 @@ namespace Stations
 				// C1: 分割模型全图推理 → 从Mask提取连通域
 				var swC1 = System.Diagnostics.Stopwatch.StartNew();
 				ResponseList<SegmentationResponse> segRsp;
-				int segRet = _models.BackDateCodeSegModel.Run(img, out segRsp);
+				var dcSegSw = System.Diagnostics.Stopwatch.StartNew();
+			int segRet = _models.BackDateCodeSegModel.Run(img, out segRsp);
+			ModelPerfTracker.Record("Back", "日期码C1分割", dcSegSw.Elapsed.TotalMilliseconds);
 				int rspCount = segRsp?.Count ?? 0;
 				Logger.Debug("[Back] C1分割: ret=" + segRet + " rsp=" + rspCount + " " + swC1.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
 				if (segRet != 0 || rspCount == 0) return r;
@@ -721,7 +779,9 @@ namespace Stations
 					using (var cropC2 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 					{
 						ResponseList<ClassificationResponse> clsRsp;
-						int clsRet = _models.BackDateCodeClsModel.Run(cropC2, out clsRsp);
+						var dcClsSw = System.Diagnostics.Stopwatch.StartNew();
+					int clsRet = _models.BackDateCodeClsModel.Run(cropC2, out clsRsp);
+					ModelPerfTracker.Record("Back", "日期码C2分类", dcClsSw.Elapsed.TotalMilliseconds);
 						bool c2Shadow = false;
 						Logger.Debug("[Back] C2 clsRet=" + clsRet + " count=" + (clsRsp?.Count ?? 0));
 						if (clsRet == 0 && clsRsp != null && clsRsp.Count > 0)
@@ -729,7 +789,7 @@ namespace Stations
 							foreach (var ci in clsRsp)
 							{
 								var labels = ci.Item2.Labels;
-								if (!labels.Any()) continue;
+								if (labels == null || !labels.Any()) continue;
 								foreach (var lbl in labels)
 								{
 									float s = 0;
@@ -746,7 +806,9 @@ namespace Stations
 						using (var cropC3 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 						{
 							ResponseList<OcrResponse> ocrRsp;
-							int ocrRet = _models.BackDateCodeOcrModel.Run(cropC3, out ocrRsp);
+							var dcOcrSw = System.Diagnostics.Stopwatch.StartNew();
+				int ocrRet = _models.BackDateCodeOcrModel.Run(cropC3, out ocrRsp);
+				ModelPerfTracker.Record("Back", "日期码C3 OCR", dcOcrSw.Elapsed.TotalMilliseconds);
 							if (ocrRet != 0 || ocrRsp == null || ocrRsp.Count == 0) continue;
 
 							var texts = new List<string>();
@@ -854,34 +916,174 @@ namespace Stations
 		/// 背面盒子破损检测: YOLO 推理 -> "盒子破损".
 		/// 左/右半图独立推理，centerX映射到全局盒号.
 		/// </summary>
+		/// <summary>
+		/// 背面盒子破损检测: 3×2网格裁图→逐张Predict→坐标映射→分盒→盒内NMS去重 (与正面一致)
+		/// </summary>
 		private Dictionary<int, List<BoxDefect>> DetectBoxBreak(Mat left, Mat right, int p)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
-			if (_models.BackBoxBreakModel == null) return results;
+			if (_models.BackBoxBreakModel == null)
+			{
+				Logger.Warning("[Back] 盒子破损模型为null, 跳过检测(检查setup.ini [AI_Models] BackBoxBreakModel路径和best.json是否存在)");
+				return results;
+			}
 			try
 			{
-				int hp = p / 2;
-				var images = new[] { left, right };
-				int[] offsets = { 0, hp };
-				for (int side = 0; side < 2; side++)
+				int halfP = p / 2;
+				Logger.Debug($"[Back] 盒子破损检测开始 P={p} 图={left.Width}x{left.Height} Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+
+				// 本地函数: 处理单侧图像 (3×2网格裁图 → 逐张Predict → 坐标映射 → 分盒)
+				void ProcessSide(Mat sourceImage, bool isLeft)
 				{
-					var detResult = _models.BackBoxBreakModel.Predict(images[side], ConfThreshold, IouThreshold);
-					if (detResult?.BoxesN == null || detResult.BoxesN.Length == 0) continue;
-					float imgW = images[side].Width;
-					for (int j = 0; j < detResult.BoxesN.Length; j++)
+					int currentW = sourceImage.Width;
+					int currentH = sourceImage.Height;
+					int baseIdx = isLeft ? 0 : halfP;
+
+					var (patches, offsets) = GetCropPatchesAndOffsets(sourceImage, p);
+
+					for (int i = 0; i < patches.Count; i++)
 					{
-						var bn = detResult.BoxesN[j];
-						float centerX = bn.X + bn.Width / 2f;
-						int gi = (int)(centerX / imgW * hp) + offsets[side];
-						gi = Math.Max(0, Math.Min(gi, p - 1));
-						float score = (detResult.Scores != null && j < detResult.Scores.Length) ? detResult.Scores[j] : 1.0f;
-						AddDefect(results, gi, "盒子破损",
-							new float[] { bn.X, bn.Y, bn.X + bn.Width, bn.Y + bn.Height }, score);
+						Mat patch = patches[i];
+						CvPoint offset = offsets[i];
+
+						try
+						{
+							var bbSw2 = System.Diagnostics.Stopwatch.StartNew();
+					var detResult = _models.BackBoxBreakModel.Predict(patch, ConfThreshold, IouThreshold);
+					ModelPerfTracker.Record("Back", "盒子破损", bbSw2.Elapsed.TotalMilliseconds);
+							if (detResult?.Boxes == null) continue;
+
+							for (int j = 0; j < detResult.Boxes.Length; j++)
+							{
+								var box = detResult.Boxes[j];
+								float score = (detResult.Scores != null && j < detResult.Scores.Length)
+									? detResult.Scores[j] : 1.0f;
+
+								// 映射回原图绝对坐标
+								float origX1 = box.Left + offset.X;
+								float origY1 = box.Top + offset.Y;
+								float origX2 = box.Right + offset.X;
+								float origY2 = box.Bottom + offset.Y;
+
+								// 归一化到整图坐标
+								float nx1 = origX1 / currentW, ny1 = origY1 / currentH;
+								float nx2 = origX2 / currentW, ny2 = origY2 / currentH;
+
+								// centerX 确定盒子索引
+								float centerX = (origX1 + origX2) / 2f;
+								int boxLocal = (int)(centerX / currentW * halfP);
+								boxLocal = Math.Max(0, Math.Min(boxLocal, halfP - 1));
+								int globalIdx = baseIdx + boxLocal;
+
+								if (!results.ContainsKey(globalIdx))
+									results[globalIdx] = new List<BoxDefect>();
+								results[globalIdx].Add(new BoxDefect(globalIdx, "盒子破损",
+									new float[] { nx1, ny1, nx2, ny2 }, score));
+							}
+						}
+						finally { patch?.Dispose(); }
 					}
 				}
+
+				// 处理左右两侧
+				Logger.Info($"[Back BatchLog] ▶ 盒子破推理: batch=1 逐张Predict, 左3x2={3 * 2}patch 右3x2={3 * 2}patch (P={p})");
+				ProcessSide(left, isLeft: true);
+				ProcessSide(right, isLeft: false);
+
+				// 盒内NMS去重 (重叠patch导致同一缺陷被多次检出)
+				int totalBeforeNms = results.Values.Sum(v => v.Count);
+				ApplyNmsPerBox(results, IouThreshold);
+				int totalAfterNms = results.Values.Sum(v => v.Count);
+				Logger.Info($"[Back BatchLog] ◀ 盒子破推理完成: P={p}, 检出框={totalBeforeNms}→{totalAfterNms}(NMS后)");
 			}
 			catch (Exception ex) { Logger.Error("背面盒子破损异常: " + ex.Message); }
 			return results;
+		}
+
+		/// <summary>3×2网格裁图: 水平3段+垂直2段(带10%重叠), 返回patch列表+偏移量</summary>
+		private static (List<Mat> Patches, List<CvPoint> Offsets) GetCropPatchesAndOffsets(Mat image, int P)
+		{
+			int h = image.Height, w = image.Width;
+			var xBoundaries = new List<(int start, int end)>();
+
+			if (P / 2 == 5)
+			{
+				xBoundaries.Add((0, (int)(w * 0.4)));
+				xBoundaries.Add(((int)(w * 0.4), (int)(w * 0.8)));
+				xBoundaries.Add(((int)(w * 0.8), w));
+			}
+			else
+			{
+				int wThird = w / 3;
+				xBoundaries.Add((0, wThird));
+				xBoundaries.Add((wThird, wThird * 2));
+				xBoundaries.Add((wThird * 2, w));
+			}
+
+			var yBoundaries = new List<(int start, int end)>
+			{
+				(0, (int)(h * 0.55)),
+				((int)(h * 0.45), h)
+			};
+
+			var patches = new List<Mat>();
+			var offsets = new List<CvPoint>();
+
+			foreach (var xb in xBoundaries)
+				foreach (var yb in yBoundaries)
+				{
+					int pw = xb.end - xb.start, ph = yb.end - yb.start;
+					CvRect roi = new CvRect(xb.start, yb.start, pw, ph);
+					patches.Add(new Mat(image, roi).Clone());
+					offsets.Add(new CvPoint(xb.start, yb.start));
+				}
+
+			return (patches, offsets);
+		}
+
+		/// <summary>盒内NMS去重: 重叠patch可能让同一缺陷被多次检出, 每盒独立做NMS</summary>
+		private static void ApplyNmsPerBox(Dictionary<int, List<BoxDefect>> results, float iouThreshold)
+		{
+			foreach (var kvp in results.ToList())
+			{
+				var defects = kvp.Value;
+				if (defects.Count <= 1) continue;
+
+				var boxesWithScore = defects.Select(d => new float[] {
+					d.BoundingBox[0], d.BoundingBox[1], d.BoundingBox[2], d.BoundingBox[3], d.Score
+				}).ToList();
+
+				var sorted = boxesWithScore
+					.Select((b, i) => (box: b, idx: i))
+					.OrderByDescending(x => x.box[4]).ToList();
+				var removed = new bool[sorted.Count];
+				var keep = new List<int>();
+
+				for (int i = 0; i < sorted.Count; i++)
+				{
+					if (removed[i]) continue;
+					keep.Add(sorted[i].idx);
+					float ax1 = sorted[i].box[0], ay1 = sorted[i].box[1];
+					float ax2 = sorted[i].box[2], ay2 = sorted[i].box[3];
+					float areaA = (ax2 - ax1) * (ay2 - ay1);
+
+					for (int j = i + 1; j < sorted.Count; j++)
+					{
+						if (removed[j]) continue;
+						float bx1 = sorted[j].box[0], by1 = sorted[j].box[1];
+						float bx2 = sorted[j].box[2], by2 = sorted[j].box[3];
+						float xx1 = Math.Max(ax1, bx1), yy1 = Math.Max(ay1, by1);
+						float xx2 = Math.Min(ax2, bx2), yy2 = Math.Min(ay2, by2);
+						float iw = Math.Max(0, xx2 - xx1), ih = Math.Max(0, yy2 - yy1);
+						float inter = iw * ih;
+						float areaB = (bx2 - bx1) * (by2 - by1);
+						float iou = inter / (areaA + areaB - inter);
+						if (iou > iouThreshold) removed[j] = true;
+					}
+				}
+
+				results[kvp.Key] = keep.Select(k => defects[k]).ToList();
+			}
 		}
 
 		// ====== 挂钩缺陷检测 (原有代码不变) ======
@@ -898,7 +1100,9 @@ namespace Stations
 			{
 				var images = new List<Mat> { left, right };
 				double[] offsets = { 0.0, p / 2.0 };
-				var batchResults = _models.BackHookModel.PredictBatch(images, ConfThreshold, IouThreshold);
+				var hookSw = System.Diagnostics.Stopwatch.StartNew();
+			var batchResults = _models.BackHookModel.PredictBatch(images, ConfThreshold, IouThreshold);
+			ModelPerfTracker.Record("Back", "挂钩明显", hookSw.Elapsed.TotalMilliseconds);
 				Logger.Debug("[Back] 挂钩批量推理: " + (batchResults?.Count ?? 0) + "张");
 
 				for (int i = 0; i < (batchResults?.Count ?? 0); i++)

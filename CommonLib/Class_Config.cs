@@ -1303,7 +1303,7 @@ namespace CommonLib
 
 		public string BackBoxBreakModel
 		{
-			get => GetPrivateProfileString("AI_Models", "BackBoxBreakModel", "", _iniPath);
+			get { var v = GetPrivateProfileString("AI_Models", "BackBoxBreakModel", "", _iniPath); return string.IsNullOrEmpty(v) ? null : v; }
 			set => INIWriteValue(_iniPath, "AI_Models", "BackBoxBreakModel", value);
 		}
 

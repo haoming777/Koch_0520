@@ -239,7 +239,11 @@ namespace Hardware
 			if (_simulateMode) return true;
 			if (!IsConnected) return false;
 			try { return _zmc.StopMove(_handle, axis); }
-			catch (Exception ex) { Logger.Error($"StopAxis失败 轴{axis}: {ex.Message}"); return false; }
+			catch (Exception ex)
+		{
+			Logger.Error($"StopAxis失败 轴{axis}: {ex.Message}");
+			return false;
+		}
 		}
 
 		/// <summary>
@@ -260,7 +264,11 @@ namespace Hardware
 				Logger.Warning($"[安全锁] 轴{axis}紧急停止 mode=0 ret={ret}");
 				return ret == 0;
 			}
-			catch (Exception ex) { Logger.Error($"EmergencyStop失败 轴{axis}: {ex.Message}"); return false; }
+			catch (Exception ex)
+		{
+			Logger.Error($"EmergencyStop失败 轴{axis}: {ex.Message}");
+			return false;
+		}
 		}
 
 		/// <summary>设置轴运行速度</summary>
@@ -520,9 +528,17 @@ namespace Hardware
 		public int GetInMulti(int startPort, int endPort)
 		{
 			if (_simulateMode || !IsConnected) return 0;
-			Int32 bits = 0;
-			ZAux_Direct_GetInMulti(_handle, startPort, endPort, out bits);
-			return bits;
+			try
+			{
+				Int32 bits = 0;
+				ZAux_Direct_GetInMulti(_handle, startPort, endPort, out bits);
+				return bits;
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"GetInMulti失败 IN{startPort}~{endPort}: {ex.Message}");
+				return 0;
+			}
 		}
 
 		/// <summary>
@@ -535,7 +551,14 @@ namespace Hardware
 		public void SetOutMulti(int startPort, int endPort, uint[] states)
 		{
 			if (_simulateMode || !IsConnected) return;
-			ZAux_Direct_SetOutMulti(_handle, (ushort)startPort, (ushort)endPort, states);
+			try
+			{
+				ZAux_Direct_SetOutMulti(_handle, (ushort)startPort, (ushort)endPort, states);
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"SetOutMulti失败 OUT{startPort}~{endPort}: {ex.Message}");
+			}
 		}
 
 		/// <summary>

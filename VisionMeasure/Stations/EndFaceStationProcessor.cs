@@ -289,18 +289,26 @@ namespace Stations
 				double cropTime = 0, inferenceTime = 0;
 				using (var cropScope = new StopwatchScope(t => cropTime = t))
 				{
-					// 上端面: 左裁边(裁掉左边像素) + 右裁边(裁掉右边像素)
+					// 上端面: LeftPx/RightPx 是坐标边界(与正面/背面一致)
 					int upperCropLeftPx = _sku?.UpperEndFace_LeftPx ?? 0;
 					int upperCropRightPx = _sku?.UpperEndFace_RightPx ?? 0;
-					// 下端面: 左裁边 + 右裁边
+					// 下端面: 坐标边界
 					int lowerCropLeftPx = _sku?.LowerEndFace_LeftPx ?? 0;
 					int lowerCropRightPx = _sku?.LowerEndFace_RightPx ?? 0;
-					Logger.Debug($"[EndFace] 裁图参数: 上端面 左{upperCropLeftPx}px 右{upperCropRightPx}px | 下端面 左{lowerCropLeftPx}px 右{lowerCropRightPx}px");
 					upperMats = CropImagesBatch(upperImages, upperCropLeftPx, upperCropRightPx);
 					lowerMats = CropImagesBatch(lowerImages, lowerCropLeftPx, lowerCropRightPx);
-					if (upperMats.Count > 0) Logger.Debug($"[EndFace] 裁图后 上端面尺寸={upperMats[0].Width}x{upperMats[0].Height} (共{upperMats.Count}张)");
-					if (lowerMats.Count > 0) Logger.Debug($"[EndFace] 裁图后 下端面尺寸={lowerMats[0].Width}x{lowerMats[0].Height} (共{lowerMats.Count}张)");
-					Logger.Debug($"[EndFace] ⏱ 裁图耗时={cropTime:F1}ms");
+					if (upperMats.Count > 0)
+					{
+						int origW = upperImages[0].OriginalBitmap?.Width ?? 0;
+						int origH = upperImages[0].OriginalBitmap?.Height ?? 0;
+						Logger.Info($"[EndFace] Camera3(上端面) SN={_Config.Camera3SN} 裁图: LeftPx={upperCropLeftPx} RightPx={upperCropRightPx} 原图={origW}x{origH} → 裁后={upperMats[0].Width}x{upperMats[0].Height} ×{upperMats.Count}张");
+					}
+					if (lowerMats.Count > 0)
+					{
+						int origW = lowerImages[0].OriginalBitmap?.Width ?? 0;
+						int origH = lowerImages[0].OriginalBitmap?.Height ?? 0;
+						Logger.Info($"[EndFace] Camera4(下端面) SN={_Config.Camera4SN} 裁图: LeftPx={lowerCropLeftPx} RightPx={lowerCropRightPx} 原图={origW}x{origH} → 裁后={lowerMats[0].Width}x{lowerMats[0].Height} ×{lowerMats.Count}张");
+					}
 				}
 
 				List<YoloInference.YoloResult> upperResults = null, lowerResults = null;
@@ -452,20 +460,37 @@ namespace Stations
 		}
 
 		/// <summary>批量裁图: 遍历ImageContext→ToMat→同时支持左右双侧裁图(leftPx裁左边, rightPx裁右边)→返回Mat列表</summary>
+		/// <summary>批量裁图: LeftPx/RightPx是坐标边界(与正面/背面一致), 转为CropImageHorizontallyCv2的裁边量</summary>
 		private List<Mat> CropImagesBatch(List<ImageContext> images, int leftPx, int rightPx)
 		{
 			var mats = new List<Mat>();
 			foreach (var img in images)
 			{
 				var mat = BitmapConverter.ToMat(img.OriginalBitmap);
-				// 水平裁图: 同时支持左右双侧裁图
 				if ((leftPx > 0 || rightPx > 0) && !SkipCrop)
 				{
-					int? l = leftPx > 0 ? (int?)leftPx : null;
-					int? r = rightPx > 0 ? (int?)rightPx : null;
-					Mat croppedH = ImageHelper.CropImageHorizontallyCv2(mat, l, r);
-					mat.Dispose();
-					mat = croppedH;
+					int safeLeft = Math.Max(0, leftPx);
+					int safeRight = Math.Max(0, rightPx);
+					if (safeLeft >= mat.Width || safeRight > mat.Width || safeLeft >= safeRight)
+					{
+						Logger.Warning($"[EndFace] 裁图越界! 图宽={mat.Width} LeftPx={leftPx} RightPx={rightPx}, 使用原图");
+					}
+					else
+					{
+						// rightPx是坐标右边界 → 转为右裁量 = width - rightPx (与正面一致)
+						int? l = safeLeft > 0 ? (int?)safeLeft : null;
+						int? r = safeRight < mat.Width ? (int?)(mat.Width - safeRight) : null;
+						try
+						{
+							Mat croppedH = ImageHelper.CropImageHorizontallyCv2(mat, l, r);
+							mat.Dispose();
+							mat = croppedH;
+						}
+						catch (Exception ex)
+						{
+							Logger.Warning($"[EndFace] 裁图异常({ex.Message}), 使用原图");
+						}
+					}
 				}
 				mats.Add(mat);
 			}

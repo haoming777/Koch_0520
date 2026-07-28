@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -112,7 +112,7 @@ namespace PLC调试.Class
 			}
 		}
 
-	
+
 		public float[] GetCylindricityData()
 		{
 
@@ -132,18 +132,13 @@ namespace PLC调试.Class
 
 		private void ReadGetTrigger()
 		{
-			try
+			string path = "DB1000.DBW0";
+			short val = 0;
+			while (true)
 			{
-
-				string path = "DB1000.DBW0";
-				short val = 0;
-				//string path = _Config.gt_DataValid.ToString();
-				//toolClass.SaveLog($"触发地址：{path}");
-				while (true)
+				try
 				{
-
 					Thread.Sleep(50);
-					//toolClass.SaveLog(plcState + "状态");
 					if (!plcState) continue;
 
 					short test = Convert.ToInt16(plc.ReadInt16("DB1000.DBW0").Content);
@@ -155,11 +150,14 @@ namespace PLC调试.Class
 						toolClass.SaveLog($"写零后读取{plc.ReadInt16(path).Content}");
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				plcState = false;
-				EventConnectState(false, $"读触发信号时出现异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				catch (Exception ex)
+				{
+					plcState = false;
+					CommonLib.PlcLogger.Error($"[S7-1500] 读触发异常: {ex.Message}");
+					EventConnectState(false, $"读触发信号时出现异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+					Reconnect();
+					Thread.Sleep(2000);
+				}
 			}
 		}
 
@@ -169,10 +167,10 @@ namespace PLC调试.Class
 
 		private void WriteKeepAlive()
 		{
-			try
+			bool toggle = false;
+			while (true)
 			{
-				bool toggle = false;
-				while (true)
+				try
 				{
 					Thread.Sleep(200);  // 200ms 交替 1/0
 
@@ -182,11 +180,15 @@ namespace PLC调试.Class
 						plc.Write(HEARTBEAT_ADDR, toggle);
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				plcState = false;
-				EventConnectState(false, $"向PLC写心跳时发生错误...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				catch (Exception ex)
+				{
+					plcState = false;
+					CommonLib.PlcLogger.Error($"[S7-1500] 心跳写入异常: {ex.Message}");
+					EventConnectState(false, $"向PLC写心跳时发生错误...\r\n {ex.Message} \r\n {ex.StackTrace}");
+					Reconnect();  // 自动重连
+					// 等待重连完成后再继续心跳
+					Thread.Sleep(2000);
+				}
 			}
 		}
 
@@ -194,9 +196,9 @@ namespace PLC调试.Class
 		{
 			timeOut.Start();
 			bool oldVal = false;
-			try
+			while (true)
 			{
-				while (true)
+				try
 				{
 					Thread.Sleep(50);
 					if (plcState)
@@ -214,16 +216,20 @@ namespace PLC调试.Class
 							CommonLib.PlcLogger.Error($"[S7-1500] 心跳超时! {timeOut.ElapsedMilliseconds}ms未变化, 判定通讯断开");
 							CommonLib.Logger.Error($"[S7-1500] 心跳超时 {timeOut.ElapsedMilliseconds}ms, PLC通讯断开");
 							EventConnectState(false, $"心跳状态超十秒未更新，判定为通讯断开");
+							Reconnect();  // 自动重连
+							Thread.Sleep(2000);  // 等待重连完成
 						}
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				plcState = false;
-				CommonLib.PlcLogger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
-				CommonLib.Logger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
-				EventConnectState(false, $"心跳监测异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+				catch (Exception ex)
+				{
+					plcState = false;
+					CommonLib.PlcLogger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
+					CommonLib.Logger.Error($"[S7-1500] 心跳监测异常: {ex.Message}");
+					EventConnectState(false, $"心跳监测异常...\r\n {ex.Message} \r\n {ex.StackTrace}");
+					Reconnect();  // 自动重连
+					Thread.Sleep(2000);  // 等待重连完成
+				}
 			}
 		}
 
@@ -247,6 +253,7 @@ namespace PLC调试.Class
 				plcState = false;
 				CommonLib.PlcLogger.Error($"[S7-1500] 写入失败 addr={dbAddr}: {ex.Message}");
 				EventConnectState(false, "S7-1500批量写异常: " + ex.Message);
+				Reconnect();  // 自动重连
 			}
 		}
 
@@ -268,6 +275,7 @@ namespace PLC调试.Class
 				plcState = false;
 				CommonLib.PlcLogger.Error($"[S7-1500] 写Bool失败 addr={dbAddr}: {ex.Message}");
 				EventConnectState(false, "S7-1500写Bool异常: " + ex.Message);
+				Reconnect();  // 自动重连
 			}
 		}
 
@@ -289,6 +297,7 @@ namespace PLC调试.Class
 				plcState = false;
 				CommonLib.PlcLogger.Error($"[S7-1500] 写Byte失败 addr={dbAddr}: {ex.Message}");
 				EventConnectState(false, "S7-1500写Byte异常: " + ex.Message);
+				Reconnect();  // 自动重连
 			}
 		}
 
@@ -307,7 +316,12 @@ namespace PLC调试.Class
 				while (!plcState)
 				{
 					ReconnectCount++;
-					CommonLib.PlcLogger.Info($"[S7-1500] 重连第{ReconnectCount}次...");
+					// 前10次每次日志，之后每10次记录一次（避免日志刷屏）
+					if (ReconnectCount <= 10 || ReconnectCount % 10 == 0)
+					{
+						CommonLib.PlcLogger.Info($"[S7-1500] 重连第{ReconnectCount}次...");
+						CommonLib.Logger.Warning($"[S7-1500] PLC重连第{ReconnectCount}次...");
+					}
 					ConnectModbus();
 					Thread.Sleep(1000);
 				}

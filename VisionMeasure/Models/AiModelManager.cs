@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using AIsdk;
 using Config;
@@ -379,7 +379,11 @@ namespace Models
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
 			string fullPath = _config.GetFullPath(modelPath);
-			if (!File.Exists(fullPath)) { Logger.Warning("背面日期码" + name + "模型文件不存在: " + fullPath); return null; }
+			if (!File.Exists(fullPath))
+		{
+			Logger.Warning("背面日期码" + name + "模型文件不存在: " + fullPath);
+			return null;
+		}
 			// 优先GPU，失败自动降级CPU
 			Vimo v = new Vimo();
 			int ret = v.Init(fullPath, true, _config.VimoGpuDeviceId, moduleId);

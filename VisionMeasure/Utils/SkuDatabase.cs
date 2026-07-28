@@ -101,11 +101,11 @@ namespace VisionMeasure.Utils
 					var vals = lines[i].Split(',');
 					string spec = idxSpec >= 0 && idxSpec < vals.Length ? vals[idxSpec].Trim() : "";
 					if (string.IsNullOrEmpty(spec)) continue;
-					// 查找匹配的SKU（按P值匹配，忽略MM）
+					// 查找匹配的SKU（按 P+MM 精确匹配, 格式: "12P42mm"）
 					foreach (var sku in _skuList)
 					{
-						string skuSpec = sku.P + "P";
-						if (!spec.StartsWith(skuSpec)) continue;
+						string skuSpec = $"{sku.P}P{sku.MM}mm";
+						if (!string.Equals(spec, skuSpec, StringComparison.OrdinalIgnoreCase)) continue;
 						sku.FrontLeft_LeftPx = ParseInt(vals, idxFL_L);
 						sku.FrontLeft_RightPx = ParseInt(vals, idxFL_R);
 						sku.FrontRight_LeftPx = ParseInt(vals, idxFR_L);
@@ -392,14 +392,17 @@ namespace VisionMeasure.Utils
 				// 兼容旧版CSV(仅"上端面"/"下端面"不带左右区分)
 				if (idxUp_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("上端面") && idxUp_L < 0 && idxUp_R < 0) idxUp_L = i; } }
 				if (idxLo_L < 0) { for (int i = 0; i < headers.Length; i++) { string h = headers[i].Trim(); if (h.Contains("下端面") && idxLo_L < 0 && idxLo_R < 0) idxLo_L = i; } }
-				string skuSpec = sku.P + "P";
+				string lookupSpec = $"{sku.P}P{sku.MM}mm";  // 精确匹配格式: "8P56mm"
+				Logger.Info($"[裁图匹配] 查找 spec={lookupSpec} P={sku.P} MM={sku.MM}");
+				bool found = false;
 				for (int i = 1; i < lines.Length; i++)
 				{
 					if (string.IsNullOrWhiteSpace(lines[i])) continue;
 					var vals = lines[i].Split(',');
 					string spec = idxSpec >= 0 && idxSpec < vals.Length ? vals[idxSpec].Trim() : "";
 					if (string.IsNullOrEmpty(spec)) continue;
-					if (!spec.StartsWith(skuSpec)) continue;
+					if (!string.Equals(spec, lookupSpec, StringComparison.OrdinalIgnoreCase)) continue;
+					found = true;
 					sku.FrontLeft_LeftPx = ParseInt(vals, idxFL_L);
 					sku.FrontLeft_RightPx = ParseInt(vals, idxFL_R);
 					sku.FrontRight_LeftPx = ParseInt(vals, idxFR_L);
@@ -412,8 +415,25 @@ namespace VisionMeasure.Utils
 					sku.BackLeft_RightPx = ParseInt(vals, idxBL_R);
 					sku.BackRight_LeftPx = ParseInt(vals, idxBR_L);
 					sku.BackRight_RightPx = ParseInt(vals, idxBR_R);
-					Logger.Info($"裁图参数已应用: {sku.SkuNumber} P={sku.P} spec={spec}");
+					Logger.Info($"[裁图匹配] ✓ 命中行={spec}");
+					Logger.Info($"  正面左: LeftPx={sku.FrontLeft_LeftPx} RightPx={sku.FrontLeft_RightPx}");
+					Logger.Info($"  正面右: LeftPx={sku.FrontRight_LeftPx} RightPx={sku.FrontRight_RightPx}");
+					Logger.Info($"  上端面: 裁左={sku.UpperEndFace_LeftPx}px 裁右={sku.UpperEndFace_RightPx}px");
+					Logger.Info($"  下端面: 裁左={sku.LowerEndFace_LeftPx}px 裁右={sku.LowerEndFace_RightPx}px");
+					Logger.Info($"  背面左: LeftPx={sku.BackLeft_LeftPx} RightPx={sku.BackLeft_RightPx}");
+					Logger.Info($"  背面右: LeftPx={sku.BackRight_LeftPx} RightPx={sku.BackRight_RightPx}");
 					break;
+				}
+				if (!found)
+				{
+					Logger.Warning($"[裁图匹配] ✗ 未找到匹配行! lookup={lookupSpec}, CSV中共有以下行:");
+					for (int i = 1; i < lines.Length; i++)
+					{
+						if (string.IsNullOrWhiteSpace(lines[i])) continue;
+						var vals = lines[i].Split(',');
+						string spec = idxSpec >= 0 && idxSpec < vals.Length ? vals[idxSpec].Trim() : "";
+						if (!string.IsNullOrEmpty(spec)) Logger.Warning($"    {spec}");
+					}
 				}
 			}
 			catch (Exception ex) { Logger.Error($"裁图CSV匹配失败: {ex.Message}"); }

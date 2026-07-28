@@ -44,14 +44,23 @@ namespace Config
         /// <param name="boxStatusList">P个盒子的状态字符串列表</param>
         /// <param name="rejectBits">按位打包的剔除信号</param>
         /// <param name="stopLevel">最高停机标识 0/1/2/3</param>
-        public void Resolve(string stationKey, List<string> boxStatusList, out ushort rejectBits, out int stopLevel)
+        /// <param name="stopReason">停机原因: "盒N:缺陷名(StopLevel=N)" 或 ""</param>
+        public void Resolve(string stationKey, List<string> boxStatusList,
+            out ushort rejectBits, out int stopLevel, out string stopReason)
         {
+            stopReason = "";
             if (boxStatusList == null || boxStatusList.Count == 0)
             {
                 rejectBits = 0; stopLevel = 0;
                 return;
             }
 
+            if (Stations == null)
+            {
+                Logger.Error($"[StationDefectConfig] Stations字典为null, 全部返回 OK");
+                rejectBits = 0; stopLevel = 0;
+                return;
+            }
             if (!Stations.TryGetValue(stationKey, out var rule) || rule?.Defects == null || rule.Defects.Count == 0)
             {
                 Logger.Warning($"[StationDefectConfig] 工位 '{stationKey}' 无配置, 全部返回 OK");
@@ -87,7 +96,11 @@ namespace Config
                 }
 
                 if (boxReject) rejectBits |= (ushort)(1 << i);
-                if (boxStop > stopLevel) stopLevel = boxStop;
+                if (boxStop > stopLevel)
+                {
+                    stopLevel = boxStop;
+                    stopReason = $"盒{i + 1}:{status}(StopLevel={boxStop})";
+                }
             }
         }
 
@@ -95,7 +108,7 @@ namespace Config
         /// 按配置顺序匹配单个缺陷名
         /// 1. 精确匹配 (==)
         /// 2. 子串匹配 (Contains) — 兼容动态内容
-        /// 3. 都不匹配 → null
+        /// 3. 都不匹配 → null (记录未匹配日志便于排查)
         /// </summary>
         private DefectRuleItem MatchDefect(string defectName, List<DefectRuleItem> entries)
         {
@@ -114,6 +127,8 @@ namespace Config
                     return entry;
             }
 
+            // 未匹配: 记录日志便于排查配置遗漏(每次进程只告警一次, 避免刷屏)
+            Logger.Warning($"[StationDefectConfig] 缺陷 '{defectName}' 未匹配任何规则, 默认不剔除不停机 (请检查 StationDefectConfig.json)");
             return null;
         }
 
