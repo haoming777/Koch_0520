@@ -193,6 +193,7 @@ namespace Config
 			[JsonProperty("背面反转盒序")] public bool BackReverseBox { get; set; } = false;
 			[JsonProperty("端面反转盒序")] public bool EndFaceReverseBox { get; set; } = false;
 			[JsonProperty("侧面反转盒序")] public bool SideReverseBox { get; set; } = false;
+				[JsonProperty("调试_首盒强制NG")] public bool DebugForceFirstBoxNg { get; set; } = false;
 		}
 
 		#endregion

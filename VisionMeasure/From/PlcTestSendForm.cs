@@ -23,15 +23,24 @@ namespace VisionMeasure.From
         private readonly NumericUpDown _nudStopLevel;
 
         public PlcTestSendForm(StationType station, List<string> statusList,
-            PlcResultService plcService, int pCount)
+            PlcResultService plcService, int pCount, int defaultStopLevel = 0,
+            ushort defaultRejectBits = 0)
         {
             _station = station;
-            _statusList = statusList ?? new List<string>();
             _plcService = plcService;
             _pCount = Math.Max(1, Math.Min(pCount, 16));
 
+            // 确保 statusList 至少有 _pCount 个条目，不够的补 "OK"
+            _statusList = new List<string>(statusList ?? new List<string>());
+            while (_statusList.Count < _pCount)
+                _statusList.Add("OK");
+
+            int cols = 2;
+            int rows = (_pCount + cols - 1) / cols;
+            int formWidth = 540;
+            int formHeight = 130 + rows * 32;
             Text = $"PLC测试发送 — {station} (P={_pCount})";
-            Size = new Size(420, 160 + _pCount * 32);
+            Size = new Size(formWidth, formHeight);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -40,45 +49,50 @@ namespace VisionMeasure.From
             Font = new Font("微软雅黑", 9F);
 
             // 顶部: 推理结果摘要
+            int rejectCount = 0;
+            for (int b = 0; b < _pCount; b++)
+                if ((defaultRejectBits & (1 << b)) != 0) rejectCount++;
             int ngCount = _statusList.Count(s => s != "OK");
-            int okCount = _pCount - ngCount;
+            int okCount = _pCount - rejectCount;
             var lblSummary = new Label
             {
-                Text = $"推理结果: P={_pCount}  OK={okCount}  NG={ngCount}  勾选=剔除, 不勾=OK",
+                Text = $"推理结果: P={_pCount}  缺陷={ngCount}盒  剔除={rejectCount}盒  停机={defaultStopLevel}",
                 Location = new Point(16, 12),
-                Size = new Size(380, 22),
+                Size = new Size(formWidth - 40, 22),
                 ForeColor = Color.FromArgb(38, 38, 38)
             };
             Controls.Add(lblSummary);
 
-            // 逐盒勾选
+            // 逐盒勾选（双列布局）— 默认勾选=该位将被剔除(IsReject=true)
+            int colW = (formWidth - 48) / cols;
             _boxes = new CheckBox[_pCount];
             for (int i = 0; i < _pCount; i++)
             {
-                bool isNg = i < _statusList.Count && _statusList[i] != "OK";
-                string label = isNg
-                    ? $"盒{i + 1}: NG ({_statusList[i]})"
+                bool willReject = (defaultRejectBits & (1 << i)) != 0;
+                bool hasDefect = _statusList[i] != "OK";
+                string label = hasDefect
+                    ? $"盒{i + 1}: {_statusList[i]}" + (willReject ? " [剔除]" : " [保留]")
                     : $"盒{i + 1}: OK";
 
                 var cb = new CheckBox
                 {
                     Text = label,
-                    Checked = isNg,
-                    Location = new Point(16 + (i % 4) * 200, 40 + (i / 4) * 30),
-                    Size = new Size(190, 24),
-                    ForeColor = isNg ? Color.FromArgb(231, 76, 60) : Color.FromArgb(39, 174, 96),
+                    Checked = willReject,
+                    Location = new Point(16 + (i % cols) * colW, 40 + (i / cols) * 32),
+                    Size = new Size(colW - 16, 24),
+                    ForeColor = willReject ? Color.FromArgb(231, 76, 60) : (hasDefect ? Color.FromArgb(245, 158, 11) : Color.FromArgb(39, 174, 96)),
                     Font = new Font("微软雅黑", 8.5F)
                 };
                 _boxes[i] = cb;
                 Controls.Add(cb);
             }
 
-            int rowBase = 40 + ((_pCount + 3) / 4) * 30 + 10;
+            int rowBase = 40 + rows * 32 + 10;
 
             // 停机标识
             var lblStop = new Label
             {
-                Text = "停机标识(0-3):",
+                Text = "停机标识(0-4):",
                 Location = new Point(16, rowBase),
                 Size = new Size(100, 25),
                 TextAlign = ContentAlignment.MiddleRight
@@ -87,7 +101,7 @@ namespace VisionMeasure.From
 
             _nudStopLevel = new NumericUpDown
             {
-                Minimum = 0, Maximum = 3, Value = 0,
+                Minimum = 0, Maximum = 4, Value = Math.Max(0, Math.Min(4, defaultStopLevel)),
                 Location = new Point(120, rowBase),
                 Size = new Size(50, 25)
             };
@@ -141,7 +155,11 @@ namespace VisionMeasure.From
             // 标记: 手动测试
             CommonLib.Logger.Info($"【手动测试】========================================");
             CommonLib.Logger.Info($"【手动测试】{_station} 工位 P={_pCount}");
-            CommonLib.Logger.Info($"【手动测试】剔除位: 0x{rejectBits:X4} (bits: {Convert.ToString(rejectBits, 2).PadLeft(_pCount, '0')})");
+            var ngBoxes = new System.Collections.Generic.List<string>();
+            for (int b = 0; b < _pCount; b++)
+                if ((rejectBits & (1 << b)) != 0) ngBoxes.Add((b + 1).ToString());
+            string ngDesc = ngBoxes.Count > 0 ? $"盒{string.Join(",", ngBoxes)}" : "无";
+            CommonLib.Logger.Info($"【手动测试】剔除位: 0x{rejectBits:X4} → {ngDesc} (bit0=盒1, bit{_pCount-1}=盒{_pCount})");
             CommonLib.Logger.Info($"【手动测试】停机标识: {stopLevel}");
             CommonLib.PlcLogger.Info($"【手动测试】{_station} → DB47 写入开始");
 
@@ -164,7 +182,7 @@ namespace VisionMeasure.From
             CommonLib.Logger.Info($"【手动测试】========================================");
 
             string msg = $"已发送 {_station}:\n"
-                + $"剔除位: 0x{rejectBits:X4} (bits: {Convert.ToString(rejectBits, 2).PadLeft(_pCount, '0')})\n"
+                + $"剔除: {ngDesc}\n"
                 + $"停机标识: {stopLevel}\n"
                 + $"结果: {(ok1 ? "剔除/停机✓" : "剔除/停机✗")}  {(ok2 ? "完成信号✓" : "完成信号✗")}";
 

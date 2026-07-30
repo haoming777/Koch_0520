@@ -11,7 +11,7 @@ namespace Config
     /// 工位缺陷→PLC信号配置（替代旧 DefectPriorityConfig）
     /// 存储于 Config/StationDefectConfig.json
     /// 逐盒判定: IsReject(bool) + StopLevel(int)
-    ///   停机标识优先级: 3 > 2 > 1 > 0
+    ///   停机标识优先级: 4 > 3 > 2 > 1 > 0
     ///   剔除优先级: 剔除 > 不剔除
     /// 匹配规则: 按配置顺序遍历，先命中先生效（具体项放前，通用项放后）
     /// </summary>
@@ -269,7 +269,7 @@ namespace Config
         /// <summary>是否剔除</summary>
         public bool IsReject { get; set; }
 
-        /// <summary>停机标识 0/1/2/3</summary>
+        /// <summary>停机标识 0/1/2/3/4</summary>
         public int StopLevel { get; set; }
     }
 }

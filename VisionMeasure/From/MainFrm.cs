@@ -29,6 +29,7 @@ using DrawPoint = System.Drawing.Point;
 using DrawSize = System.Drawing.Size;
 using Timer = System.Windows.Forms.Timer;
 using VisionMeasure.Stations;  // 引入 FrontStationProcessor 所在的命名空间
+using VisionMeasure.Services;
 
 namespace VisionMeasure
 {
@@ -119,6 +120,11 @@ namespace VisionMeasure
 		private System.Timers.Timer _shiftCheckTimer;
 		private System.Windows.Forms.Timer _statusPollTimer;
 
+		// ========== 数据库连接 ==========
+		private DatabaseConfig _dbConfig;
+		private OdbcDatabaseService _odbcService;
+		private System.Timers.Timer _dbHeartbeatTimer;
+
 		// ========== 工具类 ==========
 		private bool _isClosing = false;
 		private Loading _loadingForm;
@@ -153,6 +159,7 @@ namespace VisionMeasure
 			_loadingForm = loadingForm;
 			InitializeComponent();
 			this.FormClosing += MainFrm_FormClosing;
+			uiButton1.Click += uiButton1_Click;
 		}
 
 		/// <summary>更新Loading画面进度: 调用_loadingForm.UpdateProgress(百分比, 提示文字), 每步初始化后调用</summary>
@@ -202,6 +209,10 @@ namespace VisionMeasure
 					_skuDb = new SkuDatabase();
 					_skuDb.LoadData();
 				}
+
+				// 初始化数据库连接（Loading界面还在显示）
+				UpdateLoadingProgress(18, "正在连接数据库...");
+				InitDatabaseHeartbeat();
 
 				// 初始化性能监控
 				UpdateLoadingProgress(20, "正在初始化性能监控...");
@@ -276,6 +287,7 @@ namespace VisionMeasure
 				_statusBgTimer.Start();
 				_statusPollTimer = new System.Windows.Forms.Timer { Interval = 1000 }; // 保留引用兼容
 
+
 				// 刷新显示
 				RefreshCarouselDisplays();
 				// 验证数据是否正确加载
@@ -289,7 +301,7 @@ namespace VisionMeasure
 
 				UpdateLoadingProgress(100, "系统初始化完成，准备启动...");
 				Logger.Info("系统初始化完成");
-			ModelPerfTracker.Start();  // 启动模型耗时周期统计(5min)
+				ModelPerfTracker.Start();  // 启动模型耗时周期统计(5min)
 
 				xlPictureBox5.ISRealTimeDisplay = true;
 				xlPictureBox6.ISRealTimeDisplay = true;
@@ -469,7 +481,7 @@ namespace VisionMeasure
 					Logger.Debug($"[Camera{cfg.id}] 模式设置: AcquisitionMode=0, TriggerMode=1, TriggerSource=1");
 
 					// 设置曝光时间
-					SetCameraExposure(sdk, cfg.id, camCfg);
+					// SetCameraExposure(sdk, cfg.id, camCfg);
 
 					sdk.StartStreamGrabber();
 					Logger.Info($"[Camera{cfg.id}] {cfg.name} StartStreamGrabber完成, 初始化成功");
@@ -732,52 +744,52 @@ namespace VisionMeasure
 		/// 触发后设 _sideTriggered=1 防重, IN13=0或IN5=0时解锁
 		/// </summary>
 		private int _sideNoEndFaceWarnCount = 0;
-	private void TrySideTrigger(long nowTicks)
-	{
-		if (_sideStation == null) return;
-		if (_motionMgr == null || !_motionMgr.IsConnected) return;
-
-		// 忙: 排队等待空闲后消费
-		if (_sideStation.IsMoving)
+		private void TrySideTrigger(long nowTicks)
 		{
-			long p = Interlocked.Increment(ref _sidePendingCount);
-			Logger.Debug($"[Side] 侧面正忙, IN5+IN13触发排队(pending={p})");
-			return;
+			if (_sideStation == null) return;
+			if (_motionMgr == null || !_motionMgr.IsConnected) return;
+
+			// 忙: 排队等待空闲后消费
+			if (_sideStation.IsMoving)
+			{
+				long p = Interlocked.Increment(ref _sidePendingCount);
+				Logger.Debug($"[Side] 侧面正忙, IN5+IN13触发排队(pending={p})");
+				return;
+			}
+
+			bool in5State, in13State;
+			if (!_motionMgr.GetInput(IN5_BELT_STOP, out in5State)
+				|| !_motionMgr.GetInput(IN13_POSITION, out in13State))
+			{
+				Logger.Warning("[Side] TrySideTrigger: 读取IN5/IN13失败");
+				return;
+			}
+
+			// IN5=0(皮带停止), IN13=1(工件到位) — 条件不满足, 静默(每秒检查, 不刷屏)
+			if (in5State || !in13State) return;
+
+			if (Interlocked.CompareExchange(ref _sideTriggered, 0, 0) == 1) return; // 已锁, 静默
+
+			// 活件检测: 端面收到过图像
+			long lft = Interlocked.Read(ref _lastEndFaceImageTicks);
+			if (lft == 0 || (nowTicks - lft) > NoProductTimeoutTicks)
+			{
+				// 每30次(约30s)告警一次, 避免刷屏
+				if (Interlocked.Increment(ref _sideNoEndFaceWarnCount) % 30 == 1)
+					Logger.Warning($"[Side] TrySideTrigger: 无端面图像, 判定无活件 (距上次端面图={(lft > 0 ? (nowTicks - lft) / 10000.0 / 1000 : -1):F0}s)");
+				return;
+			}
+			Interlocked.Exchange(ref _sideNoEndFaceWarnCount, 0);  // 重置计数
+
+			// 去抖: 距上次接受 <2s
+			long lastAccepted = Interlocked.Read(ref _lastAcceptedIn13Tick);
+			if (lastAccepted > 0 && (nowTicks - lastAccepted) / 10000.0 < 2000) return;
+
+			Interlocked.Exchange(ref _lastAcceptedIn13Tick, nowTicks);
+			Interlocked.Exchange(ref _sideTriggered, 1);
+			Logger.Info($"[Side] IN5+IN13触发! IN5={in5State} IN13={in13State} (皮带停+工件到位)");
+			_sideStation.StartDetection();
 		}
-
-		bool in5State, in13State;
-		if (!_motionMgr.GetInput(IN5_BELT_STOP, out in5State)
-			|| !_motionMgr.GetInput(IN13_POSITION, out in13State))
-		{
-			Logger.Warning("[Side] TrySideTrigger: 读取IN5/IN13失败");
-			return;
-		}
-
-		// IN5=0(皮带停止), IN13=1(工件到位) — 条件不满足, 静默(每秒检查, 不刷屏)
-		if (in5State || !in13State) return;
-
-		if (Interlocked.CompareExchange(ref _sideTriggered, 0, 0) == 1) return; // 已锁, 静默
-
-		// 活件检测: 端面收到过图像
-		long lft = Interlocked.Read(ref _lastEndFaceImageTicks);
-		if (lft == 0 || (nowTicks - lft) > NoProductTimeoutTicks)
-		{
-			// 每30次(约30s)告警一次, 避免刷屏
-			if (Interlocked.Increment(ref _sideNoEndFaceWarnCount) % 30 == 1)
-				Logger.Warning($"[Side] TrySideTrigger: 无端面图像, 判定无活件 (距上次端面图={(lft>0?(nowTicks-lft)/10000.0/1000:-1):F0}s)");
-			return;
-		}
-		Interlocked.Exchange(ref _sideNoEndFaceWarnCount, 0);  // 重置计数
-
-		// 去抖: 距上次接受 <2s
-		long lastAccepted = Interlocked.Read(ref _lastAcceptedIn13Tick);
-		if (lastAccepted > 0 && (nowTicks - lastAccepted) / 10000.0 < 2000) return;
-
-		Interlocked.Exchange(ref _lastAcceptedIn13Tick, nowTicks);
-		Interlocked.Exchange(ref _sideTriggered, 1);
-		Logger.Info($"[Side] IN5+IN13触发! IN5={in5State} IN13={in13State} (皮带停+工件到位)");
-		_sideStation.StartDetection();
-	}
 
 		/// <summary>
 		/// 加载AI模型(共11个)
@@ -830,18 +842,49 @@ namespace VisionMeasure
 			{
 				if (_plcResultService != null && _frontStation.StatusList != null && _frontStation.StatusList.Count > 0)
 				{
-					var statusList = _frontStation.StatusList;
+					var statusList = new List<string>(_frontStation.StatusList);
+					var originalList = string.Join("][", statusList);
+					if (_detectionParams.Station.FrontReverseBox)
+					{
+						statusList.Reverse();
+						Logger.Info($"[PLC-Front] 反转盒序: 反转前=[{originalList}] → 反转后=[{string.Join("][", statusList)}]");
+					}
+					// 全部盒子均未识别到P号码 → 停机信号4 (测试/正常模式通用)
+					int signal4StopLevel = 0;
+					if (statusList.Count > 0 && statusList.All(s => s.Contains("P号缺少")))
+					{
+						signal4StopLevel = 4;
+						Logger.Warning($"[PLC-Front] ⚠ 触发停机信号4(全部P号缺失)! 逐盒:[{string.Join("][", statusList)}]");
+					}
+
+					// 测试开关: 强制首盒NG，其余全部OK
+					if (_detectionParams.Station.DebugForceFirstBoxNg && statusList.Count > 0)
+					{
+						for (int fi = 0; fi < statusList.Count; fi++)
+							statusList[fi] = "OK";
+						statusList[0] = "缺陷";
+						Logger.Warning($"[PLC-Front] ⚠ 测试模式: 首盒强制NG，其余OK"); 
+					}
+
 					if (_pendingTestStation == Hardware.StationType.Front)
 					{
-						// 测试模式: 弹窗勾选后手动发送
+						// 测试模式: 先算真实的剔除位+停机信号，再弹窗
 						_pendingTestStation = null;
+						Config.StationDefectConfig.Instance.Resolve("Front", statusList, out ushort testBits, out int testStop, out _);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) testBits |= 1;
+						if (signal4StopLevel > testStop) testStop = signal4StopLevel;
 						this.BeginInvoke(new Action(() =>
-							new PlcTestSendForm(Hardware.StationType.Front, statusList, _plcResultService, p).ShowDialog()));
+							new PlcTestSendForm(Hardware.StationType.Front, statusList, _plcResultService, p, testStop, testBits).ShowDialog()));
 					}
 					else
 					{
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("Front", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
+						// 调试开关: 首盒强制NG
+						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
+						// 信号4优先级最高
+						if (signal4StopLevel > stopLevel)
+							stopLevel = signal4StopLevel;
 						Logger.Info($"[PLC-Front] P={p} OK={ok} NG={ng} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Front, rejectBits, stopLevel, p))
 							Logger.Error("[PLC-Front] SendStationResult 返回 false!");
@@ -937,6 +980,8 @@ namespace VisionMeasure
 
 			_sideStation.InitThresholdsFromModel();  // 从模型best.json加载阈值
 			_sideStation.Start();
+			// 输出各工位PLC位顺序反转配置
+			Logger.Info($"PLC位序反转配置: 正面={(_detectionParams.Station.FrontReverseBox ? "反转" : "正常")} | 端面={(_detectionParams.Station.EndFaceReverseBox ? "反转" : "正常")} | 背面={(_detectionParams.Station.BackReverseBox ? "反转" : "正常")} | 侧面={(_detectionParams.Station.SideReverseBox ? "反转" : "正常")}");
 		}
 
 		#endregion
@@ -1281,16 +1326,34 @@ namespace VisionMeasure
 				if (result.BackResult.HasValue && _plcResultService != null && _backStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var statusList = _backStation.StatusList;
+					var statusList = new List<string>(_backStation.StatusList);
+					var originalList = string.Join("][", statusList);
+					if (_detectionParams.Station.BackReverseBox)
+					{
+						statusList.Reverse();
+						Logger.Info($"[PLC-Back] 反转盒序: 反转前=[{originalList}] → 反转后=[{string.Join("][", statusList)}]");
+					}
+					// 测试开关: 强制首盒NG，其余全部OK
+					if (_detectionParams.Station.DebugForceFirstBoxNg && statusList.Count > 0)
+					{
+						for (int fi = 0; fi < statusList.Count; fi++)
+							statusList[fi] = "OK";
+						statusList[0] = "缺陷";
+						Logger.Warning($"[PLC-Back] ⚠ 测试模式: 首盒强制NG，其余OK"); 
+					}
+
 					if (_pendingTestStation == Hardware.StationType.Back)
 					{
 						_pendingTestStation = null;
-						new PlcTestSendForm(Hardware.StationType.Back, statusList, _plcResultService, p).ShowDialog();
+						Config.StationDefectConfig.Instance.Resolve("Back", statusList, out ushort testBits, out int testStop, out _);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) testBits |= 1;
+						new PlcTestSendForm(Hardware.StationType.Back, statusList, _plcResultService, p, testStop, testBits).ShowDialog();
 					}
 					else
 					{
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("Back", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
 						Logger.Info($"[PLC-Back] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Back, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-Back] pid={result.ProductId} SendStationResult 返回 false!");
@@ -1308,16 +1371,34 @@ namespace VisionMeasure
 				if (result.EndFaceResult.HasValue && _plcResultService != null && _endFaceStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var statusList = _endFaceStation.StatusList;
+					var statusList = new List<string>(_endFaceStation.StatusList);
+					var originalList = string.Join("][", statusList);
+					if (_detectionParams.Station.EndFaceReverseBox)
+					{
+						statusList.Reverse();
+						Logger.Info($"[PLC-EndFace] 反转盒序: 反转前=[{originalList}] → 反转后=[{string.Join("][", statusList)}]");
+					}
+					// 测试开关: 强制首盒NG，其余全部OK
+					if (_detectionParams.Station.DebugForceFirstBoxNg && statusList.Count > 0)
+					{
+						for (int fi = 0; fi < statusList.Count; fi++)
+							statusList[fi] = "OK";
+						statusList[0] = "缺陷";
+						Logger.Warning($"[PLC-EndFace] ⚠ 测试模式: 首盒强制NG，其余OK"); 
+					}
+
 					if (_pendingTestStation == Hardware.StationType.EndFace)
 					{
 						_pendingTestStation = null;
-						new PlcTestSendForm(Hardware.StationType.EndFace, statusList, _plcResultService, p).ShowDialog();
+						Config.StationDefectConfig.Instance.Resolve("EndFace", statusList, out ushort testBits, out int testStop, out _);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) testBits |= 1;
+						new PlcTestSendForm(Hardware.StationType.EndFace, statusList, _plcResultService, p, testStop, testBits).ShowDialog();
 					}
 					else
 					{
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("EndFace", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
 						Logger.Info($"[PLC-EndFace] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.EndFace, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-EndFace] pid={result.ProductId} SendStationResult 返回 false!");
@@ -1338,16 +1419,34 @@ namespace VisionMeasure
 				if (result.SideResult.HasValue && _plcResultService != null && _sideStation?.StatusList != null)
 				{
 					int p = _currentSku?.P ?? 8;
-					var statusList = _sideStation.StatusList;
+					var statusList = new List<string>(_sideStation.StatusList);
+					var originalList = string.Join("][", statusList);
+					if (_detectionParams.Station.SideReverseBox)
+					{
+						statusList.Reverse();
+						Logger.Info($"[PLC-Side] 反转盒序: 反转前=[{originalList}] → 反转后=[{string.Join("][", statusList)}]");
+					}
+					// 测试开关: 强制首盒NG，其余全部OK
+					if (_detectionParams.Station.DebugForceFirstBoxNg && statusList.Count > 0)
+					{
+						for (int fi = 0; fi < statusList.Count; fi++)
+							statusList[fi] = "OK";
+						statusList[0] = "缺陷";
+						Logger.Warning($"[PLC-Side] ⚠ 测试模式: 首盒强制NG，其余OK"); 
+					}
+
 					if (_pendingTestStation == Hardware.StationType.Side)
 					{
 						_pendingTestStation = null;
-						new PlcTestSendForm(Hardware.StationType.Side, statusList, _plcResultService, p).ShowDialog();
+						Config.StationDefectConfig.Instance.Resolve("Side", statusList, out ushort testBits, out int testStop, out _);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) testBits |= 1;
+						new PlcTestSendForm(Hardware.StationType.Side, statusList, _plcResultService, p, testStop, testBits).ShowDialog();
 					}
 					else
 					{
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("Side", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
+						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
 						Logger.Info($"[PLC-Side] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Side, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-Side] pid={result.ProductId} SendStationResult 返回 false!");
@@ -2498,7 +2597,6 @@ namespace VisionMeasure
 						// 触发: IN5=0(皮带停) + IN13=1(工件到位)
 						else if (!in5 && in13)
 						{
-							Logger.Debug("[Side] 定时器检测到 IN5=0+IN13=1, 尝试触发");
 							TrySideTrigger(DateTime.Now.Ticks);
 						}
 					}
@@ -2512,6 +2610,9 @@ namespace VisionMeasure
 			{
 				Logger.Info("应用程序正在关闭...");
 				_isClosing = true;
+
+				// 立即停掉数据库心跳（防止ODBC连接阻塞15秒导致关闭卡顿）
+				_dbHeartbeatTimer?.Stop(); _dbHeartbeatTimer?.Dispose();
 
 				SaveCounts();
 				SaveCurrentShiftStatistics();
@@ -2533,8 +2634,7 @@ namespace VisionMeasure
 				_sysResMonitor?.Dispose();
 				_imageSaver?.Dispose();
 				_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
-				_shiftCheckTimer?.Stop();
-				_shiftCheckTimer?.Dispose();
+				_shiftCheckTimer?.Stop(); _shiftCheckTimer?.Dispose();
 				_aiModels?.Dispose();
 
 				Logger.Shutdown();
@@ -2624,6 +2724,259 @@ namespace VisionMeasure
 				}
 			}
 		}
+		#endregion
+
+		#region 数据库连接与SKU下拉
+
+		/// <summary>初始化数据库心跳监测：先同步测一次（界面打开前确定连没连上），再启动5秒定时器</summary>
+		private void InitDatabaseHeartbeat()
+		{
+			try
+			{
+				_dbConfig = DatabaseConfig.Load();
+				_odbcService = new OdbcDatabaseService();
+
+				// 首次同步检测（界面完全打开前确认连接状态）
+				var connStr = _dbConfig.BuildConnectionString();
+				connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
+					@"Connect Timeout=\d+", "Connect Timeout=3");
+				bool firstOk = _odbcService.TestConnection(connStr);
+				DatabaseState.State = firstOk ? UILightState.On : UILightState.Off;
+				Logger.Info($"[DB心跳] 首次检测: {(firstOk ? "连接成功" : "连接失败")}");
+
+				// 启动后台定时器
+				_dbHeartbeatTimer = new System.Timers.Timer(5000);
+				_dbHeartbeatTimer.Elapsed += (_, evt) => CheckDatabaseConnection();
+				_dbHeartbeatTimer.AutoReset = true;
+				_dbHeartbeatTimer.Start();
+
+				Logger.Info("[DB心跳] 后台监测已启动，间隔5秒");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[DB心跳] 初始化失败: {ex.Message}");
+			}
+		}
+
+		/// <summary>心跳检测：测试数据库连接并更新状态灯（超时3秒，避免阻塞关闭）</summary>
+		private async void CheckDatabaseConnection()
+		{
+			try
+			{
+				// 心跳用短超时（3秒），避免关闭时ODBC阻塞15秒
+				var connStr = _dbConfig.BuildConnectionString();
+				connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
+					@"Connect Timeout=\d+", "Connect Timeout=3");
+				var result = await Task.Run(() => _odbcService.TestConnection(connStr));
+
+				this.BeginInvoke(new Action(() =>
+				{
+					DatabaseState.State = result ? UILightState.On : UILightState.Off;
+				}));
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[DB心跳] 检测异常: {ex.Message}");
+				this.BeginInvoke(new Action(() => { DatabaseState.State = UILightState.Off; }));
+			}
+		}
+
+		/// <summary>uiButton1 点击：从 SQL Server 下拉 SKU 数据</summary>
+		private async void uiButton1_Click(object sender, EventArgs e)
+		{
+			// 1. 连接状态检查
+			if (DatabaseState.State == UILightState.Off)
+			{
+				MessageBox.Show("当前数据库未连接，系统正在后台自动尝试重连，请稍后再试。",
+					"数据库未连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+
+			// 2. 防连击保护
+			uiButton1.Enabled = false;
+
+			try
+			{
+				var connStr = _dbConfig.BuildConnectionString();
+				var machineId = _dbConfig.MachineID;
+
+				// 输出连接信息（密码隐藏）方便排查
+				Logger.Info($"[SKU下拉] 开始查询，机台号={machineId}");
+				Logger.Info($"[SKU下拉] 连接字符串: {MaskConnStr(connStr)}");
+
+				// 3. 后台执行查询
+				var sql = "SELECT * FROM [M600].[dbo].[F_AI_Running_SKU_Get](?)";
+				var data = await Task.Run(() => _odbcService.ExecuteQuery(connStr, sql, machineId));
+
+				if (data == null || data.Rows.Count == 0)
+				{
+					Logger.Error("[SKU下拉] 查询失败或无数据返回");
+					this.BeginInvoke(new Action(() =>
+					{
+						MessageBox.Show("获取数据失败：查询无结果，请检查数据库配置或机台号是否正确。",
+							"数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
+					}));
+					return;
+				}
+
+				var row = data.Rows[0];
+
+				// 4. 提取并校验 5 个关键字段
+				string sku = row["SKU"]?.ToString()?.Trim();
+				string barcode = row["Barcode"]?.ToString()?.Trim();
+				string pNoFront = row["PNoFront"]?.ToString()?.Trim();
+				string printFormat = row["PrintFormat"]?.ToString()?.Trim();
+				string pmm = row["PMM"]?.ToString()?.Trim();
+
+				var missingFields = new System.Collections.Generic.List<string>();
+				if (string.IsNullOrEmpty(sku)) missingFields.Add("SKU");
+				if (string.IsNullOrEmpty(barcode)) missingFields.Add("Barcode");
+				if (string.IsNullOrEmpty(pNoFront)) missingFields.Add("PNoFront");
+				if (string.IsNullOrEmpty(printFormat)) missingFields.Add("PrintFormat");
+				if (string.IsNullOrEmpty(pmm)) missingFields.Add("PMM");
+
+				if (missingFields.Count > 0)
+				{
+					var msg = $"获取数据失败：缺少以下字段数据 — {string.Join("、", missingFields)}，请检查数据库配置。";
+					Logger.Error($"[SKU下拉] {msg}");
+					this.BeginInvoke(new Action(() =>
+					{
+						MessageBox.Show(msg, "数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
+					}));
+					return;
+				}
+
+				// 5. PMM 字段解析
+				var pmmResult = ParsePMM(pmm);
+				if (pmmResult == null)
+				{
+					var msg = $"获取数据失败：PMM 字段格式异常（值=\"{pmm}\"），期望格式如 \"12P56MM\"。";
+					Logger.Error($"[SKU下拉] {msg}");
+					this.BeginInvoke(new Action(() =>
+					{
+						MessageBox.Show(msg, "数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
+					}));
+					return;
+				}
+
+				int pValue = pmmResult.Value.P;
+				int mmValue = pmmResult.Value.MM;
+
+				// 6. 展示修改前后对比，用户确认后才应用
+				this.BeginInvoke(new Action(() =>
+				{
+					// 记录修改前的值
+					var oldSku = _currentSku;
+					string oldSkuNo = oldSku?.SkuNumber ?? "(无)";
+					int oldP = oldSku?.P ?? 0;
+					int oldMM = oldSku?.MM ?? 0;
+					string oldPCode = oldSku?.FrontPCode ?? "(无)";
+					string oldBarcode = oldSku?.BackBarcode ?? "(无)";
+					string oldFormat = oldSku?.CodingFormat ?? "(无)";
+
+					// 构建对比信息
+					var changes = new System.Text.StringBuilder();
+					changes.AppendLine("═══════ SQL Server 数据对比 ═══════");
+					changes.AppendLine();
+					changes.AppendLine($"  SKU号:    {oldSkuNo}  →  {sku}");
+					changes.AppendLine($"  P值:      {oldP}  →  {pValue}");
+					changes.AppendLine($"  MM值:     {oldMM}  →  {mmValue}");
+					changes.AppendLine($"  正面P号:  {oldPCode}  →  {pNoFront}");
+					changes.AppendLine($"  条码:     {oldBarcode}  →  {barcode}");
+					changes.AppendLine($"  打码格式: {oldFormat}  →  {printFormat}");
+					changes.AppendLine();
+					changes.AppendLine("是否使用数据库数据替换当前值？");
+
+					var result = MessageBox.Show(changes.ToString(),
+						"确认SKU数据更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+					if (result == DialogResult.Yes)
+					{
+						// 从现有SKU数据库查找匹配（获取裁图坐标等CSV字段）
+						var existingSku = _skuDb?.GetBySkuNumber(sku);
+
+						SkuData mergedSku;
+						if (existingSku != null)
+						{
+							mergedSku = existingSku;
+							Logger.Info($"[SKU下拉] 找到已存在SKU {sku}，保留裁图坐标，更新核心字段");
+						}
+						else
+						{
+							mergedSku = new SkuData();
+							_skuDb?.ApplyCropData(mergedSku);
+							Logger.Info($"[SKU下拉] 新SKU {sku}，从裁图比例.csv加载裁图坐标");
+						}
+
+						mergedSku.SkuNumber = sku;
+						mergedSku.FrontPCode = pNoFront;
+						mergedSku.BackBarcode = barcode;
+						mergedSku.CodingFormat = printFormat;
+						mergedSku.P = pValue;
+						mergedSku.MM = mmValue;
+
+						_currentSku = mergedSku;
+						ApplySkuChange();
+
+						// 持久化保存：下次启动自动恢复
+						SaveSkuParams();
+						_detectionParams.LastSkuNumber = sku;
+						_detectionParams.SaveToFile();
+
+						Logger.Info($"[SKU下拉] ✅ 用户确认，已应用并保存: SKU={sku} P={pValue} MM={mmValue}");
+					}
+					else
+					{
+						Logger.Info($"[SKU下拉] ❌ 用户取消，保持原有数据不变");
+					}
+				}));
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[SKU下拉] 异常: {ex.Message}");
+				this.BeginInvoke(new Action(() =>
+				{
+					MessageBox.Show($"获取数据失败：{ex.Message}", "异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
+				}));
+			}
+			finally
+			{
+				// 7. 恢复按钮
+				this.BeginInvoke(new Action(() => { uiButton1.Enabled = true; }));
+			}
+		}
+
+		/// <summary>PMM 字段解析：将 "12P56MM" 格式拆分为 P 和 MM 数字</summary>
+		/// <returns>解析成功返回 (P, MM)，失败返回 null</returns>
+		private static (int P, int MM)? ParsePMM(string pmm)
+		{
+			if (string.IsNullOrWhiteSpace(pmm)) return null;
+
+			var match = System.Text.RegularExpressions.Regex.Match(pmm, @"^(\d+)P(\d+)MM$",
+				System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+			if (!match.Success) return null;
+
+			if (int.TryParse(match.Groups[1].Value, out int p) &&
+				int.TryParse(match.Groups[2].Value, out int mm))
+			{
+				return (p, mm);
+			}
+
+			return null;
+		}
+
+		/// <summary>隐藏连接字符串密码（供日志输出）</summary>
+		private static string MaskConnStr(string connStr)
+		{
+			if (string.IsNullOrEmpty(connStr)) return connStr;
+			var idx = connStr.IndexOf("Pwd=", StringComparison.OrdinalIgnoreCase);
+			if (idx < 0) return connStr;
+			var start = idx + 4;
+			var end = connStr.IndexOf(';', start);
+			if (end < 0) end = connStr.Length;
+			return connStr.Substring(0, start) + "****" + connStr.Substring(end);
+		}
+
 		#endregion
 	}
 }

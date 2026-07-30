@@ -228,6 +228,9 @@
 			this.panel86 = new System.Windows.Forms.Panel();
 			this.xlPictureBox5 = new XL.Controls.XLPictureBox();
 			this.bindingSource1 = new System.Windows.Forms.BindingSource(this.components);
+			this.panel52 = new System.Windows.Forms.Panel();
+			this.uiButton1 = new Sunny.UI.UIButton();
+			this.DatabaseState = new Sunny.UI.UILight();
 			this.tableLayoutPanel1.SuspendLayout();
 			this.panel1.SuspendLayout();
 			this.panel2.SuspendLayout();
@@ -345,6 +348,7 @@
 			this.panel83.SuspendLayout();
 			this.panel86.SuspendLayout();
 			((System.ComponentModel.ISupportInitialize)(this.bindingSource1)).BeginInit();
+			this.panel52.SuspendLayout();
 			this.SuspendLayout();
 			// 
 			// timer1
@@ -400,6 +404,7 @@
 			// panel2
 			// 
 			this.panel2.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(47)))), ((int)(((byte)(60)))), ((int)(((byte)(76)))));
+			this.panel2.Controls.Add(this.DatabaseState);
 			this.panel2.Controls.Add(this.SafetyDoorState);
 			this.panel2.Controls.Add(this.PlcState);
 			this.panel2.Controls.Add(this.InitState);
@@ -835,29 +840,31 @@
 			// 
 			this.tableLayoutPanel27.ColumnCount = 1;
 			this.tableLayoutPanel27.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-			this.tableLayoutPanel27.Controls.Add(this.panel80, 0, 2);
+			this.tableLayoutPanel27.Controls.Add(this.panel80, 0, 3);
 			this.tableLayoutPanel27.Controls.Add(this.panel79, 0, 0);
-			this.tableLayoutPanel27.Controls.Add(this.panel55, 0, 22);
-			this.tableLayoutPanel27.Controls.Add(this.uiLabel8, 0, 1);
-			this.tableLayoutPanel27.Controls.Add(this.panel7, 0, 24);
-			this.tableLayoutPanel27.Controls.Add(this.panel23, 0, 26);
-			this.tableLayoutPanel27.Controls.Add(this.panel71, 0, 4);
-			this.tableLayoutPanel27.Controls.Add(this.panel72, 0, 5);
-			this.tableLayoutPanel27.Controls.Add(this.panel73, 0, 7);
-			this.tableLayoutPanel27.Controls.Add(this.panel74, 0, 8);
-			this.tableLayoutPanel27.Controls.Add(this.panel75, 0, 10);
-			this.tableLayoutPanel27.Controls.Add(this.panel76, 0, 11);
-			this.tableLayoutPanel27.Controls.Add(this.panel77, 0, 13);
-			this.tableLayoutPanel27.Controls.Add(this.panel78, 0, 14);
-			this.tableLayoutPanel27.Controls.Add(this.panel22, 0, 17);
-			this.tableLayoutPanel27.Controls.Add(this.tableLayoutPanel34, 0, 19);
+			this.tableLayoutPanel27.Controls.Add(this.panel55, 0, 23);
+			this.tableLayoutPanel27.Controls.Add(this.uiLabel8, 0, 2);
+			this.tableLayoutPanel27.Controls.Add(this.panel7, 0, 25);
+			this.tableLayoutPanel27.Controls.Add(this.panel23, 0, 27);
+			this.tableLayoutPanel27.Controls.Add(this.panel71, 0, 5);
+			this.tableLayoutPanel27.Controls.Add(this.panel72, 0, 6);
+			this.tableLayoutPanel27.Controls.Add(this.panel73, 0, 8);
+			this.tableLayoutPanel27.Controls.Add(this.panel74, 0, 9);
+			this.tableLayoutPanel27.Controls.Add(this.panel75, 0, 11);
+			this.tableLayoutPanel27.Controls.Add(this.panel76, 0, 12);
+			this.tableLayoutPanel27.Controls.Add(this.panel77, 0, 14);
+			this.tableLayoutPanel27.Controls.Add(this.panel78, 0, 15);
+			this.tableLayoutPanel27.Controls.Add(this.panel22, 0, 18);
+			this.tableLayoutPanel27.Controls.Add(this.tableLayoutPanel34, 0, 20);
+			this.tableLayoutPanel27.Controls.Add(this.panel52, 0, 1);
 			this.tableLayoutPanel27.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.tableLayoutPanel27.Location = new System.Drawing.Point(5, 50);
 			this.tableLayoutPanel27.Margin = new System.Windows.Forms.Padding(0);
 			this.tableLayoutPanel27.Name = "tableLayoutPanel27";
 			this.tableLayoutPanel27.Padding = new System.Windows.Forms.Padding(5, 0, 5, 5);
-			this.tableLayoutPanel27.RowCount = 27;
+			this.tableLayoutPanel27.RowCount = 28;
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 35F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 25F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 35F));
 			this.tableLayoutPanel27.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
@@ -891,7 +898,7 @@
 			// 
 			this.panel80.Controls.Add(this.SKU_Txt);
 			this.panel80.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel80.Location = new System.Drawing.Point(5, 45);
+			this.panel80.Location = new System.Drawing.Point(5, 80);
 			this.panel80.Margin = new System.Windows.Forms.Padding(0);
 			this.panel80.Name = "panel80";
 			this.panel80.Size = new System.Drawing.Size(180, 35);
@@ -963,7 +970,7 @@
 			this.uiLabel8.Dock = System.Windows.Forms.DockStyle.Fill;
 			this.uiLabel8.Font = new System.Drawing.Font("微软雅黑", 11F, System.Drawing.FontStyle.Bold);
 			this.uiLabel8.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(48)))), ((int)(((byte)(48)))), ((int)(((byte)(48)))));
-			this.uiLabel8.Location = new System.Drawing.Point(8, 20);
+			this.uiLabel8.Location = new System.Drawing.Point(8, 55);
 			this.uiLabel8.Name = "uiLabel8";
 			this.uiLabel8.Size = new System.Drawing.Size(174, 25);
 			this.uiLabel8.TabIndex = 3;
@@ -1035,7 +1042,7 @@
 			// 
 			this.panel71.Controls.Add(this.uiLabel15);
 			this.panel71.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel71.Location = new System.Drawing.Point(5, 100);
+			this.panel71.Location = new System.Drawing.Point(5, 135);
 			this.panel71.Margin = new System.Windows.Forms.Padding(0);
 			this.panel71.Name = "panel71";
 			this.panel71.Size = new System.Drawing.Size(180, 25);
@@ -1057,7 +1064,7 @@
 			// 
 			this.panel72.Controls.Add(this.uiPanel13);
 			this.panel72.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel72.Location = new System.Drawing.Point(5, 125);
+			this.panel72.Location = new System.Drawing.Point(5, 160);
 			this.panel72.Margin = new System.Windows.Forms.Padding(0);
 			this.panel72.Name = "panel72";
 			this.panel72.Size = new System.Drawing.Size(180, 35);
@@ -1248,7 +1255,7 @@
 			// 
 			this.panel73.Controls.Add(this.uiLabel22);
 			this.panel73.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel73.Location = new System.Drawing.Point(5, 180);
+			this.panel73.Location = new System.Drawing.Point(5, 215);
 			this.panel73.Margin = new System.Windows.Forms.Padding(0);
 			this.panel73.Name = "panel73";
 			this.panel73.Size = new System.Drawing.Size(180, 25);
@@ -1270,7 +1277,7 @@
 			// 
 			this.panel74.Controls.Add(this.FrontPNumber_Lb);
 			this.panel74.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel74.Location = new System.Drawing.Point(5, 205);
+			this.panel74.Location = new System.Drawing.Point(5, 240);
 			this.panel74.Margin = new System.Windows.Forms.Padding(0);
 			this.panel74.Name = "panel74";
 			this.panel74.Size = new System.Drawing.Size(180, 35);
@@ -1309,7 +1316,7 @@
 			// 
 			this.panel75.Controls.Add(this.uiLabel23);
 			this.panel75.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel75.Location = new System.Drawing.Point(5, 260);
+			this.panel75.Location = new System.Drawing.Point(5, 295);
 			this.panel75.Margin = new System.Windows.Forms.Padding(0);
 			this.panel75.Name = "panel75";
 			this.panel75.Size = new System.Drawing.Size(180, 25);
@@ -1331,7 +1338,7 @@
 			// 
 			this.panel76.Controls.Add(this.BackBarcode_Lb);
 			this.panel76.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel76.Location = new System.Drawing.Point(5, 285);
+			this.panel76.Location = new System.Drawing.Point(5, 320);
 			this.panel76.Margin = new System.Windows.Forms.Padding(0);
 			this.panel76.Name = "panel76";
 			this.panel76.Size = new System.Drawing.Size(180, 35);
@@ -1361,7 +1368,7 @@
 			// 
 			this.panel77.Controls.Add(this.uiLabel16);
 			this.panel77.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel77.Location = new System.Drawing.Point(5, 340);
+			this.panel77.Location = new System.Drawing.Point(5, 375);
 			this.panel77.Margin = new System.Windows.Forms.Padding(0);
 			this.panel77.Name = "panel77";
 			this.panel77.Size = new System.Drawing.Size(180, 25);
@@ -1383,7 +1390,7 @@
 			// 
 			this.panel78.Controls.Add(this.CodingFormat_Lb);
 			this.panel78.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel78.Location = new System.Drawing.Point(5, 365);
+			this.panel78.Location = new System.Drawing.Point(5, 400);
 			this.panel78.Margin = new System.Windows.Forms.Padding(0);
 			this.panel78.Name = "panel78";
 			this.panel78.Size = new System.Drawing.Size(180, 35);
@@ -1427,7 +1434,7 @@
 			// 
 			this.panel22.Controls.Add(this.saveBtn);
 			this.panel22.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.panel22.Location = new System.Drawing.Point(5, 440);
+			this.panel22.Location = new System.Drawing.Point(5, 475);
 			this.panel22.Margin = new System.Windows.Forms.Padding(0);
 			this.panel22.Name = "panel22";
 			this.panel22.Size = new System.Drawing.Size(180, 40);
@@ -1464,7 +1471,7 @@
 			this.tableLayoutPanel34.ColumnCount = 1;
 			this.tableLayoutPanel34.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
 			this.tableLayoutPanel34.Dock = System.Windows.Forms.DockStyle.Fill;
-			this.tableLayoutPanel34.Location = new System.Drawing.Point(5, 530);
+			this.tableLayoutPanel34.Location = new System.Drawing.Point(5, 565);
 			this.tableLayoutPanel34.Margin = new System.Windows.Forms.Padding(0);
 			this.tableLayoutPanel34.Name = "tableLayoutPanel34";
 			this.tableLayoutPanel34.RowCount = 4;
@@ -3230,6 +3237,52 @@
 			this.xlPictureBox5.ZoomFactor = 1F;
 			this.xlPictureBox5.ZoomIncrement = 0.3F;
 			// 
+			// panel52
+			// 
+			this.panel52.Controls.Add(this.uiButton1);
+			this.panel52.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.panel52.Location = new System.Drawing.Point(5, 20);
+			this.panel52.Margin = new System.Windows.Forms.Padding(0);
+			this.panel52.Name = "panel52";
+			this.panel52.Size = new System.Drawing.Size(180, 35);
+			this.panel52.TabIndex = 33;
+			// 
+			// uiButton1
+			// 
+			this.uiButton1.Cursor = System.Windows.Forms.Cursors.Hand;
+			this.uiButton1.Dock = System.Windows.Forms.DockStyle.Fill;
+			this.uiButton1.Font = new System.Drawing.Font("微软雅黑", 11F, System.Drawing.FontStyle.Bold);
+			this.uiButton1.Location = new System.Drawing.Point(0, 0);
+			this.uiButton1.Margin = new System.Windows.Forms.Padding(0);
+			this.uiButton1.MinimumSize = new System.Drawing.Size(1, 1);
+			this.uiButton1.Name = "uiButton1";
+			this.uiButton1.Radius = 10;
+			this.uiButton1.Size = new System.Drawing.Size(180, 35);
+			this.uiButton1.TabIndex = 5;
+			this.uiButton1.Text = "获 取 检 测 参 数";
+			this.uiButton1.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+			// 
+			// DatabaseState
+			// 
+			this.DatabaseState.CenterColor = System.Drawing.Color.PaleGreen;
+			this.DatabaseState.Dock = System.Windows.Forms.DockStyle.Left;
+			this.DatabaseState.Font = new System.Drawing.Font("微软雅黑", 12F);
+			this.DatabaseState.ForeColor = System.Drawing.Color.White;
+			this.DatabaseState.Location = new System.Drawing.Point(1307, 7);
+			this.DatabaseState.MinimumSize = new System.Drawing.Size(1, 1);
+			this.DatabaseState.Name = "DatabaseState";
+			this.DatabaseState.OffCenterColor = System.Drawing.Color.Salmon;
+			this.DatabaseState.OffColor = System.Drawing.Color.Red;
+			this.DatabaseState.OnCenterColor = System.Drawing.Color.PaleGreen;
+			this.DatabaseState.OnColor = System.Drawing.Color.ForestGreen;
+			this.DatabaseState.Radius = 21;
+			this.DatabaseState.ShowText = true;
+			this.DatabaseState.Size = new System.Drawing.Size(82, 21);
+			this.DatabaseState.State = Sunny.UI.UILightState.Off;
+			this.DatabaseState.TabIndex = 39;
+			this.DatabaseState.Text = "数据库";
+			this.DatabaseState.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+			// 
 			// MainFrm
 			// 
 			this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
@@ -3363,6 +3416,7 @@
 			this.panel83.ResumeLayout(false);
 			this.panel86.ResumeLayout(false);
 			((System.ComponentModel.ISupportInitialize)(this.bindingSource1)).EndInit();
+			this.panel52.ResumeLayout(false);
 			this.ResumeLayout(false);
 
 		}
@@ -3568,6 +3622,9 @@
 		private Sunny.UI.UITextBox P_Lb;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel34;
 		private Sunny.UI.UILight SafetyDoorState;
+		private System.Windows.Forms.Panel panel52;
+		private Sunny.UI.UIButton uiButton1;
+		private Sunny.UI.UILight DatabaseState;
 		// private Sunny.UI.UITextBox Result2;
 	}
 }

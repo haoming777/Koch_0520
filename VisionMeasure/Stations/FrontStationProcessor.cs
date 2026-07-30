@@ -33,8 +33,8 @@ namespace VisionMeasure.Stations
 	/// </summary>
 	public class FrontStationProcessor : IDisposable
 	{
-		private static readonly Regex PNumberRegex = new Regex(@"P\d+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-		private const int PNumberMinLength = 6;
+		private static readonly Regex PNumberRegex = new Regex(@"P\d{8}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private const int PNumberMinLength = 9;
 
 		private HighSpeedImageSaver _imageSaver;
 		private readonly AiModelManager _models;
@@ -299,45 +299,114 @@ namespace VisionMeasure.Stations
 		}
 
 		/// <summary>
-		/// P号码OCR识别: 逐盒ROI裁剪(左halfP+右halfP, 取下方1/3),
-		/// ViMo OCR -> 正则匹配 -> 与参考P号比对, 返回缺陷列表.
+		/// P号码OCR识别: 逐盒ROI裁剪 -> 传入单盒处理逻辑
 		/// </summary>
 		private Dictionary<int, List<BoxDefect>> RecognizePNumber(Mat left, Mat right, int pCount, int halfP)
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
 			if (_models.FrontOcrModel == null) return results;
+
 			try
 			{
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
 				int boxWL = wL / halfP, boxWR = wR / halfP;
 				double pcRatio = (_pcodeParams != null) ? _pcodeParams.StartHeightRatioPCode : (2.0 / 3.0);
 				int startYL = (int)(hL * pcRatio), startYR = (int)(hR * pcRatio);
+
 				string refPNumber = _currentSku?.FrontPCode;
 				bool hasRef = !string.IsNullOrEmpty(refPNumber);
 
-				for (int i = 0; i < halfP; i++) { int sx = i * boxWL; int rw = (i < halfP - 1) ? boxWL : (wL - sx); int rh = hL - startYL; if (rw > 0 && rh > 0) using (var roi = new Mat(left, new CvRect(sx, startYL, rw, rh)).Clone()) ProcessPNumberRoi(roi, i, refPNumber, hasRef, wL, hL, sx, startYL, results); }
-				for (int j = 0; j < halfP; j++) { int gi = halfP + j; int sx = j * boxWR; int rw = (j < halfP - 1) ? boxWR : (wR - sx); int rh = hR - startYR; if (rw > 0 && rh > 0) using (var roi = new Mat(right, new CvRect(sx, startYR, rw, rh)).Clone()) ProcessPNumberRoi(roi, gi, refPNumber, hasRef, wR, hR, sx, startYR, results); }
+				// 左半部分
+				for (int i = 0; i < halfP; i++)
+				{
+					int sx = i * boxWL;
+					int rw = (i < halfP - 1) ? boxWL : (wL - sx);
+					int rh = hL - startYL;
+					if (rw > 0 && rh > 0)
+					{
+						using (var roi = new Mat(left, new CvRect(sx, startYL, rw, rh)).Clone())
+						{
+							// 变更：将 pCount 传入 ProcessPNumberRoi
+							ProcessPNumberRoi(roi, i, refPNumber, hasRef, wL, hL, sx, startYL, pCount, results);
+						}
+					}
+				}
+
+				// 右半部分
+				for (int j = 0; j < halfP; j++)
+				{
+					int gi = halfP + j;
+					int sx = j * boxWR;
+					int rw = (j < halfP - 1) ? boxWR : (wR - sx);
+					int rh = hR - startYR;
+					if (rw > 0 && rh > 0)
+					{
+						using (var roi = new Mat(right, new CvRect(sx, startYR, rw, rh)).Clone())
+						{
+							// 变更：将 pCount 传入 ProcessPNumberRoi
+							ProcessPNumberRoi(roi, gi, refPNumber, hasRef, wR, hR, sx, startYR, pCount, results);
+						}
+					}
+				}
 			}
 			catch (Exception ex) { Logger.Error($"P号码识别异常: {ex.Message}"); }
 			return results;
 		}
 
 		/// <summary>处理单盒P号ROI: ViMo OCR→遍历Blocks→PNumberRegex匹配→过滤碎片(长度<PNumberMinLength)→与参考比对→画框(OK绿/NG橙)</summary>
+		/// <summary>
+		/// 处理单盒P号ROI: 旋转90度 -> 动态截取底部百分比 -> ViMo OCR -> 正则匹配
+		/// </summary>
 		private void ProcessPNumberRoi(Mat roi, int boxIdx, string refPNumber, bool hasRef,
-			int fullW, int fullH, int offsetX, int offsetY, Dictionary<int, List<BoxDefect>> results)
+			int fullW, int fullH, int offsetX, int offsetY, int pCount, Dictionary<int, List<BoxDefect>> results)
 		{
 			ResponseList<OcrResponse> ocrResults;
-			var ocrSw = System.Diagnostics.Stopwatch.StartNew();
-			int ret = _models.FrontOcrModel.Run(roi, out ocrResults);
-			ModelPerfTracker.Record("Front", "P号OCR", ocrSw.Elapsed.TotalMilliseconds);
+			int ret = -1;
+
+			// 1. 根据 pCount 决定裁剪比例 (取旋转后从下到上的比例)
+			double cropRatio = 1.0; // 默认全取
+			if (pCount == 8) cropRatio = 0.80;
+			else if (pCount == 6) cropRatio = 0.55;
+			else if (pCount == 4) cropRatio = 0.45;
+
+			// 2. 图像预处理链：旋转 -> 裁剪
+			using (Mat rotatedRoi = new Mat())
+			{
+				// 向右（顺时针）旋转 90 度以匹配 OCR 训练特征
+				Cv2.Rotate(roi, rotatedRoi, RotateFlags.Rotate90Clockwise);
+
+				// 计算裁剪区域
+				int rotatedW = rotatedRoi.Width;
+				int rotatedH = rotatedRoi.Height;
+				int cropH = (int)(rotatedH * cropRatio);
+				int startY = rotatedH - cropH; // 从下到上截取，计算起始Y坐标
+
+				// 截取目标区域并送入 OCR
+				using (Mat finalRoi = new Mat(rotatedRoi, new CvRect(0, startY, rotatedW, cropH)).Clone())
+				{
+					ret = _models.FrontOcrModel.Run(finalRoi, out ocrResults);
+				}
+			}
+
+			// 3. 处理 OCR 推理失败或空结果的情况
 			if (ret != 0 || ocrResults == null || ocrResults.Count == 0)
 			{
 				if (hasRef && EnablePNumberCheck)
-					AddDefect(results, boxIdx, "P号缺少", new float[] { 0, (float)offsetY / fullH, 0.1f, (float)(offsetY + roi.Height) / fullH });
+				{
+					// "P号缺少"框覆盖整个ROI区域（原图归一化坐标）
+					AddDefect(results, boxIdx, "P号缺少", new float[] {
+						(float)offsetX / fullW,
+						(float)offsetY / fullH,
+						(float)(offsetX + roi.Width) / fullW,
+						(float)(offsetY + roi.Height) / fullH });
+				}
 				return;
 			}
 
 			bool foundAny = false;
+			int roiW = roi.Width, roiH = roi.Height;
+
+			// 4. 解析结果
 			foreach (var resTuple in ocrResults)
 			{
 				OcrResponse ocrResp = resTuple.Item2;
@@ -347,37 +416,62 @@ namespace VisionMeasure.Stations
 					if (string.IsNullOrWhiteSpace(block.Label)) continue;
 					Match match = PNumberRegex.Match(block.Label);
 					if (!match.Success) continue;
+
 					string pNum = match.Value.ToUpper();
 					if (pNum.Length < PNumberMinLength) continue; // 过滤碎片
 
 					foundAny = true;
-					float[] normBox = ComputeNormBBox(block, fullW, fullH, offsetX, offsetY);
+
+					// 完整逆变换: finalRoi → 去裁剪 → 逆时针90° → 去ROI偏移 → 原图归一化坐标
+					float[] normBox = ComputeNormBBox(block, fullW, fullH, offsetX, offsetY, roiW, roiH, cropRatio);
 					bool isMatch = (pNum == refPNumber);
 
 					if (EnablePNumberCheck && hasRef && !isMatch)
 					{
-						AddDefect(results, boxIdx, $"P号错误(识:{pNum}/标:{refPNumber})", normBox);
+						AddDefect(results, boxIdx, $"P号错误:{pNum}", normBox);
 					}
 					else
 					{
-						// 始终画框: OK用绿色显示识别结果
-						AddDefect(results, boxIdx, $"P号:{pNum}", normBox);
+						AddDefect(results, boxIdx, pNum, normBox);
 						Logger.Debug($"[Front] P号盒{boxIdx + 1}: 识别={pNum}" + (isMatch ? " OK" : ""));
 					}
 				}
 			}
+
 			if (!foundAny && hasRef && EnablePNumberCheck)
-				AddDefect(results, boxIdx, "P号缺少", new float[] { 0, (float)offsetY / fullH, 0.1f, (float)(offsetY + roi.Height) / fullH });
+			{
+				AddDefect(results, boxIdx, "P号缺少", new float[] {
+					(float)offsetX / fullW,
+					(float)offsetY / fullH,
+					(float)(offsetX + roiW) / fullW,
+					(float)(offsetY + roiH) / fullH });
+			}
 		}
 
-		/// <summary>计算归一化包围框: TextBlock.Polygon→min/max→(x/fullW, y/fullH)归一化→[x1,y1,x2,y2]</summary>
-		private float[] ComputeNormBBox(TextBlock block, int fullW, int fullH, int offsetX, int offsetY)
+		/// <summary>
+		/// 计算归一化包围框: OCR返回的finalRoi坐标 → 逆变换(去裁剪+逆时针90°+去ROI偏移) → 原图归一化坐标
+		/// 变换链: 原图 → ROI(竖条) → 顺时针90° → 底部裁剪 → OCR
+		/// 逆变换: OCR(finalRoi) → 去裁剪 → 逆时针90° → 去ROI偏移 → 原图
+		/// </summary>
+		private float[] ComputeNormBBox(TextBlock block, int fullW, int fullH, int offsetX, int offsetY,
+			int roiW, int roiH, double cropRatio)
 		{
 			if (block.Polygon == null || !block.Polygon.Any()) return new float[] { 0, 0, 0.1f, 0.1f };
+
+			int cropH = (int)(roiW * cropRatio); // 裁剪高度 = 旋转后高度(即roi宽度) × 裁剪比例
+
 			float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
 			foreach (var pt in block.Polygon)
 			{
-				float gx = pt.X + offsetX, gy = pt.Y + offsetY;
+				// pt 在 finalRoi 坐标系中 (fx, fy)
+				float fx = pt.X, fy = pt.Y;
+
+				// 逆变换:
+				// 1. 去裁剪 + 逆时针90°：ROI坐标 rx = fy + roiW - cropH, ry = roiH - fx
+				// 2. 去ROI偏移：原图 gx = offsetX + rx, gy = offsetY + ry
+				float gx = offsetX + fy + (roiW - cropH);
+				float gy = offsetY + roiH - fx;
+
 				if (gx < minX) minX = gx;
 				if (gy < minY) minY = gy;
 				if (gx > maxX) maxX = gx;
@@ -608,8 +702,7 @@ namespace VisionMeasure.Stations
 					foreach (var d in pNumberResults[i])
 					{
 						bool isPng = d.DefectType.Contains("错误") || d.DefectType == "P号缺少";
-						bool isPonly = d.DefectType.StartsWith("P号:");
-						Color c = isPng ? Color.Orange : (isPonly ? Color.Lime : Color.Orange);
+							Color c = isPng ? Color.Orange : Color.Lime;
 						DrawDefectBox(g, d, imgWidth, imgHeight, c);
 					}
 			}
@@ -646,12 +739,16 @@ namespace VisionMeasure.Stations
 				}
 		}
 
-		/// <summary>绘制单个缺陷框(半透明填充+实线边框+分数标签) — 支持P号(绿/橙)和破损(红)两种颜色</summary>
+		/// <summary>绘制单个缺陷框(半透明填充+实线边框+分数标签) — 支持P号(绿/橙)和破损(红)两种颜色，坐标自动裁剪到图像边界内</summary>
 		private void DrawDefectBox(Graphics g, BoxDefect defect, int imgWidth, int imgHeight, Color baseColor)
 		{
 			if (defect.BoundingBox == null || defect.BoundingBox.Length < 4) return;
-			int x1 = (int)(defect.BoundingBox[0] * imgWidth), y1 = (int)(defect.BoundingBox[1] * imgHeight);
-			int x2 = (int)(defect.BoundingBox[2] * imgWidth), y2 = (int)(defect.BoundingBox[3] * imgHeight);
+
+			// 计算像素坐标并裁剪到图像边界内
+			int x1 = Math.Max(0, Math.Min((int)(defect.BoundingBox[0] * imgWidth), imgWidth - 1));
+			int y1 = Math.Max(0, Math.Min((int)(defect.BoundingBox[1] * imgHeight), imgHeight - 1));
+			int x2 = Math.Max(0, Math.Min((int)(defect.BoundingBox[2] * imgWidth), imgWidth - 1));
+			int y2 = Math.Max(0, Math.Min((int)(defect.BoundingBox[3] * imgHeight), imgHeight - 1));
 			if (x2 <= x1 || y2 <= y1) return;
 			var rc = new Rectangle(x1, y1, x2 - x1, y2 - y1);
 
@@ -659,16 +756,27 @@ namespace VisionMeasure.Stations
 			using (var pn = new Pen(baseColor, 3)) g.DrawRectangle(pn, rc);
 
 			string label = defect.DefectType;
-			if (defect.Score > 0 && defect.Score < 1.0f && !label.StartsWith("P号"))
+			if (defect.Score > 0 && defect.Score < 1.0f && !label.StartsWith("P号") && !label.StartsWith("P"))
 				label = label + " " + defect.Score.ToString("F2");
-			if (label.StartsWith("P号:") || label.StartsWith("P号错误")) { /* shown as-is */ }
+			if (label.StartsWith("P号错误")) { /* shown as-is */ }
 			if (label.Length > 20) label = label.Substring(0, 20);
 			using (var f = new Font("微软雅黑", 14, FontStyle.Bold))
 			{
 				var sz = g.MeasureString(label, f);
-				int ly = y1 - (int)sz.Height - 8; if (ly < 8) ly = y1 + 8;
-				using (var bg = new SolidBrush(baseColor)) g.FillRectangle(bg, x1 - 2, ly - 2, sz.Width + 8, sz.Height + 6);
-				g.DrawString(label, f, Brushes.White, x1 + 2, ly + 1);
+
+				// Y: 框上方优先，不够则放框下方
+				int ly = y1 - (int)sz.Height - 8;
+				if (ly < 4) ly = y2 + 4;
+
+				// X: 左对齐框，右侧溢出则左移
+				int lx = x1;
+				int textW = (int)sz.Width + 8;
+				if (lx + textW > imgWidth)
+					lx = imgWidth - textW - 2;
+				if (lx < 0) lx = 2;
+
+				using (var bg = new SolidBrush(baseColor)) g.FillRectangle(bg, lx, ly - 2, textW, sz.Height + 6);
+				g.DrawString(label, f, Brushes.White, lx + 2, ly + 1);
 			}
 		}
 

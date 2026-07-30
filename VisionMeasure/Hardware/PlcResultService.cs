@@ -61,7 +61,7 @@ namespace Hardware
             string wordAddr = FeedbackWordAddrs[idx];
             string byteAddr = FailureByteAddrs[idx];
 
-            byte stopByte = (byte)Math.Min(stopLevel, 3);
+            byte stopByte = (byte)Math.Min(stopLevel, 4);
 
             try
             {

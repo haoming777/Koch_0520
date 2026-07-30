@@ -148,6 +148,7 @@
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
+    <Reference Include="System.Data.Odbc" />
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Net.Http" />
@@ -275,6 +276,7 @@
     </Compile>
     <Compile Include="Utils\ModelPerfTracker.cs" />
     <Compile Include="Hardware\PlcResultService.cs" />
+    <Compile Include="Services\OdbcDatabaseService.cs" />
     <Compile Include="Models\AiModelManager.cs" />
     <Compile Include="Models\BatchResult.cs" />
     <Compile Include="Models\ImageContext.cs" />
