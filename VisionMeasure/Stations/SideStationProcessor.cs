@@ -830,7 +830,7 @@ namespace Stations
 				foreach (var kv in imgDefects)
 				{
 					int srcIdx = kv.Key % 100; Side side = kv.Key >= 100 ? Side.Right : Side.Left;
-					var sr = new SideResult { Index = srcIdx, Side = side, Defects = kv.Value, Status = kv.Value.Count > 0 ? "NG" : "OK" };
+					var sr = new SideResult { Index = srcIdx, Side = side, Defects = kv.Value, Status = kv.Value.Count > 0 ? "缺陷" : "OK" };
 					if (side == Side.Left) _leftResults.Add(sr); else _rightResults.Add(sr);
 				}
 			}
@@ -885,7 +885,7 @@ namespace Stations
 										new float[] { (w - cropW + b.X * cropW) / w, b.Y, (w - cropW + (b.X + b.Width) * cropW) / w, b.Y + b.Height }, tailResult.Scores[j]));
 								}
 							}
-							if (ng) result.Status = "NG";
+							if (ng) result.Status = "缺陷";
 						}
 					}
 				}

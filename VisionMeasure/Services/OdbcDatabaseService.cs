@@ -16,13 +16,13 @@ namespace VisionMeasure.Services
         /// <summary>
         /// 测试数据库连接（同步方法，请在 Task.Run 中调用）
         /// </summary>
-        public bool TestConnection(string connectionString)
+        public bool TestConnection(string connectionString, bool quiet = false)
         {
             var sw = Stopwatch.StartNew();
             try
             {
                 // 输出连接字符串（隐藏密码），方便排查问题
-                Logger.Info($"[OdbcDB] 测试连接 → {MaskPassword(connectionString)}");
+                if (!quiet) Logger.Info($"[OdbcDB] 测试连接 → {MaskPassword(connectionString)}");
 
                 using (var connection = new OdbcConnection(connectionString))
                 {
@@ -30,22 +30,26 @@ namespace VisionMeasure.Services
                 }
 
                 sw.Stop();
-                Logger.Info($"[OdbcDB] 连接成功，耗时 {sw.ElapsedMilliseconds}ms");
+                if (!quiet) Logger.Info($"[OdbcDB] 连接成功，耗时 {sw.ElapsedMilliseconds}ms");
                 return true;
             }
             catch (OdbcException ex)
             {
                 sw.Stop();
-                var messages = new System.Collections.Generic.List<string>();
-                foreach (OdbcError err in ex.Errors)
-                    messages.Add($"[{err.SQLState}] {err.Message}");
-                Logger.Error($"[OdbcDB] 连接失败({sw.ElapsedMilliseconds}ms): {string.Join(" | ", messages)}");
+                if (!quiet)
+                {
+                    var messages = new System.Collections.Generic.List<string>();
+                    foreach (OdbcError err in ex.Errors)
+                        messages.Add($"[{err.SQLState}] {err.Message}");
+                    Logger.Error($"[OdbcDB] 连接失败({sw.ElapsedMilliseconds}ms): {string.Join(" | ", messages)}");
+                }
                 return false;
             }
             catch (Exception ex)
             {
                 sw.Stop();
-                Logger.Error($"[OdbcDB] 连接异常({sw.ElapsedMilliseconds}ms): {ex.Message}");
+                if (!quiet)
+                    Logger.Error($"[OdbcDB] 连接异常({sw.ElapsedMilliseconds}ms): {ex.Message}");
                 return false;
             }
         }

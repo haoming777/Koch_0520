@@ -60,6 +60,8 @@ namespace VisionMeasure
 
 		/// <summary>预加载的SKU数据库</summary>
 		public static SkuDatabase PreloadedSkuDb { get; set; }
+		/// <summary>预加载数据库连接结果（由Program.cs在Loading阶段设置）</summary>
+		public static bool PreloadedDbOk { get; set; } = false;
 		private static MotionControlManager _staticMotionMgr;
 		public static MotionControlManager GetMotionManager() => _staticMotionMgr;
 
@@ -95,6 +97,8 @@ namespace VisionMeasure
 
 		// ========== 产品ID计数器 ==========
 		private long _productIdCounter = 0;
+		/// <summary>PLC发送批次号，每次PLC发送自增，用于关联检测日志和PLC日志</summary>
+		private long _plcBatchSeq = 0;
 
 		// ========== BGR/RGB通道验证(仅首帧) ==========
 		private static bool _bgrVerifyDone = false;
@@ -124,6 +128,7 @@ namespace VisionMeasure
 		private DatabaseConfig _dbConfig;
 		private OdbcDatabaseService _odbcService;
 		private System.Timers.Timer _dbHeartbeatTimer;
+		private bool _dbLastConnected = false;  // 上一次连接状态，用于减少重复错误日志
 
 		// ========== 工具类 ==========
 		private bool _isClosing = false;
@@ -885,7 +890,8 @@ namespace VisionMeasure
 						// 信号4优先级最高
 						if (signal4StopLevel > stopLevel)
 							stopLevel = signal4StopLevel;
-						Logger.Info($"[PLC-Front] P={p} OK={ok} NG={ng} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
+						var frontSeq = Interlocked.Increment(ref _plcBatchSeq);
+						Logger.Info($"[PLC-Front] #{frontSeq} P={p} OK={ok} NG={ng} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Front, rejectBits, stopLevel, p))
 							Logger.Error("[PLC-Front] SendStationResult 返回 false!");
 						if (!_plcResultService.SendStationComplete(Hardware.StationType.Front))
@@ -1354,7 +1360,8 @@ namespace VisionMeasure
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("Back", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
 						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
-						Logger.Info($"[PLC-Back] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
+						var backSeq = Interlocked.Increment(ref _plcBatchSeq);
+						Logger.Info($"[PLC-Back] #{backSeq} pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Back, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-Back] pid={result.ProductId} SendStationResult 返回 false!");
 						if (!_plcResultService.SendStationComplete(Hardware.StationType.Back))
@@ -1399,7 +1406,8 @@ namespace VisionMeasure
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("EndFace", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
 						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
-						Logger.Info($"[PLC-EndFace] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
+						var efSeq = Interlocked.Increment(ref _plcBatchSeq);
+						Logger.Info($"[PLC-EndFace] #{efSeq} pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.EndFace, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-EndFace] pid={result.ProductId} SendStationResult 返回 false!");
 						if (!_plcResultService.SendStationComplete(Hardware.StationType.EndFace))
@@ -1447,7 +1455,8 @@ namespace VisionMeasure
 						var plcSw = System.Diagnostics.Stopwatch.StartNew();
 						Config.StationDefectConfig.Instance.Resolve("Side", statusList, out ushort rejectBits, out int stopLevel, out string stopReason);
 						if (_detectionParams.Station.DebugForceFirstBoxNg) rejectBits |= 1;
-						Logger.Info($"[PLC-Side] pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
+						var sideSeq = Interlocked.Increment(ref _plcBatchSeq);
+						Logger.Info($"[PLC-Side] #{sideSeq} pid={result.ProductId} P={p} 逐盒:[{string.Join("][", statusList)}] → 剔除位=0x{rejectBits:X4} 停机={stopLevel}{(stopReason.Length > 0 ? " 原因:" + stopReason : "")}");
 						if (!_plcResultService.SendStationResult(Hardware.StationType.Side, rejectBits, stopLevel, p))
 							Logger.Error($"[PLC-Side] pid={result.ProductId} SendStationResult 返回 false!");
 						if (!_plcResultService.SendStationComplete(Hardware.StationType.Side))
@@ -2736,13 +2745,17 @@ namespace VisionMeasure
 				_dbConfig = DatabaseConfig.Load();
 				_odbcService = new OdbcDatabaseService();
 
-				// 首次同步检测（界面完全打开前确认连接状态）
-				var connStr = _dbConfig.BuildConnectionString();
-				connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
-					@"Connect Timeout=\d+", "Connect Timeout=3");
-				bool firstOk = _odbcService.TestConnection(connStr);
+				// 首次检测：优先用预加载结果（Program.cs已在Loading阶段测过）
+				bool firstOk = PreloadedDbOk;
+				if (!PreloadedDbOk)
+				{
+					var connStr = _dbConfig.BuildConnectionString();
+					connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
+						@"Connect Timeout=\d+", "Connect Timeout=3");
+					firstOk = _odbcService.TestConnection(connStr);
+				}
 				DatabaseState.State = firstOk ? UILightState.On : UILightState.Off;
-				Logger.Info($"[DB心跳] 首次检测: {(firstOk ? "连接成功" : "连接失败")}");
+				Logger.Info($"[DB心跳] 首次检测: {(firstOk ? "连接成功" : "连接失败")}{(PreloadedDbOk ? " (来自预加载)" : "")}");
 
 				// 启动后台定时器
 				_dbHeartbeatTimer = new System.Timers.Timer(5000);
@@ -2758,7 +2771,7 @@ namespace VisionMeasure
 			}
 		}
 
-		/// <summary>心跳检测：测试数据库连接并更新状态灯（超时3秒，避免阻塞关闭）</summary>
+		/// <summary>心跳检测：测试数据库连接并更新状态灯（超时3秒，仅状态变化时输出日志）</summary>
 		private async void CheckDatabaseConnection()
 		{
 			try
@@ -2767,11 +2780,21 @@ namespace VisionMeasure
 				var connStr = _dbConfig.BuildConnectionString();
 				connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
 					@"Connect Timeout=\d+", "Connect Timeout=3");
-				var result = await Task.Run(() => _odbcService.TestConnection(connStr));
+				bool result = await Task.Run(() => _odbcService.TestConnection(connStr, quiet: true));
 
 				this.BeginInvoke(new Action(() =>
 				{
+					bool changed = (result != _dbLastConnected);
 					DatabaseState.State = result ? UILightState.On : UILightState.Off;
+
+					if (changed)
+					{
+						_dbLastConnected = result;
+						if (result)
+							Logger.Info("[DB心跳] 数据库已连接");
+						else
+							Logger.Warning("[DB心跳] 数据库连接断开");
+					}
 				}));
 			}
 			catch (Exception ex)

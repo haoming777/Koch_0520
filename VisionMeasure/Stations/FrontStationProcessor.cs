@@ -33,7 +33,7 @@ namespace VisionMeasure.Stations
 	/// </summary>
 	public class FrontStationProcessor : IDisposable
 	{
-		private static readonly Regex PNumberRegex = new Regex(@"P\d{8}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static readonly Regex PNumberRegex = new Regex(@"P[A-Z0-9]{8}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 		private const int PNumberMinLength = 9;
 
 		private HighSpeedImageSaver _imageSaver;

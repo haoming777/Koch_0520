@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using CommonLib;
 using VisionMeasure.From;
 using VisionMeasure.Utils;
 using CommonLib;
@@ -91,6 +92,25 @@ namespace VisionMeasure
 						var modelConfig = ModelPathConfig.LoadFromSysConfig();
 						var aiModels = new AiModelManager(modelConfig);
 						aiModels.LoadAllModels();
+
+						// 预连接数据库（Loading界面还在显示）
+						loadingFrm.UpdateProgress(75, "正在连接数据库...");
+						bool dbOk = false;
+						try
+						{
+							var dbConfig = DatabaseConfig.Load();
+							var connStr = dbConfig.BuildConnectionString();
+							connStr = System.Text.RegularExpressions.Regex.Replace(connStr,
+								@"Connect Timeout=\d+", "Connect Timeout=3");
+							using (var conn = new System.Data.Odbc.OdbcConnection(connStr))
+							{
+								conn.Open();
+								dbOk = true;
+							}
+							Logger.Info("[预加载] 数据库连接成功");
+						}
+						catch (Exception ex) { Logger.Info("[预加载] 数据库连接失败: " + ex.Message); }
+						MainFrm.PreloadedDbOk = dbOk;
 
 						MainFrm.PreloadedSkuDb = skuDb;
 						MainFrm.PreloadedModels = aiModels;
