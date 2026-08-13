@@ -706,9 +706,23 @@ namespace Stations
 				using (Mat merged = new Mat())
 				{
 					Cv2.HConcat(left, right, merged);
-					double dcRatio = (_datecodeParams != null) ? _datecodeParams.StartHeightRatioDateCode : (2.0 / 3.0);
-					int fullH = merged.Height, cropY = (int)(fullH * dcRatio);
-					using (var crop = new Mat(merged, new CvRect(0, cropY, merged.Width, fullH - cropY)).Clone())
+					double dcTopRatio = (_datecodeParams != null) ? _datecodeParams.StartHeightRatioDateCode : (2.0 / 3.0);
+					double dcBottomRatio = (_datecodeParams != null) ? _datecodeParams.DateCodeCropBottomRatio : 0.0;
+					// 防呆: 裁顶+裁底 ≥ 95% 则自动限制
+					if (dcTopRatio + dcBottomRatio >= 0.95)
+					{
+						double excess = dcTopRatio + dcBottomRatio - 0.90;
+						dcTopRatio = Math.Max(0, dcTopRatio - excess / 2.0);
+						dcBottomRatio = Math.Max(0, dcBottomRatio - excess / 2.0);
+						Logger.Warning("[Back] 日期码裁图比例异常(顶" + dcTopRatio.ToString("F2") + "+底" + dcBottomRatio.ToString("F2") + "≥0.95), 已自动修正为顶" + dcTopRatio.ToString("F2") + "+底" + dcBottomRatio.ToString("F2"));
+					}
+					int fullH = merged.Height, fullW = merged.Width;
+					int cropY = (int)(fullH * dcTopRatio);
+					int cropBottomPx = (int)(fullH * dcBottomRatio);
+					int cropH = fullH - cropY - cropBottomPx;
+					if (cropH < fullH * 0.05) cropH = (int)(fullH * 0.05); // 至少保留5%高度
+					Logger.Debug("[Back] 日期码裁图: 全图=" + fullW + "x" + fullH + " 裁顶=" + cropY + "px(" + dcTopRatio.ToString("F2") + ") 裁底=" + cropBottomPx + "px(" + dcBottomRatio.ToString("F2") + ") 有效=" + fullW + "x" + cropH);
+					using (var crop = new Mat(merged, new CvRect(0, cropY, fullW, cropH)).Clone())
 					{
 						r = ProcessDateCodeFull(crop, codingFormat, p, cropY, fullH);
 					}
@@ -720,14 +734,18 @@ namespace Stations
 		}
 
 	/// <summary>
-	/// 日期码三步流水线: C1=ViMo全图分割 -> Mask -> ConnectedComponents提取区域,
-	/// C2=ViMo分类逐区域判断重影, C3=ViMo OCR识别 -> 校验(MFG/LOT/双排).
+	/// 日期码三步流水线(C1/C2/C3), 对齐参考AIRunThread.cs.
+	/// C1=ViMo全图分割->ConnectedComponents提取区域->数量门控.
+	/// C2=ViMo分类判断重影, 重影则跳过C3.
+	/// C3=ViMo OCR识别->条数校验->DateComparison校验(MFG/LOT/双排).
+	/// 三态输出: 0=OK, 1=NG剔除(数量/重影/前缀错), 2=NG不剔除(日期不对/不打码区域多).
 	/// </summary>
 	private Dictionary<int, List<BoxDefect>> ProcessDateCodeFull(Mat img, string codingFormat, int p, int cropY, int fullH)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
 			int fw = img.Width, fh = img.Height, halfW = fw / 2, boxW = fw / p;
 			int hp2 = p / 2;
+			bool isNoCode = codingFormat.Contains("不打码") || codingFormat.Contains("内销码");
 
 			try
 			{
@@ -761,28 +779,125 @@ namespace Stations
 						labels.Dispose(); stats.Dispose(); centroids.Dispose();
 					}
 				}
-				Logger.Debug("[Back] C1区域数: " + regions.Count);
+				int numRegions = regions.Count;
+				Logger.Debug("[Back] C1区域数: " + numRegions);
 
-				// C2+C3: 逐区域处理
+				// ── C1数量门控(逐盒, 对齐参考AIRunThread单产品→适配多盒拼接) ──
+				// 参考为单产品单图, Num==1; 本系统多盒拼接, 需逐盒检查区域数
+				if (!isNoCode)
+				{
+					// MFG / LOT / 双排: 统计每盒区域数, 逐盒门控
+					var boxRegionCounts = new Dictionary<int, int>();
+					foreach (var rect in regions)
+					{
+						int cx = rect.X + rect.Width / 2;
+						int bi = cx / boxW;
+						if (bi < 0) bi = 0; if (bi >= p) bi = p - 1;
+						if (!boxRegionCounts.ContainsKey(bi)) boxRegionCounts[bi] = 0;
+						boxRegionCounts[bi]++;
+					}
+					// 有盒子的区域数≠1 → 该盒标记数量错误, 并为缺失盒子补充错误
+					for (int bi = 0; bi < p; bi++)
+					{
+						int count = boxRegionCounts.ContainsKey(bi) ? boxRegionCounts[bi] : 0;
+						if (count == 0)
+						{
+							// 该盒无日期码区域 → NG剔除
+							float[] nbx = new float[] {
+								(float)(bi < hp2 ? bi * boxW : (bi - hp2) * boxW) / halfW,
+								(float)cropY / fullH,
+								(float)(bi < hp2 ? (bi + 1) * boxW : (bi - hp2 + 1) * boxW) / halfW,
+								1f
+							};
+							if (!r.ContainsKey(bi)) r[bi] = new List<BoxDefect>();
+							r[bi].Add(new BoxDefect(bi, "日期码缺少", nbx));
+							Logger.Debug("[Back] 盒" + (bi + 1) + " 日期码缺少 → NG剔除");
+						}
+						else if (count > 1)
+						{
+							// 该盒有多个日期码区域 → NG剔除
+							Logger.Debug("[Back] 盒" + (bi + 1) + " 日期码数量错误: " + count + "/1 → NG剔除");
+						}
+					}
+				}
+				else
+				{
+					// 不打码 / 内销码: 整体区域数 < RemoveNum → OK, >= RemoveNum → NG不剔除
+					int removeNum = (_datecodeParams != null) ? _datecodeParams.DateCodeRemoveNum : 3;
+					if (numRegions >= removeNum)
+					{
+						Logger.Debug("[Back] 不打码模式, 区域数=" + numRegions + " >= RemoveNum=" + removeNum + " → NG不剔除");
+						int fallbackBox = 0;
+						if (regions.Count > 0)
+						{
+							int cx = regions[0].X + regions[0].Width / 2;
+							fallbackBox = cx / boxW;
+							if (fallbackBox < 0) fallbackBox = 0; if (fallbackBox >= p) fallbackBox = p - 1;
+						}
+						if (!r.ContainsKey(fallbackBox))
+							r[fallbackBox] = new List<BoxDefect>();
+						r[fallbackBox].Add(new BoxDefect(fallbackBox,
+							"不打码异常(" + numRegions + ")", new float[] { 0.05f, (float)cropY / fullH, 0.95f, 1f }));
+					}
+					return r; // 不打码模式不执行C2/C3
+				}
+
+				// ── C2+C3: 逐区域处理, 每盒内单区域正常、多区域标记错误 ──
+				var boxRegionList = new Dictionary<int, List<CvRect>>();
 				foreach (var rect in regions)
 				{
 					int cx = rect.X + rect.Width / 2;
-					int boxIdx = cx / boxW;
-					if (boxIdx < 0) boxIdx = 0;
-					if (boxIdx >= p) boxIdx = p - 1;
+					int bi = cx / boxW;
+					if (bi < 0) bi = 0; if (bi >= p) bi = p - 1;
+					if (!boxRegionList.ContainsKey(bi)) boxRegionList[bi] = new List<CvRect>();
+					boxRegionList[bi].Add(rect);
+				}
+				foreach (var kv in boxRegionList)
+				{
+					int boxIdx = kv.Key;
+					var boxRegions = kv.Value;
+					if (boxRegions.Count > 1)
+					{
+						// 该盒多个区域 → 全部标记错误, 跳过C2/C3
+						foreach (var rect in boxRegions)
+						{
+							int mx2 = Math.Max(0, rect.X - 5), myRaw2 = Math.Max(0, rect.Y - 5);
+							int mw2 = Math.Min(fw - mx2, rect.Width + 10), mh2 = Math.Min(fh - myRaw2, rect.Height + 10);
+							int my2 = myRaw2 + cropY;
+							float[] nb = new float[] {
+								(float)(mx2 - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+								(float)my2 / fullH,
+								(float)(mx2 + mw2 - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+								(float)(my2 + mh2) / fullH
+							};
+							if (!r.ContainsKey(boxIdx)) r[boxIdx] = new List<BoxDefect>();
+							r[boxIdx].Add(new BoxDefect(boxIdx, "日期码数量错误(" + boxRegions.Count + "/1)", nb));
+						}
+						continue; // 跳过C2/C3
+					}
+					// 恰好1个区域 → C2+C3
+					var rect2 = boxRegions[0];
+				{
+					// boxIdx 已在上方确定，直接用
+					int mx = Math.Max(0, rect2.X - 5), myRaw = Math.Max(0, rect2.Y - 5);
+					int mw = Math.Min(fw - mx, rect2.Width + 10), mh = Math.Min(fh - myRaw, rect2.Height + 10);
+					int my = myRaw + cropY;
 
-					int mx = Math.Max(0, rect.X - 5), myRaw = Math.Max(0, rect.Y - 5);
-					int mw = Math.Min(fw - mx, rect.Width + 10), mh = Math.Min(fh - myRaw, rect.Height + 10);
-					int my = myRaw + cropY; // 全图坐标（用于normBox归一化）
+					float[] normBox = new float[] {
+						(float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+						(float)my / fullH,
+						(float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW,
+						(float)(my + mh) / fullH
+					};
 
 					// C2: 重影分类
+					bool c2Shadow = false;
 					using (var cropC2 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
 					{
 						ResponseList<ClassificationResponse> clsRsp;
 						var dcClsSw = System.Diagnostics.Stopwatch.StartNew();
 					int clsRet = _models.BackDateCodeClsModel.Run(cropC2, out clsRsp);
 					ModelPerfTracker.Record("Back", "日期码C2分类", dcClsSw.Elapsed.TotalMilliseconds);
-						bool c2Shadow = false;
 						Logger.Debug("[Back] C2 clsRet=" + clsRet + " count=" + (clsRsp?.Count ?? 0));
 						if (clsRet == 0 && clsRsp != null && clsRsp.Count > 0)
 						{
@@ -795,116 +910,188 @@ namespace Stations
 									float s = 0;
 									try { s = Convert.ToSingle(lbl.GetType().GetProperty("Score")?.GetValue(lbl) ?? 0f); } catch { }
 									Logger.Debug("[Back] C2 Label=" + lbl.Label + " Score=" + s.ToString("F4"));
-									// 模型输出NG=重影, OK=正常
 									if (lbl.Label == "NG" || lbl.Label == "重影") c2Shadow = true;
 								}
 							}
 						}
-						else Logger.Debug("[Back] C2 分类失败或无结果");
-						Logger.Debug("[Back] C2最终: c2Shadow=" + c2Shadow);
-						// C3: OCR
-						using (var cropC3 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
-						{
-							ResponseList<OcrResponse> ocrRsp;
-							var dcOcrSw = System.Diagnostics.Stopwatch.StartNew();
+					}
+					Logger.Debug("[Back] C2最终: c2Shadow=" + c2Shadow);
+
+					if (c2Shadow)
+					{
+						// 重影 → NG剔除, 跳过C3 (对齐 AIRunThread.cs:191-196)
+						Logger.Debug("[Back] C2重影 → NG剔除, 跳过C3");
+						if (!r.ContainsKey(boxIdx))
+							r[boxIdx] = new List<BoxDefect>();
+						r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影", normBox));
+						continue; // 关键: 跳过C3 OCR
+					}
+
+					// C3: OCR (仅C2通过时执行, 对齐 AIRunThread.cs:153)
+					using (var cropC3 = new Mat(img, new CvRect(mx, myRaw, mw, mh)).Clone())
+					{
+						ResponseList<OcrResponse> ocrRsp;
+						var dcOcrSw = System.Diagnostics.Stopwatch.StartNew();
 				int ocrRet = _models.BackDateCodeOcrModel.Run(cropC3, out ocrRsp);
 				ModelPerfTracker.Record("Back", "日期码C3 OCR", dcOcrSw.Elapsed.TotalMilliseconds);
-							if (ocrRet != 0 || ocrRsp == null || ocrRsp.Count == 0) continue;
+						if (ocrRet != 0 || ocrRsp == null || ocrRsp.Count == 0)
+						{
+							// OCR无结果 → NG剔除
+							Logger.Debug("[Back] C3 OCR无结果 → NG剔除");
+							if (!r.ContainsKey(boxIdx))
+								r[boxIdx] = new List<BoxDefect>();
+							r[boxIdx].Add(new BoxDefect(boxIdx, "日期码错误(OCR无结果)", normBox));
+							continue;
+						}
 
-							var texts = new List<string>();
-							foreach (var rt in ocrRsp)
-							{
-								if (rt.Item2.Blocks == null) continue;
-								foreach (var blk in rt.Item2.Blocks)
-									if (!string.IsNullOrWhiteSpace(blk.Label)) texts.Add(blk.Label);
-							}
-							if (c2Shadow)
+						var texts = new List<string>();
+						foreach (var rt in ocrRsp)
+						{
+							if (rt.Item2.Blocks == null) continue;
+							foreach (var blk in rt.Item2.Blocks)
+								if (!string.IsNullOrWhiteSpace(blk.Label)) texts.Add(blk.Label);
+						}
+						Logger.Debug("[Back] C3 OCR texts=" + texts.Count + ": " + string.Join(" | ", texts));
+
+						if (texts.Count == 0)
+						{
+							if (!r.ContainsKey(boxIdx))
+								r[boxIdx] = new List<BoxDefect>();
+							r[boxIdx].Add(new BoxDefect(boxIdx, "日期码错误(OCR无文本)", normBox));
+							continue;
+						}
+
+						// ── C3文本条数校验 (对齐 AIRunThread.cs:465-472) ──
+						int c3Result;
+						if (codingFormat.Contains("双排"))
+						{
+							// 双排: 必须恰好2条
+							if (texts.Count != 2)
 							{
 								if (!r.ContainsKey(boxIdx))
 									r[boxIdx] = new List<BoxDefect>();
-								r[boxIdx].Add(new BoxDefect(boxIdx, "日期码重影",
-									new float[] {
-										(float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW,
-										(float)my / fullH,
-										(float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW,
-										(float)(my + mh) / fullH
-									}));
+								r[boxIdx].Add(new BoxDefect(boxIdx,
+									"日期码错误(双排需2条,实为" + texts.Count + ")", normBox));
+								continue;
 							}
-							if (texts.Count == 0) continue;
-
-							string allText = string.Join(" ", texts);
-							Logger.Debug("[Back] 日期码盒" + (boxIdx + 1) + ": " + allText);
-							float[] normBox = new float[] { (float)(mx - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)my / fullH, (float)(mx + mw - (boxIdx < hp2 ? 0 : halfW)) / halfW, (float)(my + mh) / fullH };
-
-							int result;
-							if (codingFormat.Contains("MFG") && !codingFormat.Contains("双排")) result = CheckMFG(allText);
-							else if (codingFormat.Contains("LOT")) result = CheckLOT(allText);
-							else if (codingFormat.Contains("双排")) result = CheckDoubleRow(texts);
-							else result = 0;
-
-							if (!r.ContainsKey(boxIdx)) r[boxIdx] = new List<BoxDefect>();
-							string label;
-							if (result == 0)
-								label = codingFormat.Contains("双排") ? "双排:" + allText : "日期:" + allText;
-							else
-							if (result == 1)
-								label = "日期码错误(" + allText + ")";
-							else
-								label = "日期码不完全正确(" + allText + ")";
-							r[boxIdx].Add(new BoxDefect(boxIdx, label, normBox));
+							c3Result = CheckDoubleRow(texts);
 						}
+						else if (codingFormat.Contains("MFG"))
+						{
+							// MFG: 必须恰好1条
+							if (texts.Count != 1)
+							{
+								if (!r.ContainsKey(boxIdx))
+									r[boxIdx] = new List<BoxDefect>();
+								r[boxIdx].Add(new BoxDefect(boxIdx,
+									"日期码错误(MFG需1条,实为" + texts.Count + ")", normBox));
+								continue;
+							}
+							c3Result = CheckMFG(texts[0]);
+						}
+						else if (codingFormat.Contains("LOT"))
+						{
+							// LOT: 必须恰好1条
+							if (texts.Count != 1)
+							{
+								if (!r.ContainsKey(boxIdx))
+									r[boxIdx] = new List<BoxDefect>();
+								r[boxIdx].Add(new BoxDefect(boxIdx,
+									"日期码错误(LOT需1条,实为" + texts.Count + ")", normBox));
+								continue;
+							}
+							c3Result = CheckLOT(texts[0]);
+						}
+						else
+						{
+							c3Result = 0; // 未知格式, 仅显示
+						}
+
+						string allText = string.Join(" ", texts);
+						Logger.Debug("[Back] 日期码盒" + (boxIdx + 1) + ": " + allText + " c3Result=" + c3Result);
+
+						if (!r.ContainsKey(boxIdx))
+							r[boxIdx] = new List<BoxDefect>();
+
+						string label;
+						if (c3Result == 0)
+							// OK — 仅显示, 不设NG
+							label = codingFormat.Contains("双排") ? "双排:" + allText : "日期:" + allText;
+						else if (c3Result == 1)
+							// NG剔除 — 前缀/格式不匹配
+							label = "日期码错误(" + allText + ")";
+						else // c3Result == 2
+							// NG不剔除 — 前缀匹配但日期不对
+							label = "日期码不完全正确(" + allText + ")";
+
+						r[boxIdx].Add(new BoxDefect(boxIdx, label, normBox));
 					}
 				}
 			}
+			}  // foreach boxRegionList
 			catch (Exception ex) { Logger.Error("日期码处理异常: " + ex.Message); }
 			return r;
 		}
 
-		/// <summary>校验MFG格式日期: "MFG dd/MM/yyyy"→提取日期→比对当天, 0=正确 1=格式错 2=日期不匹配</summary>
+	/// <summary>校验MFG格式日期(对齐DateComparison.MFGExtractAndCompareDate): "MFG dd/MM/yyyy"→提取日期→比对当天, 0=正确 1=NG剔除(前缀/格式错) 2=NG不剔除(日期不匹配)</summary>
 		private int CheckMFG(string text)
 		{
+			// 前缀校验: 必须包含M/F/G任一字符且长度≥13 (对齐参考)
+			if (!Regex.IsMatch(text, "[MFG]") || text.Length < 13) return 1;
 			var m = MFG_RX.Match(text);
-			if (!m.Success) return 1;
+			if (!m.Success) return 2;  // 前缀对但正则不匹配 → NG不剔除
 			if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null,
 				System.Globalization.DateTimeStyles.None, out DateTime dt))
 				return dt.Date == DateTime.Now.Date ? 0 : 2;
-			return 2;
+			return 2; // 日期解析失败 → NG不剔除
 		}
-		/// <summary>校验LOT格式日期: "LOT yyyy/MM/dd"→提取日期→比对当天</summary>
+	/// <summary>校验LOT格式日期(对齐DateComparison.LOTExtractAndCompareDate): "LOT/L0T yyyy/MM/dd"→提取日期→比对当天, 0=正确 1=NG剔除 2=NG不剔除</summary>
 		private int CheckLOT(string text)
 		{
+			// 前缀校验: 前3字符必须匹配L/0/O/T且长度≥13 (对齐参考)
+			string prefix = text.Length >= 3 ? text.Substring(0, 3) : text;
+			if (!Regex.IsMatch(prefix, "[L0OT]") || text.Length < 13) return 1;
 			var m = LOT_RX.Match(text);
-			if (!m.Success) return 1;
+			if (!m.Success) return 2;
 			if (DateTime.TryParseExact(m.Groups[1].Value, "yyyy/MM/dd", null,
 				System.Globalization.DateTimeStyles.None, out DateTime dt))
 				return dt.Date == DateTime.Now.Date ? 0 : 2;
 			return 2;
 		}
 		/// <summary>
-/// 挂钩缺陷检测: YOLO检测+分割厚度计算.
-/// 明显错位(classId=1): 直接映射到DarkRed框.
-/// 轻微错位(classId=0): 分割->DistanceTransform->厚度>阈值->OrangeRed框.
-/// 轻微检测仅在无明显错位时进行(避免重复标记).
+/// 双排日期码校验(对齐AIRunThread参考实现).
+/// OCR已保证lines.Count==2, 按顺序line0/line1确定MFG+EXP顺序后逐行校验.
+/// </summary>
 /// </summary>
 		private int CheckDoubleRow(List<string> lines)
 		{
-			if (lines.Count < 2) return 1;
-			string mfgLine = null, expLine = null;
-			foreach (var line in lines)
+			if (lines.Count != 2) return 1;
+			string line0 = lines[0].Length >= 3 ? lines[0].Substring(0, 3) : lines[0];
+			string line1 = lines[1].Length >= 3 ? lines[1].Substring(0, 3) : lines[1];
+
+			if (Regex.IsMatch(line0, "[MFG]"))
 			{
-				string s3 = line.Length >= 3 ? line.Substring(0, 3) : line;
-				if (mfgLine == null && Regex.IsMatch(s3, "[MFG]")) mfgLine = line;
-				if (expLine == null && Regex.IsMatch(s3, "[EXP]")) expLine = line;
+				int mfgR = CheckMFG(lines[0]);
+				if (mfgR != 0) return mfgR;
+				if (Regex.IsMatch(line1, "[EXP]"))
+					return CheckEXP(lines[1]);
+				else return 1;
 			}
-			if (mfgLine == null || expLine == null) return 1;
-			int mfgR = CheckMFG(mfgLine);
-			return mfgR != 0 ? mfgR : CheckEXP(expLine);
+			else if (Regex.IsMatch(line0, "[EXP]"))
+			{
+				int expR = CheckEXP(lines[0]);
+				if (expR != 0) return expR;
+				if (Regex.IsMatch(line1, "[MFG]"))
+					return CheckMFG(lines[1]);
+				else return 1;
+			}
+			else return 1;
 		}
-		/// <summary>校验EXP格式日期: "EXP dd/MM/yyyy"→提取日期→比对(加10年)</summary>
 		private int CheckEXP(string text)
 		{
+			if (!Regex.IsMatch(text, "[EXP]") || text.Length < 13) return 1;
 			var m = EXP_RX.Match(text);
-			if (!m.Success) return 1;
+			if (!m.Success) return 2;
 			if (DateTime.TryParseExact(m.Groups[1].Value, "dd/MM/yyyy", null,
 				System.Globalization.DateTimeStyles.None, out DateTime dt))
 				return dt.Date == DateTime.Now.AddYears(10).Date ? 0 : 2;

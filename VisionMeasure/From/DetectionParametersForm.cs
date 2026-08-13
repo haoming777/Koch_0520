@@ -32,8 +32,8 @@ namespace VisionMeasure.From
 		private ComboBox _cboBcThresholdMode;
 		private NumericUpDown _numBcAdaptiveBlockSize, _numBcAdaptiveC, _numBcFixedThreshold, _numBcMinLength, _numBcMaxLength;
 		// 背面-日期码
-		private TrackBar _trackDcStartRatio;
-		private Label _lblDcStartRatio;
+		private TrackBar _trackDcStartRatio, _trackDcBottomRatio;
+		private Label _lblDcStartRatio, _lblDcBottomRatio;
 		// 背面-挂钩
 		private NumericUpDown _numHookThickness, _numHookBlueClassId, _numHookHoleClassId;
 		private TrackBar _trackHookConf, _trackHookIou;
@@ -222,12 +222,20 @@ namespace VisionMeasure.From
 			var tab = new TabPage { BackColor = Color.White, Text = "背面-日期码" };
 			var pnl = new Panel { BackColor = Color.White, Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20) };
 			int y = 20;
-			AddLabel(pnl, "日期码裁剪起始比例:", 20, y);
-			_trackDcStartRatio = new TrackBar { Minimum = 0, Maximum = 100, Value = 66, Width = 250, Location = new Point(180, y - 5) };
-			_lblDcStartRatio = new Label { BackColor = Color.Transparent, Text = "0.66", Location = new Point(440, y + 3), AutoSize = true };
+			AddLabel(pnl, "裁掉上方比例(从拼接全图顶部裁):", 20, y);
+			pnl.Controls[pnl.Controls.Count - 1].Size = new Size(280, 25);
+			_trackDcStartRatio = new TrackBar { Minimum = 0, Maximum = 100, Value = 66, Width = 250, Location = new Point(310, y - 5) };
+			_lblDcStartRatio = new Label { BackColor = Color.Transparent, Text = "0.66", Location = new Point(570, y + 3), AutoSize = true };
 			_trackDcStartRatio.ValueChanged += (s, e) => _lblDcStartRatio.Text = (_trackDcStartRatio.Value / 100.0).ToString("F2");
 			pnl.Controls.Add(_trackDcStartRatio); pnl.Controls.Add(_lblDcStartRatio); y += 45;
-			AddLabel(pnl, "(日期码检测开关在「工位参数」中, 日期码格式由SKU编码格式决定)", 20, y);
+			AddLabel(pnl, "底部边界从顶算(保留至全图高度百分比):", 20, y);
+			pnl.Controls[pnl.Controls.Count - 1].Size = new Size(300, 25);
+			_trackDcBottomRatio = new TrackBar { Minimum = 0, Maximum = 100, Value = 100, Width = 250, Location = new Point(310, y - 5) };
+			_lblDcBottomRatio = new Label { BackColor = Color.Transparent, Text = "1.00", Location = new Point(570, y + 3), AutoSize = true };
+			_trackDcBottomRatio.ValueChanged += (s, e) => _lblDcBottomRatio.Text = (_trackDcBottomRatio.Value / 100.0).ToString("F2");
+			pnl.Controls.Add(_trackDcBottomRatio); pnl.Controls.Add(_lblDcBottomRatio); y += 45;
+			AddLabel(pnl, "(可视: 上方滑块↔下方滑块间距 = 有效识别区域, 开关在「工位参数」, 格式由SKU决定)", 20, y);
+			pnl.Controls[pnl.Controls.Count - 1].Size = new Size(530, 25);
 			pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.Gray;
 			tab.Controls.Add(pnl); _tabControl.TabPages.Add(tab);
 		}
@@ -514,6 +522,8 @@ namespace VisionMeasure.From
 
 			// 背面-日期码
 			_trackDcStartRatio.Value = (int)(_datecodeParams.StartHeightRatioDateCode * 100);
+			// 底部边界(从顶算) = 1 - 裁底比例, 滑块向右=保留更多
+			_trackDcBottomRatio.Value = (int)((1.0 - _datecodeParams.DateCodeCropBottomRatio) * 100);
 
 			// 背面-挂钩
 			_numHookThickness.Value = (decimal)_hookParams.HookThickness;
@@ -626,8 +636,18 @@ namespace VisionMeasure.From
 			_barcodeParams.DrawFontBoxNum = (int)_numFontBoxNum.Value;
 			_barcodeParams.Save();
 
-			// datecode
-			_datecodeParams.StartHeightRatioDateCode = _trackDcStartRatio.Value / 100.0;
+		// datecode — 防呆: 有效区域=底部边界-裁顶, 必须≥5%
+			double dcTop = _trackDcStartRatio.Value / 100.0;
+			double dcBottomEnd = _trackDcBottomRatio.Value / 100.0; // 滑块值=底部边界(从顶算)
+			double effectiveRegion = dcBottomEnd - dcTop;
+			if (effectiveRegion < 0.05)
+			{
+				MessageBox.Show($"日期码有效区域太小: 裁顶={dcTop:F2}, 底部边界={dcBottomEnd:F2}, 有效区域={effectiveRegion:F2}\n请调整使有效区域至少5%。",
+					"参数错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+			_datecodeParams.StartHeightRatioDateCode = dcTop;
+			_datecodeParams.DateCodeCropBottomRatio = 1.0 - dcBottomEnd; // 存为裁底比例
 			_datecodeParams.Save();
 
 			// front_pcode

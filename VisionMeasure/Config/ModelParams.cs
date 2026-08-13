@@ -84,7 +84,14 @@ namespace Config
 
 		// —— 各检测项裁剪起始比例 ——
 		public double StartHeightRatioPCode { get; set; } = 2.0 / 3.0;
+		/// <summary>日期码裁剪上方比例: 拼接全图从顶部裁掉的比例(0=不裁顶, 2/3=裁掉上2/3)</summary>
 		public double StartHeightRatioDateCode { get; set; } = 2.0 / 3.0;
+		/// <summary>日期码裁剪下方比例: 拼接全图从底部裁掉的比例(0=不裁底, 0.1=裁掉下10%)</summary>
+		public double DateCodeCropBottomRatio { get; set; } = 0.0;
+
+		// —— 日期码不打码阈值 ——
+		/// <summary>不打码模式: C1分割区域数≥此值判NG不剔除, 否则OK</summary>
+		public int DateCodeRemoveNum { get; set; } = 3;
 
 		/// <summary>创建默认模型参数: 根据key(barcode/hook/side等)设置不同的默认Conf/Iou</summary>
 		public static ModelParams CreateDefault(string key, string name)
