@@ -17,8 +17,6 @@ using CommonLib;
 using SmartMore.ViMo;
 using YoloInference;
 using YoloSegmentationEnd2End;
-using ZXing;
-using ZXing.Common;
 using AI;
 using CvRect = OpenCvSharp.Rect;
 using CvPoint = OpenCvSharp.Point;
@@ -31,7 +29,7 @@ namespace Stations
 {
 	/// <summary>
 /// 背面工位处理器, 左右图配对后3路并行推理.
-/// 1.条码识别: ZXing + OpenCV预处理管线 -> 逐盒ROI解码 -> 与参考条码比对.
+/// 1.条码识别: BarcodeCore.dll + OpenCV预处理管线 -> 逐盒ROI解码 -> 与参考条码比对.
 /// 2.日期码识别: C1(ViMo分割) -> C2(ViMo分类重影) -> C3(ViMo OCR校验), 支持MFG/LOT/双排.
 /// 3.挂钩错位: YOLO检测(classId=1明显) + 分割厚度计算(classId=0轻微).
 /// 汇总: 3路结果合并 -> 逐盒status -> OK/NG计数 -> 渲染+保存.
@@ -52,10 +50,13 @@ namespace Stations
 		private bool _disposed;
 		private Config.ModelParams _barcodeParams;
 		private Config.ModelParams _datecodeParams;
+		private Config.ModelParams _backBoxParams;
 
 		public event Action<ProductResult> OnResultReady;
 		public event Action<List<string>, int> OnStatusUpdate;
 		public float ConfThreshold = 0.5f, IouThreshold = 0.2f;
+		/// <summary>背面盒子破损独立置信度/IoU阈值(与挂钩阈值解耦, 来自back_box.json, 可像正面一样在检测参数界面调节)</summary>
+		public float BackBoxConfThreshold = 0.5f, BackBoxIouThreshold = 0.2f;
 		public float HookThicknessThreshold = 30f;
 		public int BlueAreaClassId = 0, HangHoleClassId = 1;
 		public bool ReverseBoxOrder = false;
@@ -73,6 +74,9 @@ namespace Stations
 		{
 			_models = models; _savePath = savePath; _sku = sku; _imageSaver = imageSaver; _perfMonitor = perfMonitor;
 			_barcodeParams = Config.ModelParams.Load("barcode"); _datecodeParams = Config.ModelParams.Load("datecode");
+			_backBoxParams = Config.ModelParams.Load("back_box");
+			BackBoxConfThreshold = _backBoxParams.Confidence;
+			BackBoxIouThreshold = _backBoxParams.Iou;
 			var hookParams = Config.ModelParams.Load("hook");
 			HookThicknessThreshold = hookParams.HookThickness;
 			BlueAreaClassId = hookParams.HookBlueClassId;
@@ -81,6 +85,8 @@ namespace Stations
 			HangHoleClassId = hookParams.HookHoleClassId;
 			EnableBoxBreakCheck = DetectionParameters.Instance.Back.EnableBoxBreakCheck;
 			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
+			// 条码引擎(BarcodeCore.dll)初始化: 含依赖文件/VC++运行库/加密狗环境自检, 结果写入 Logs/Barcode_*.log
+			if (EnableBarcodeCheck) VisionMeasure.Utils.BarcodeCoreEngine.EnsureInitialized();
 		}
 
 		/// <summary>重新加载ModelParams，无需重启软件</summary>
@@ -88,6 +94,9 @@ namespace Stations
 		{
 			_barcodeParams = Config.ModelParams.Load("barcode");
 			_datecodeParams = Config.ModelParams.Load("datecode");
+			_backBoxParams = Config.ModelParams.Load("back_box");
+			BackBoxConfThreshold = _backBoxParams.Confidence;
+			BackBoxIouThreshold = _backBoxParams.Iou;
 			var hookParams = Config.ModelParams.Load("hook");
 			HookThicknessThreshold = hookParams.HookThickness;
 			BlueAreaClassId = hookParams.HookBlueClassId;
@@ -98,7 +107,9 @@ namespace Stations
 			if (hookParams.Iou > 0) IouThreshold = hookParams.Iou;
 			EnableBoxBreakCheck = DetectionParameters.Instance.Back.EnableBoxBreakCheck;
 			EnableDateCodeCheck = DetectionParameters.Instance.Back.EnableDateCodeCheck;
-			Logger.Info($"[Back] ModelParams已重新加载 Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+			// 参数保存后热更新: 重新加载 barcode.config.json 并重建扫描器(与在途解码互不阻塞)
+			if (EnableBarcodeCheck) VisionMeasure.Utils.BarcodeCoreEngine.ReInitialize();
+			Logger.Info($"[Back] ModelParams已重新加载 挂钩Conf={ConfThreshold:F2} Iou={IouThreshold:F2} 盒子破Conf={BackBoxConfThreshold:F2} Iou={BackBoxIouThreshold:F2}");
 		}
 
 		/// <summary>更新当前SKU数据(含条码基准、日期码格式等)</summary>
@@ -182,7 +193,12 @@ namespace Stations
 				ConfThreshold = _models.BackHookModel.DefaultConfThres;
 				IouThreshold = _models.BackHookModel.DefaultIouThres;
 			}
-			Logger.Info($"[Back] 阈值从模型: Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+			if (_models.BackBoxBreakModel != null)
+			{
+				BackBoxConfThreshold = _models.BackBoxBreakModel.DefaultConfThres;
+				BackBoxIouThreshold = _models.BackBoxBreakModel.DefaultIouThres;
+			}
+			Logger.Info($"[Back] 阈值从模型: 挂钩Conf={ConfThreshold:F2} Iou={IouThreshold:F2} 盒子破Conf={BackBoxConfThreshold:F2} Iou={BackBoxIouThreshold:F2}");
 		}
 
 		public void Start() { Logger.Info("背面工位已启动"); }
@@ -250,7 +266,7 @@ namespace Stations
 				Dictionary<int, List<BoxDefect>> boxBreakDict = null;
 				if (EnableBoxBreakCheck && _models.BackBoxBreakModel != null)
 				{
-					Logger.Debug($"[Back] 盒子破损任务已添加 P={p} Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+					Logger.Debug($"[Back] 盒子破损任务已添加 P={p} Conf={BackBoxConfThreshold:F2} Iou={BackBoxIouThreshold:F2}");
 					tasks.Add(Task.Run(() => { boxBreakDict = DetectBoxBreak(leftProc, rightProc, p); }));
 				}
 				else
@@ -375,8 +391,8 @@ namespace Stations
 			}
 		}
 
-		// ====== 条形码识别 (ZXing.Net, 逐盒ROI, 无图像预处理仅灰度) ======
-		/// <summary>条码识别: 逐盒ROI裁剪→ApplyBarcodePreprocess(对比度/直方图/高斯/中值/阈值/形态学)→ZXing解码→与参考条码比对</summary>
+		// ====== 条形码识别 (BarcodeCore.dll, 逐盒ROI, 裁图+OpenCV预处理保留) ======
+		/// <summary>条码识别: 逐盒ROI裁剪→ApplyBarcodePreprocess(对比度/直方图/高斯/中值/阈值/形态学)→BarcodeCore.dll解码→与参考条码比对</summary>
 		private Dictionary<int, List<BoxDefect>> RecognizeBarcodes(Mat left, Mat right, int hp)
 		{
 			var r = new Dictionary<int, List<BoxDefect>>();
@@ -390,7 +406,7 @@ namespace Stations
 				int hL = left.Height, wL = left.Width, hR = right.Height, wR = right.Width;
 				double syRatio = (_barcodeParams != null) ? _barcodeParams.BcStartHeightRatio : (2.0 / 3.0);
 				int bwL = wL / hp, bwR = wR / hp, syL = (int)(hL * syRatio), syR = (int)(hR * syRatio);
-				Logger.Debug("[Back] 条码ZXing: 左" + wL + "x" + hL + " boxW=" + bwL);
+				Logger.Debug("[Back] 条码BarcodeCore: 左" + wL + "x" + hL + " boxW=" + bwL);
 
 				for (int i = 0; i < hp; i++)
 				{
@@ -398,12 +414,12 @@ namespace Stations
 					if (rw <= 0 || rh <= 0) continue;
 					using (var roi = new Mat(left, new CvRect(sx, syL, rw, rh)).Clone())
 					{
-						var def = DecodeBarcodeZxing(roi, refBarcode, sx, syL, wL, hL, i);
-						if (def != null)
+						var defs = DecodeBarcodeCore(roi, refBarcode, sx, syL, wL, hL, i);
+						if (defs != null)
 					{
 						if (!r.ContainsKey(i))
 							r[i] = new List<BoxDefect>();
-						r[i].Add(def);
+						r[i].AddRange(defs);
 					}
 					}
 				}
@@ -414,12 +430,12 @@ namespace Stations
 					if (rw <= 0 || rh <= 0) continue;
 					using (var roi = new Mat(right, new CvRect(sx, syR, rw, rh)).Clone())
 					{
-						var def = DecodeBarcodeZxing(roi, refBarcode, sx, syR, wR, hR, gi);
-						if (def != null)
+						var defs = DecodeBarcodeCore(roi, refBarcode, sx, syR, wR, hR, gi);
+						if (defs != null)
 						{
 							if (!r.ContainsKey(gi))
 								r[gi] = new List<BoxDefect>();
-							r[gi].Add(def);
+							r[gi].AddRange(defs);
 						}
 					}
 				}
@@ -429,60 +445,47 @@ namespace Stations
 			return r;
 		}
 
-		/// <summary>单盒条码解码: 预处理管线→BarcodeReader.DecodeMultiple→多结果选优(参考条码匹配/编辑距离)→返回缺陷(条码:xxx/条码错:xxx/条码缺少)</summary>
-		private BoxDefect DecodeBarcodeZxing(Mat roi, string refBarcode, int ox, int oy, int fw, int fh, int boxIdx)
+		/// <summary>单盒条码解码: 预处理管线→BarcodeCore.dll解码→多结果选优(参考条码匹配/编辑距离)→返回缺陷列表.
+		/// 第一项=判定项(条码:xxx=OK显示 / 条码错:xxx=NG), 其余项=同区域附加码("条码:"前缀仅显示).
+		/// 每项携带各自四点框(QuadPoints), 同区域多码时每个码画出自己的位置框</summary>
+		private List<BoxDefect> DecodeBarcodeCore(Mat roi, string refBarcode, int ox, int oy, int fw, int fh, int boxIdx)
 		{
 			try
 			{
 				var p = _barcodeParams ?? Config.ModelParams.Load("barcode");
 				Mat proc = ApplyBarcodePreprocess(roi, p);
 				using (proc)
-				using (var bmp = proc.ToBitmap())
 				{
-					var reader = new BarcodeReader
-					{
-						AutoRotate = true,
-						Options = new DecodingOptions
-						{
-							TryHarder = p.BcTryHarder,
-							PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.CODE_128, BarcodeFormat.EAN_13 }
-						}
-					};
-					var results = reader.DecodeMultiple(bmp);
+					// BarcodeCore.dll 解码 (预处理图失败→原图灰度重试, 与旧ZXing流程一致)
+					var swDecode = System.Diagnostics.Stopwatch.StartNew();
+					var items = DecodeWithRetry(roi, proc, boxIdx);
+					double decodeMs = swDecode.Elapsed.TotalMilliseconds;
 					float pad = roi.Width * 0.03f; // 盒区间隙3%
 					float[] defBox = new float[] { (float)(ox + pad) / fw, (float)oy / fh, (float)(ox + roi.Width - pad) / fw, (float)(oy + roi.Height) / fh };
 
-					if (results == null || results.Length == 0)
+					if (items == null || items.Count == 0)
 					{
-						// OpenCV预处理未找到条码，用原图灰度重试
-						using (var gray = new Mat())
-						{
-							Cv2.CvtColor(roi, gray, roi.Channels() == 3 ? ColorConversionCodes.BGR2GRAY : ColorConversionCodes.BGRA2GRAY);
-							using (var rawBmp = gray.ToBitmap())
-							{
-								results = reader.DecodeMultiple(rawBmp);
-								Logger.Debug("[Back] 盒" + (boxIdx + 1) + " 灰度重试=" + (results != null ? results.Length : 0) + "个");
-							}
-						}
+						// 漏识别是最常见问题: 未识别到的盒子同样写入独立条码日志(耗时+过程细节), 便于统计漏检率/排查
+						BarcodeLogger.Warn($"[Back] 盒{boxIdx + 1}: 未识别到 耗时={decodeMs:F0}ms");
+						return new List<BoxDefect> { new BoxDefect(boxIdx, "条码缺少", defBox) };
 					}
 
-					if (results == null || results.Length == 0)
-						return new BoxDefect(boxIdx, "条码缺少", defBox);
+					// ── 选优: 判定项 = 参考条码精确匹配 > 编辑距离最优 (与旧逻辑一致) ──
 					string bestText = null;
-					ResultPoint[] bestPts = null;
-					if (results.Length == 1)
+					BarcodeTextResult bestItem = null;
+					if (items.Count == 1)
 						{
-							bestText = StripLeadingZero(results[0].Text);
-							bestPts = results[0].ResultPoints;
+							bestText = StripLeadingZero(items[0].Text);
+							bestItem = items[0];
 						}
 					else if (!string.IsNullOrEmpty(refBarcode))
 					{
-						if (results.Any(res => StripLeadingZero(res.Text) == refBarcode))
-						{ bestText = refBarcode; bestPts = results.First(res => StripLeadingZero(res.Text) == refBarcode).ResultPoints; }
+						if (items.Any(res => StripLeadingZero(res.Text) == refBarcode))
+						{ bestText = refBarcode; bestItem = items.First(res => StripLeadingZero(res.Text) == refBarcode); }
 						else
 						{
 							int bestDist = int.MaxValue;
-							foreach (var res in results)
+							foreach (var res in items)
 							{
 								if (string.IsNullOrEmpty(res.Text)) continue;
 								int dist = LevenshteinDistance(StripLeadingZero(res.Text), refBarcode);
@@ -490,36 +493,91 @@ namespace Stations
 						{
 							bestDist = dist;
 							bestText = StripLeadingZero(res.Text);
-							bestPts = res.ResultPoints;
+							bestItem = res;
 						}
 							}
 						}
 					}
-					else { bestText = StripLeadingZero(results[0].Text); bestPts = results[0].ResultPoints; }
-
-					float[] normBox = defBox;
+					else { bestText = StripLeadingZero(items[0].Text); bestItem = items[0]; }
 
 					bool hasRef = !string.IsNullOrEmpty(refBarcode);
 					Logger.Debug("[Back] 条码盒" + (boxIdx + 1) + ": 识=" + (bestText ?? "(空)") + " 标=" + (hasRef ? refBarcode : "(无)") + " " + (hasRef && bestText == refBarcode ? "OK" : hasRef ? "NG" : ""));
-					if (hasRef && bestText == refBarcode)
-						return new BoxDefect(boxIdx, "条码:" + bestText, normBox);
-					if (!hasRef)
-						return new BoxDefect(boxIdx, "条码:" + (bestText ?? results[0].Text), normBox);
-					// 条码不匹配：用"条码错:"前缀显示码值，自动触发NG状态+橙色
-					return new BoxDefect(boxIdx, "条码错:" + bestText, normBox);
+
+					var defs = new List<BoxDefect>();
+					// 判定项(列表第一项): 决定盒状态
+					string judgeType;
+					if (hasRef && bestText == refBarcode) judgeType = "条码:" + bestText;
+					else if (!hasRef) judgeType = "条码:" + (bestText ?? items[0].Text);
+					else judgeType = "条码错:" + bestText; // 不匹配 → NG+橙色
+					defs.Add(new BoxDefect(boxIdx, judgeType, defBox) { QuadPoints = NormalizeQuad(bestItem, ox, oy, fw, fh) });
+
+					// 附加码(同区域其余识别结果): 仅显示+各自四点框, 不影响判定状态
+					foreach (var it in items)
+					{
+						if (ReferenceEquals(it, bestItem)) continue;
+						defs.Add(new BoxDefect(boxIdx, "条码:" + StripLeadingZero(it.Text), defBox) { QuadPoints = NormalizeQuad(it, ox, oy, fw, fh) });
+						BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 附加码 识={StripLeadingZero(it.Text)} 类型={it.Format ?? "-"} 四点=({it.X1},{it.Y1})-({it.X2},{it.Y2})-({it.X3},{it.Y3})-({it.X4},{it.Y4})");
+					}
+
+					// 条码独立日志(Logs/Barcode_*.log): 判定项解码详情, 与主日志分离便于单独排查
+					BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 识={bestText ?? "(空)"} 类型={bestItem?.Format ?? "-"} 四点=({bestItem?.X1},{bestItem?.Y1})-({bestItem?.X2},{bestItem?.Y2})-({bestItem?.X3},{bestItem?.Y3})-({bestItem?.X4},{bestItem?.Y4}) 标={(hasRef ? refBarcode : "(无)")} {(hasRef && bestText == refBarcode ? "OK" : hasRef ? "NG" : "仅显示")} 耗时={decodeMs:F0}ms");
+					return defs;
 				}
 			}
 			catch (Exception ex)
 			{
 				Logger.Debug("[Back] 条码异常盒" + (boxIdx + 1) + ": " + ex.Message);
 				float pad2 = roi.Width * 0.03f;
-				return new BoxDefect(boxIdx, "条码缺少",
+				return new List<BoxDefect> { new BoxDefect(boxIdx, "条码缺少",
 					new float[] {
 						(float)(ox + pad2) / fw,
 						(float)oy / fh,
 						(float)(ox + roi.Width - pad2) / fw,
 						(float)(oy + roi.Height) / fh
-					});
+					}) };
+			}
+		}
+
+		/// <summary>ROI四点坐标 → 整图归一化四点 [x1,y1,x2,y2,x3,y3,x4,y4] (左上→右上→右下→左下)</summary>
+		private static float[] NormalizeQuad(BarcodeTextResult it, int ox, int oy, int fw, int fh)
+		{
+			if (it == null) return null;
+			return new float[] {
+				(float)(ox + it.X1) / fw, (float)(oy + it.Y1) / fh,
+				(float)(ox + it.X2) / fw, (float)(oy + it.Y2) / fh,
+				(float)(ox + it.X3) / fw, (float)(oy + it.Y3) / fh,
+				(float)(ox + it.X4) / fw, (float)(oy + it.Y4) / fh
+			};
+		}
+
+		/// <summary>BarcodeCore解码+灰度重试: 预处理图未识别→原图灰度重试(与旧ZXing流程一致). 引擎级错误码(负值)不重试直接返回null→条码缺少.
+		/// 注: 旧ZXing的TryHarder/旋转重试选项已由 barcode.config.json 的 EnableZXingFallback/AutoRotationCorrection 接管</summary>
+		private static List<BarcodeTextResult> DecodeWithRetry(Mat roi, Mat proc, int boxIdx)
+		{
+			int status = BarcodeCoreEngine.Decode(proc, out var items);
+			if (status < 0)
+			{
+				Logger.Debug("[Back] 盒" + (boxIdx + 1) + " BarcodeCore错误码=" + status);
+				BarcodeLogger.Error($"[Back] 盒{boxIdx + 1}: 预处理图解码引擎错误码={status}");
+				return null;
+			}
+			if (items != null && items.Count > 0) return items;
+
+			// 预处理图未识别到 → 原图灰度重试
+			BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 预处理图未识别到, 转原图灰度重试");
+			using (var gray = new Mat())
+			{
+				Cv2.CvtColor(roi, gray, roi.Channels() == 3 ? ColorConversionCodes.BGR2GRAY : ColorConversionCodes.BGRA2GRAY);
+				int s2 = BarcodeCoreEngine.Decode(gray, out var items2);
+				if (s2 < 0)
+				{
+					Logger.Debug("[Back] 盒" + (boxIdx + 1) + " 灰度重试BarcodeCore错误码=" + s2);
+					BarcodeLogger.Error($"[Back] 盒{boxIdx + 1}: 灰度重试引擎错误码={s2}");
+					return null;
+				}
+				Logger.Debug("[Back] 盒" + (boxIdx + 1) + " 灰度重试=" + (items2 != null ? items2.Count : 0) + "个");
+				BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 灰度重试结果={(items2 != null ? items2.Count : 0)}个");
+				return items2;
 			}
 		}
 
@@ -1117,7 +1175,7 @@ namespace Stations
 			try
 			{
 				int halfP = p / 2;
-				Logger.Debug($"[Back] 盒子破损检测开始 P={p} 图={left.Width}x{left.Height} Conf={ConfThreshold:F2} Iou={IouThreshold:F2}");
+				Logger.Debug($"[Back] 盒子破损检测开始 P={p} 图={left.Width}x{left.Height} Conf={BackBoxConfThreshold:F2} Iou={BackBoxIouThreshold:F2}");
 
 				// 本地函数: 处理单侧图像 (3×2网格裁图 → 逐张Predict → 坐标映射 → 分盒)
 				void ProcessSide(Mat sourceImage, bool isLeft)
@@ -1136,7 +1194,7 @@ namespace Stations
 						try
 						{
 							var bbSw2 = System.Diagnostics.Stopwatch.StartNew();
-					var detResult = _models.BackBoxBreakModel.Predict(patch, ConfThreshold, IouThreshold);
+					var detResult = _models.BackBoxBreakModel.Predict(patch, BackBoxConfThreshold, BackBoxIouThreshold);
 					ModelPerfTracker.Record("Back", "盒子破损", bbSw2.Elapsed.TotalMilliseconds);
 							if (detResult?.Boxes == null) continue;
 
@@ -1179,7 +1237,7 @@ namespace Stations
 
 				// 盒内NMS去重 (重叠patch导致同一缺陷被多次检出)
 				int totalBeforeNms = results.Values.Sum(v => v.Count);
-				ApplyNmsPerBox(results, IouThreshold);
+				ApplyNmsPerBox(results, BackBoxIouThreshold);
 				int totalAfterNms = results.Values.Sum(v => v.Count);
 				Logger.Info($"[Back BatchLog] ◀ 盒子破推理完成: P={p}, 检出框={totalBeforeNms}→{totalAfterNms}(NMS后)");
 			}
@@ -1430,7 +1488,22 @@ namespace Stations
 					bool isBcOrDc = d.DefectType.StartsWith("条码") || d.DefectType.StartsWith("日期码");
 					bool borderOnly = isBcOrDc || d.DefectType.Contains("缺少");
 					if (!borderOnly) using (var fl = new SolidBrush(Color.FromArgb(80, c))) g.FillRectangle(fl, rc);
-					using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
+					if (d.QuadPoints != null && d.QuadPoints.Length >= 8)
+					{
+						// 条码四点旋转矩形框(左上→右上→右下→左下按序连线), 同区域多码各自画出自己的位置
+						var qp = new System.Drawing.Point[4];
+						for (int k = 0; k < 4; k++)
+						{
+							int qx = (int)Math.Round(d.QuadPoints[k * 2] * w);
+							int qy = (int)Math.Round(d.QuadPoints[k * 2 + 1] * h);
+							qp[k] = new System.Drawing.Point(Math.Max(0, Math.Min(qx, w - 1)), Math.Max(0, Math.Min(qy, h - 1)));
+						}
+						using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawPolygon(pn, qp);
+					}
+					else
+					{
+						using (var pn = new Pen(c, borderOnly ? 4 : 8) { DashStyle = borderOnly ? DashStyle.Dash : DashStyle.Solid }) g.DrawRectangle(pn, rc);
+					}
 					// 轻微挂钩错位: 绘制内切圆
 				if (d.DefectType.Contains("轻微挂钩错位") && d.CircleInfo != null && d.CircleInfo.Length >= 3)
 				{

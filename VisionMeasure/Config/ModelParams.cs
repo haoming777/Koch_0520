@@ -101,6 +101,7 @@ namespace Config
 			else if (key == "hook") { m.Confidence = 0.5f; m.Iou = 0.2f; }
 			else if (key == "hook_slight") { m.Confidence = 0.5f; }
 			else if (key == "front_box") { m.Confidence = 0.5f; m.Iou = 0.45f; }
+			else if (key == "back_box") { m.Confidence = 0.5f; m.Iou = 0.2f; }
 			else if (key == "front_pcode") { }
 			else if (key == "datecode") { }
 			else if (key == "side") { m.Confidence = 0.5f; m.Iou = 0.45f; }

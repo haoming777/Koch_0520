@@ -11,7 +11,7 @@ namespace VisionMeasure.From
 	public partial class DetectionParametersForm : Form
 	{
 		private DetectionParameters _params;
-		private Config.ModelParams _barcodeParams, _datecodeParams, _frontPcodeParams, _hookParams, _sideParams, _endfaceUpperParams;
+		private Config.ModelParams _barcodeParams, _datecodeParams, _frontPcodeParams, _hookParams, _sideParams, _endfaceUpperParams, _backBoxParams;
 		private TabControl _tabControl;
 		private Button _btnSave, _btnCancel, _btnReset, _btnExport, _btnImport;
 		// 正面
@@ -26,11 +26,17 @@ namespace VisionMeasure.From
 		// 背面-条码
 		private CheckBox _chkBcEnablePreprocess, _chkBcGaussianBlur, _chkBcMedianBlur, _chkBcEqualizeHist;
 		private CheckBox _chkBcInvert, _chkBcMorphClose, _chkBcMorphOpen, _chkBcMorphDilate, _chkBcMorphErode;
-		private CheckBox _chkBcFilterBestMatch, _chkBcTryHarder, _chkBcRotationRetry;
+		// 背面-条码(BarcodeCore引擎参数, 来自barcode.config.json)
+		private CheckBox _chkBcEngZxingFallback, _chkBcEngFastScan, _chkBcEngAutoRotate, _chkBcEngAdaptive, _chkBcEngMorph;
+		private NumericUpDown _numBcEngBlockSize, _numBcEngGlobalThr;
+		private TrackBar _trackBcEngSharpen;
+		private Label _lblBcEngSharpen;
+		private ComboBox _cboBcEngKernel;
+		private BarcodeEngineConfig _barcodeEngineConfig;
 		private TrackBar _trackBcContrastAlpha, _trackBcBrightnessBeta, _trackBcStartRatio;
 		private Label _lblBcContrastAlpha, _lblBcBrightnessBeta, _lblBcStartRatio;
 		private ComboBox _cboBcThresholdMode;
-		private NumericUpDown _numBcAdaptiveBlockSize, _numBcAdaptiveC, _numBcFixedThreshold, _numBcMinLength, _numBcMaxLength;
+		private NumericUpDown _numBcAdaptiveBlockSize, _numBcAdaptiveC, _numBcFixedThreshold;
 		// 背面-日期码
 		private TrackBar _trackDcStartRatio, _trackDcBottomRatio;
 		private Label _lblDcStartRatio, _lblDcBottomRatio;
@@ -38,6 +44,10 @@ namespace VisionMeasure.From
 		private NumericUpDown _numHookThickness, _numHookBlueClassId, _numHookHoleClassId;
 		private TrackBar _trackHookConf, _trackHookIou;
 		private Label _lblHookConf, _lblHookIou;
+		// 背面-盒子破
+		private CheckBox _chkEnableBackBoxBreakCheck;
+		private TrackBar _trackBackBoxConf, _trackBackBoxIou;
+		private Label _lblBackBoxConf, _lblBackBoxIou;
 		// 端面
 		private NumericUpDown _numEndFaceExposure, _numEndFaceFontDefect, _numEndFaceFontStatus;
 		private TrackBar _trackEndFaceConf, _trackEndFaceIou;
@@ -85,6 +95,7 @@ namespace VisionMeasure.From
 			_hookParams = Config.ModelParams.Load("hook");
 			_sideParams = Config.ModelParams.Load("side");
 			_endfaceUpperParams = Config.ModelParams.Load("endface_upper");
+			_backBoxParams = Config.ModelParams.Load("back_box");
 		}
 
 		private void InitializeComponent()
@@ -100,6 +111,7 @@ namespace VisionMeasure.From
 			CreateBarcodeTab();
 			CreateDateCodeTab();
 			CreateHookTab();
+			CreateBackBoxTab();
 			CreateEndFaceTab();
 			CreateSideTab();
 			CreateFontTab();
@@ -204,15 +216,31 @@ namespace VisionMeasure.From
 			_lblBcStartRatio = new Label { BackColor = Color.Transparent, Text = "0.66", Location = new Point(390, y + 3), AutoSize = true };
 			_trackBcStartRatio.ValueChanged += (s, e) => _lblBcStartRatio.Text = (_trackBcStartRatio.Value / 100.0).ToString("F2");
 			pnl.Controls.Add(_trackBcStartRatio); pnl.Controls.Add(_lblBcStartRatio); y += 40;
-			_chkBcFilterBestMatch = AddCheckBox(pnl, "启用最佳匹配过滤", 20, ref y);
-			_chkBcTryHarder = AddCheckBox(pnl, "强解析模式(TryHarder)", 20, ref y);
-			_chkBcRotationRetry = AddCheckBox(pnl, "旋转重试", 20, ref y);
-			AddLabel(pnl, "最短条码长度:", 20, y);
-			_numBcMinLength = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 3, Width = 80, Location = new Point(cx, y) };
-			pnl.Controls.Add(_numBcMinLength); y += 35;
-			AddLabel(pnl, "最长条码长度:", 20, y);
-			_numBcMaxLength = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 50, Width = 80, Location = new Point(cx, y) };
-			pnl.Controls.Add(_numBcMaxLength); y += 35;
+			// ── BarcodeCore引擎参数(barcode.config.json, 保存后实时生效) ──
+			AddLabel(pnl, "━━ BarcodeCore引擎参数 ━━", 20, y); pnl.Controls[pnl.Controls.Count - 1].Font = new Font("微软雅黑", 9F, FontStyle.Bold); pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.DarkBlue; y += 30;
+			_chkBcEngFastScan = AddCheckBox(pnl, "单码快扫模式(推荐; 同一区域有多码时取消勾选=全扫)", 20, ref y);
+			_chkBcEngZxingFallback = AddCheckBox(pnl, "ZXing兜底(ZBar失败后重扫)", 20, ref y);
+			_chkBcEngAutoRotate = AddCheckBox(pnl, "自动旋转矫正(0-180°斜码)", 20, ref y);
+			_chkBcEngAdaptive = AddCheckBox(pnl, "自适应二值化(抗反光/阴影)", 20, ref y);
+			AddLabel(pnl, "自适应窗口(11~71奇数):", 20, y);
+			_numBcEngBlockSize = new NumericUpDown { Minimum = 11, Maximum = 71, Increment = 2, Value = 35, Width = 80, Location = new Point(cx, y) };
+			pnl.Controls.Add(_numBcEngBlockSize); y += 35;
+			AddLabel(pnl, "全局阈值(0-255):", 20, y);
+			_numBcEngGlobalThr = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 128, Width = 80, Location = new Point(cx, y) };
+			pnl.Controls.Add(_numBcEngGlobalThr); y += 35;
+			AddLabel(pnl, "锐化强度(0-10):", 20, y);
+			_trackBcEngSharpen = new TrackBar { Minimum = 0, Maximum = 100, Value = 15, Width = 200, Location = new Point(cx, y - 5) };
+			_lblBcEngSharpen = new Label { BackColor = Color.Transparent, Text = "1.5", Location = new Point(390, y + 3), AutoSize = true };
+			_trackBcEngSharpen.ValueChanged += (s, e) => _lblBcEngSharpen.Text = (_trackBcEngSharpen.Value / 10.0).ToString("F1");
+			pnl.Controls.Add(_trackBcEngSharpen); pnl.Controls.Add(_lblBcEngSharpen); y += 40;
+			_chkBcEngMorph = AddCheckBox(pnl, "形态学闭运算(缝断针/划痕)", 20, ref y);
+			AddLabel(pnl, "形态学核大小:", 20, y);
+			_cboBcEngKernel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Location = new Point(cx, y) };
+			_cboBcEngKernel.Items.AddRange(new object[] { "1", "3", "5" });
+			_cboBcEngKernel.SelectedIndex = 1;
+			pnl.Controls.Add(_cboBcEngKernel); y += 35;
+			AddLabel(pnl, "(引擎内部预处理参数, 与上方OpenCV预处理管线相互独立)", 20, y);
+			pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.Gray;
 			tab.Controls.Add(pnl); _tabControl.TabPages.Add(tab);
 		}
 
@@ -265,6 +293,24 @@ namespace VisionMeasure.From
 			AddLabel(pnl, "━━ 明显挂钩错位(YOLO)阈值 ━━", 20, y); pnl.Controls[pnl.Controls.Count - 1].Font = new Font("微软雅黑", 9F, FontStyle.Bold); pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.DarkBlue; y += 30;
 			AddTrackBar(pnl, "置信度:", 20, ref y, 1, 100, 50, out _trackHookConf, out _lblHookConf, "F2");
 			AddTrackBar(pnl, "IoU:", 20, ref y, 1, 100, 20, out _trackHookIou, out _lblHookIou, "F2");
+			tab.Controls.Add(pnl); _tabControl.TabPages.Add(tab);
+		}
+
+		// ====== 背面-盒子破 ======
+		private void CreateBackBoxTab()
+		{
+			var tab = new TabPage { BackColor = Color.White, Text = "背面-盒子破" };
+			var pnl = new Panel { BackColor = Color.White, Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20) };
+			int y = 20;
+			_chkEnableBackBoxBreakCheck = new CheckBox { Text = "启用盒子破检测(背面, 关闭=跳过推理，结果OK)", Location = new Point(20, y), AutoSize = true, Font = new Font("微软雅黑", 10F, FontStyle.Bold), Checked = true };
+			pnl.Controls.Add(_chkEnableBackBoxBreakCheck);
+			y += 40;
+			// 盒子破检测(YOLO)阈值 — 与挂钩阈值独立
+			AddLabel(pnl, "━━ 盒子破检测(YOLO)阈值 ━━", 20, y); pnl.Controls[pnl.Controls.Count - 1].Font = new Font("微软雅黑", 9F, FontStyle.Bold); pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.DarkBlue; y += 30;
+			AddTrackBar(pnl, "置信度:", 20, ref y, 1, 100, 50, out _trackBackBoxConf, out _lblBackBoxConf, "F2");
+			AddTrackBar(pnl, "IoU:", 20, ref y, 1, 100, 20, out _trackBackBoxIou, out _lblBackBoxIou, "F2");
+			AddLabel(pnl, "(保存后实时生效, 与「背面-挂钩」页的挂钩阈值互不影响)", 20, y);
+			pnl.Controls[pnl.Controls.Count - 1].ForeColor = Color.Gray;
 			tab.Controls.Add(pnl); _tabControl.TabPages.Add(tab);
 		}
 
@@ -514,11 +560,17 @@ namespace VisionMeasure.From
 			_chkBcMorphDilate.Checked = _barcodeParams.BcEnableMorphDilate;
 			_chkBcMorphErode.Checked = _barcodeParams.BcEnableMorphErode;
 			_trackBcStartRatio.Value = (int)(_barcodeParams.BcStartHeightRatio * 100);
-			_chkBcFilterBestMatch.Checked = _barcodeParams.BcEnableFilterBestMatch;
-			_chkBcTryHarder.Checked = _barcodeParams.BcTryHarder;
-			_chkBcRotationRetry.Checked = _barcodeParams.BcEnableRotationRetry;
-			_numBcMinLength.Value = _barcodeParams.BcMinBarcodeLength;
-			_numBcMaxLength.Value = _barcodeParams.BcMaxBarcodeLength;
+			// BarcodeCore引擎参数(barcode.config.json)
+			if (_barcodeEngineConfig == null) _barcodeEngineConfig = BarcodeEngineConfig.Load();
+			_chkBcEngFastScan.Checked = !_barcodeEngineConfig.EngineStrategy.EnableMultiScan;
+			_chkBcEngZxingFallback.Checked = _barcodeEngineConfig.EngineStrategy.EnableZXingFallback;
+			_chkBcEngAutoRotate.Checked = _barcodeEngineConfig.EngineStrategy.AutoRotationCorrection;
+			_chkBcEngAdaptive.Checked = _barcodeEngineConfig.ImageProcessing.UseAdaptiveThreshold;
+			_numBcEngBlockSize.Value = _barcodeEngineConfig.ImageProcessing.AdaptiveBlockSize;
+			_numBcEngGlobalThr.Value = _barcodeEngineConfig.ImageProcessing.GlobalThreshold;
+			_trackBcEngSharpen.Value = (int)Math.Round(_barcodeEngineConfig.ImageProcessing.SharpenIntensity * 10);
+			_chkBcEngMorph.Checked = _barcodeEngineConfig.ImageProcessing.EnableMorphology;
+			_cboBcEngKernel.SelectedIndex = _barcodeEngineConfig.ImageProcessing.MorphologyKernelSize == 1 ? 0 : (_barcodeEngineConfig.ImageProcessing.MorphologyKernelSize == 5 ? 2 : 1);
 
 			// 背面-日期码
 			_trackDcStartRatio.Value = (int)(_datecodeParams.StartHeightRatioDateCode * 100);
@@ -532,6 +584,11 @@ namespace VisionMeasure.From
 			_numHookHoleClassId.Value = _hookParams.HookHoleClassId;
 			_trackHookConf.Value = ClampTrack((int)(_hookParams.Confidence * 100), 1, 100);
 			_trackHookIou.Value = ClampTrack((int)(_hookParams.Iou * 100), 1, 100);
+
+			// 背面-盒子破
+			_chkEnableBackBoxBreakCheck.Checked = _params.Back.EnableBoxBreakCheck;
+			_trackBackBoxConf.Value = ClampTrack((int)(_backBoxParams.Confidence * 100), 1, 100);
+			_trackBackBoxIou.Value = ClampTrack((int)(_backBoxParams.Iou * 100), 1, 100);
 
 			// 端面
 			_numEndFaceExposure.Value = _params.EndFace.ExposureMs;
@@ -625,11 +682,18 @@ namespace VisionMeasure.From
 			_barcodeParams.BcEnableMorphDilate = _chkBcMorphDilate.Checked;
 			_barcodeParams.BcEnableMorphErode = _chkBcMorphErode.Checked;
 			_barcodeParams.BcStartHeightRatio = _trackBcStartRatio.Value / 100.0;
-			_barcodeParams.BcEnableFilterBestMatch = _chkBcFilterBestMatch.Checked;
-			_barcodeParams.BcTryHarder = _chkBcTryHarder.Checked;
-			_barcodeParams.BcEnableRotationRetry = _chkBcRotationRetry.Checked;
-			_barcodeParams.BcMinBarcodeLength = (int)_numBcMinLength.Value;
-			_barcodeParams.BcMaxBarcodeLength = (int)_numBcMaxLength.Value;
+			// BarcodeCore引擎参数(barcode.config.json, 保存后MainFrm热更新→ReInitialize实时生效)
+			if (_barcodeEngineConfig == null) _barcodeEngineConfig = BarcodeEngineConfig.Load();
+			_barcodeEngineConfig.EngineStrategy.EnableMultiScan = !_chkBcEngFastScan.Checked;
+			_barcodeEngineConfig.EngineStrategy.EnableZXingFallback = _chkBcEngZxingFallback.Checked;
+			_barcodeEngineConfig.EngineStrategy.AutoRotationCorrection = _chkBcEngAutoRotate.Checked;
+			_barcodeEngineConfig.ImageProcessing.UseAdaptiveThreshold = _chkBcEngAdaptive.Checked;
+			_barcodeEngineConfig.ImageProcessing.AdaptiveBlockSize = (int)_numBcEngBlockSize.Value;
+			_barcodeEngineConfig.ImageProcessing.GlobalThreshold = (int)_numBcEngGlobalThr.Value;
+			_barcodeEngineConfig.ImageProcessing.SharpenIntensity = _trackBcEngSharpen.Value / 10.0;
+			_barcodeEngineConfig.ImageProcessing.EnableMorphology = _chkBcEngMorph.Checked;
+			_barcodeEngineConfig.ImageProcessing.MorphologyKernelSize = _cboBcEngKernel.SelectedIndex == 0 ? 1 : (_cboBcEngKernel.SelectedIndex == 2 ? 5 : 3);
+			_barcodeEngineConfig.Save();
 			_barcodeParams.DrawFontBarcode = (int)_numFontBarcode.Value;
 			_barcodeParams.DrawFontDefect = (int)_numFontDefect.Value;
 			_barcodeParams.DrawFontStatus = (int)_numFontStatus.Value;
@@ -668,6 +732,11 @@ namespace VisionMeasure.From
 			_hookParams.Iou = _trackHookIou.Value / 100f;
 			_hookParams.Save();
 
+			// back_box (背面盒子破YOLO阈值, 与挂钩阈值独立)
+			_backBoxParams.Confidence = _trackBackBoxConf.Value / 100f;
+			_backBoxParams.Iou = _trackBackBoxIou.Value / 100f;
+			_backBoxParams.Save();
+
 			// side
 			_sideParams.SideCropRatio = _trackSideCropRatio.Value / 10f;
 			_sideParams.SideConf = _trackSideConf.Value / 100f;
@@ -687,6 +756,7 @@ namespace VisionMeasure.From
 			_params.Back.EnableDateCodeCheck = _chkBackEnable.Checked; // 背面工位启用=日期码启用
 				_params.Back.EnableBarcodeCheck = _chkEnableBarcodeCheck.Checked;
 				_params.Back.EnableHookCheck = _chkEnableHookCheck.Checked;
+				_params.Back.EnableBoxBreakCheck = _chkEnableBackBoxBreakCheck.Checked;
 			_params.EndFace.ExposureMs = (int)_numEndFaceExposure.Value;
 				_params.EndFace.EnableUpperDefectCheck = _chkEnableUpperDefectCheck.Checked;
 
@@ -769,6 +839,8 @@ namespace VisionMeasure.From
 				_hookParams = Config.ModelParams.CreateDefault("hook", "hook");
 				_sideParams = Config.ModelParams.CreateDefault("side", "side");
 				_endfaceUpperParams = Config.ModelParams.CreateDefault("endface_upper", "endface_upper");
+				_backBoxParams = Config.ModelParams.CreateDefault("back_box", "back_box");
+				_barcodeEngineConfig = new BarcodeEngineConfig();
 				LoadParameters();
 				MessageBox.Show("参数已重置，请点击保存生效。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}

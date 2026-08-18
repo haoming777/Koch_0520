@@ -115,6 +115,8 @@ namespace AI
 		public float Score { get; set; }
 		/// <summary>内切圆信息 [centerX_norm, centerY_norm, radius_norm], 仅轻微挂钩错位使用</summary>
 		public float[] CircleInfo { get; set; }
+		/// <summary>旋转矩形四角 [x1,y1,x2,y2,x3,y3,x4,y4] 归一化(顺序=左上→右上→右下→左下), 条码四点框使用; null=绘制时退回BoundingBox轴对齐框</summary>
+		public float[] QuadPoints { get; set; }
 
 		public BoxDefect(int index, string type, float[] box, float score = 1.0f)
 		{

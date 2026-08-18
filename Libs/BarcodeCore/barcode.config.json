@@ -1,0 +1,28 @@
+{
+  "Security": {
+    "RequireDongle": true,
+    "DongleDeveloperId": ""
+  },
+  "EngineStrategy": {
+    "EnableZXingFallback": true,
+    "AutoRotationCorrection": true,
+    "EnableMultiScan": false,
+    "EnableDebugPreview": false,
+    "ParallelSlots": 0
+  },
+  "ImageProcessing": {
+    "UseAdaptiveThreshold": true,
+    "AdaptiveBlockSize": 35,
+    "GlobalThreshold": 128,
+    "EnableMorphology": true,
+    "MorphologyKernelSize": 3,
+    "SharpenIntensity": 1.5
+  },
+  "Roi": {
+    "Enabled": false,
+    "X": 0,
+    "Y": 0,
+    "Width": 0,
+    "Height": 0
+  }
+}

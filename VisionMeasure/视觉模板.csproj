@@ -59,6 +59,18 @@
   <PropertyGroup>
     <ApplicationIcon>机器人.ico</ApplicationIcon>
   </PropertyGroup>
+  <!-- 条码识别引擎(BarcodeCore.dll)部署: 每次构建从 Libs/BarcodeCore 同步依赖DLL到输出目录(源较新才拷贝),
+       首次生成配置模板(不覆盖已调优的 barcode.config.json).
+       注: .sln 位于 VisionMeasure 目录, 故 $(SolutionDir)..\Libs = 仓库根 Libs; 输出目录固定为仓库根 bin\ -->
+  <ItemGroup>
+    <BarcodeLibFiles Include="$(SolutionDir)..\Libs\BarcodeCore\*.dll" />
+  </ItemGroup>
+  <Target Name="CopyBarcodeLibs" AfterTargets="Build">
+    <Copy SourceFiles="@(BarcodeLibFiles)" DestinationFolder="$(SolutionDir)..\bin\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(SolutionDir)..\Libs\BarcodeCore\barcode.config.json"
+          DestinationFolder="$(SolutionDir)..\bin\Config"
+          Condition="!Exists('$(SolutionDir)..\bin\Config\barcode.config.json')" />
+  </Target>
   <PropertyGroup>
     <StartupObject />
   </PropertyGroup>
@@ -274,6 +286,7 @@
     <Compile Include="From\PlcTestSendForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Utils\BarcodeCoreEngine.cs" />
     <Compile Include="Utils\ModelPerfTracker.cs" />
     <Compile Include="Hardware\PlcResultService.cs" />
     <Compile Include="Services\OdbcDatabaseService.cs" />
