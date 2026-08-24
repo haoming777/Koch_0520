@@ -57,6 +57,10 @@ namespace CommonLib
 		public string FrontPCode { get; set; }
 		/// <summary>背面条形码标准值(用于ZXing比对)</summary>
 		public string BackBarcode { get; set; }
+		/// <summary>正面P号码转换标准值(班内新旧转换第二标准, 仅手动输入, 数据库不提供; 有值时才参与OR比对)</summary>
+		public string FrontPNumberRep { get; set; }
+		/// <summary>背面条形码转换标准值(班内新旧转换第二标准, 仅手动输入, 数据库不提供; 有值时才参与OR比对)</summary>
+		public string BackBarcodeRep { get; set; }
 		/// <summary>日期码打码格式(MFG/LOT/双排)</summary>
 		public string CodingFormat { get; set; }
 

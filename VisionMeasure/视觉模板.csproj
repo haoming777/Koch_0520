@@ -71,6 +71,19 @@
           DestinationFolder="$(SolutionDir)..\bin\Config"
           Condition="!Exists('$(SolutionDir)..\bin\Config\barcode.config.json')" />
   </Target>
+  <!-- SQLite.Interop.dll 部署: 64位进程启动时 System.Data.SQLite 只从输出目录的 x64\ 子目录加载原生DLL,
+       故每次构建后确保 x64\SQLite.Interop.dll 存在(根目录那份为源, 不会被Clean删除).
+       另: 该interop依赖VC++2012运行时 MSVCR110.dll(Win11默认不带), 与exe同目录部署即可 -->
+  <Target Name="CopySQLiteInterop" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetDir)SQLite.Interop.dll"
+          DestinationFolder="$(TargetDir)x64\"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(TargetDir)SQLite.Interop.dll')" />
+    <Copy SourceFiles="$(SolutionDir)..\Libs\VCRuntime110\msvcr110.dll"
+          DestinationFolder="$(TargetDir)\"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(SolutionDir)..\Libs\VCRuntime110\msvcr110.dll')" />
+  </Target>
   <PropertyGroup>
     <StartupObject />
   </PropertyGroup>

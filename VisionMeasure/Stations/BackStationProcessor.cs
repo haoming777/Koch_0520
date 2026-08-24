@@ -400,6 +400,9 @@ namespace Stations
 			string refBarcode = _sku?.BackBarcode;
 			// 去除参考条码首位0(防止识别/配置的首位0不匹配)
 			refBarcode = StripLeadingZero(refBarcode);
+			// 转换第二标准(仅手动输入, 有值才参与OR比对)
+			string refBarcodeRep = StripLeadingZero(_sku?.BackBarcodeRep);
+			Logger.Debug($"[Back] 条码比对标准: 主={(!string.IsNullOrEmpty(refBarcode) ? refBarcode : "(无)")} 转换={(!string.IsNullOrEmpty(refBarcodeRep) ? refBarcodeRep : "(未输入→仅主标准比对)")}");
 			// 即使无参考条码也继续解码（仅显示识别结果，不做比对）
 			try
 			{
@@ -414,7 +417,7 @@ namespace Stations
 					if (rw <= 0 || rh <= 0) continue;
 					using (var roi = new Mat(left, new CvRect(sx, syL, rw, rh)).Clone())
 					{
-						var defs = DecodeBarcodeCore(roi, refBarcode, sx, syL, wL, hL, i);
+						var defs = DecodeBarcodeCore(roi, refBarcode, refBarcodeRep, sx, syL, wL, hL, i);
 						if (defs != null)
 					{
 						if (!r.ContainsKey(i))
@@ -430,7 +433,7 @@ namespace Stations
 					if (rw <= 0 || rh <= 0) continue;
 					using (var roi = new Mat(right, new CvRect(sx, syR, rw, rh)).Clone())
 					{
-						var defs = DecodeBarcodeCore(roi, refBarcode, sx, syR, wR, hR, gi);
+						var defs = DecodeBarcodeCore(roi, refBarcode, refBarcodeRep, sx, syR, wR, hR, gi);
 						if (defs != null)
 						{
 							if (!r.ContainsKey(gi))
@@ -448,7 +451,7 @@ namespace Stations
 		/// <summary>单盒条码解码: 预处理管线→BarcodeCore.dll解码→多结果选优(参考条码匹配/编辑距离)→返回缺陷列表.
 		/// 第一项=判定项(条码:xxx=OK显示 / 条码错:xxx=NG), 其余项=同区域附加码("条码:"前缀仅显示).
 		/// 每项携带各自四点框(QuadPoints), 同区域多码时每个码画出自己的位置框</summary>
-		private List<BoxDefect> DecodeBarcodeCore(Mat roi, string refBarcode, int ox, int oy, int fw, int fh, int boxIdx)
+		private List<BoxDefect> DecodeBarcodeCore(Mat roi, string refBarcode, string refBarcodeRep, int ox, int oy, int fw, int fh, int boxIdx)
 		{
 			try
 			{
@@ -470,7 +473,13 @@ namespace Stations
 						return new List<BoxDefect> { new BoxDefect(boxIdx, "条码缺少", defBox) };
 					}
 
-					// ── 选优: 判定项 = 参考条码精确匹配 > 编辑距离最优 (与旧逻辑一致) ──
+					// ── 选优: 判定项 = 参考条码精确匹配(含转换标准) > 编辑距离最优 ──
+					bool hasRef = !string.IsNullOrEmpty(refBarcode);
+					bool hasRep = !string.IsNullOrEmpty(refBarcodeRep);
+					bool hasAny = hasRef || hasRep;
+					// 第二标准(转换值)有输入时按OR比对: 命中任一标准即OK
+					bool IsMatch(string t) => (hasRef && t == refBarcode) || (hasRep && t == refBarcodeRep);
+
 					string bestText = null;
 					BarcodeTextResult bestItem = null;
 					if (items.Count == 1)
@@ -478,21 +487,29 @@ namespace Stations
 							bestText = StripLeadingZero(items[0].Text);
 							bestItem = items[0];
 						}
-					else if (!string.IsNullOrEmpty(refBarcode))
+					else if (hasAny)
 					{
-						if (items.Any(res => StripLeadingZero(res.Text) == refBarcode))
-						{ bestText = refBarcode; bestItem = items.First(res => StripLeadingZero(res.Text) == refBarcode); }
+						var exact = items.FirstOrDefault(res => IsMatch(StripLeadingZero(res.Text)));
+						if (exact != null)
+						{
+							string t = StripLeadingZero(exact.Text);
+							bestText = (hasRef && t == refBarcode) ? refBarcode : refBarcodeRep;
+							bestItem = exact;
+						}
 						else
 						{
 							int bestDist = int.MaxValue;
 							foreach (var res in items)
 							{
 								if (string.IsNullOrEmpty(res.Text)) continue;
-								int dist = LevenshteinDistance(StripLeadingZero(res.Text), refBarcode);
+								string t = StripLeadingZero(res.Text);
+								int d1 = hasRef ? LevenshteinDistance(t, refBarcode) : int.MaxValue;
+								int d2 = hasRep ? LevenshteinDistance(t, refBarcodeRep) : int.MaxValue;
+								int dist = Math.Min(d1, d2);
 								if (dist < bestDist)
 						{
 							bestDist = dist;
-							bestText = StripLeadingZero(res.Text);
+							bestText = t;
 							bestItem = res;
 						}
 							}
@@ -500,14 +517,17 @@ namespace Stations
 					}
 					else { bestText = StripLeadingZero(items[0].Text); bestItem = items[0]; }
 
-					bool hasRef = !string.IsNullOrEmpty(refBarcode);
-					Logger.Debug("[Back] 条码盒" + (boxIdx + 1) + ": 识=" + (bestText ?? "(空)") + " 标=" + (hasRef ? refBarcode : "(无)") + " " + (hasRef && bestText == refBarcode ? "OK" : hasRef ? "NG" : ""));
+					string refShow = refBarcode ?? "";
+					if (hasRep) refShow = (hasRef ? refShow + "|" : "") + refBarcodeRep;
+					bool dbgMatchMain = hasRef && bestText == refBarcode;
+					bool dbgMatchRep = hasRep && bestText == refBarcodeRep;
+					Logger.Debug("[Back] 条码盒" + (boxIdx + 1) + ": 识=" + (bestText ?? "(空)") + " 标=" + (hasAny ? refShow : "(无)") + " " + ((dbgMatchMain || dbgMatchRep) ? (dbgMatchRep ? "OK(命中转换标准)" : "OK(命中主标准)") : hasAny ? "NG" : ""));
 
 					var defs = new List<BoxDefect>();
 					// 判定项(列表第一项): 决定盒状态
 					string judgeType;
-					if (hasRef && bestText == refBarcode) judgeType = "条码:" + bestText;
-					else if (!hasRef) judgeType = "条码:" + (bestText ?? items[0].Text);
+					if (hasAny && IsMatch(bestText)) judgeType = "条码:" + bestText;
+					else if (!hasAny) judgeType = "条码:" + (bestText ?? items[0].Text);
 					else judgeType = "条码错:" + bestText; // 不匹配 → NG+橙色
 					defs.Add(new BoxDefect(boxIdx, judgeType, defBox) { QuadPoints = NormalizeQuad(bestItem, ox, oy, fw, fh) });
 
@@ -520,7 +540,7 @@ namespace Stations
 					}
 
 					// 条码独立日志(Logs/Barcode_*.log): 判定项解码详情, 与主日志分离便于单独排查
-					BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 识={bestText ?? "(空)"} 类型={bestItem?.Format ?? "-"} 四点=({bestItem?.X1},{bestItem?.Y1})-({bestItem?.X2},{bestItem?.Y2})-({bestItem?.X3},{bestItem?.Y3})-({bestItem?.X4},{bestItem?.Y4}) 标={(hasRef ? refBarcode : "(无)")} {(hasRef && bestText == refBarcode ? "OK" : hasRef ? "NG" : "仅显示")} 耗时={decodeMs:F0}ms");
+					BarcodeLogger.Info($"[Back] 盒{boxIdx + 1}: 识={bestText ?? "(空)"} 类型={bestItem?.Format ?? "-"} 四点=({bestItem?.X1},{bestItem?.Y1})-({bestItem?.X2},{bestItem?.Y2})-({bestItem?.X3},{bestItem?.Y3})-({bestItem?.X4},{bestItem?.Y4}) 标={(hasAny ? refShow : "(无)")} {(hasAny && IsMatch(bestText) ? "OK" : hasAny ? "NG" : "仅显示")} 耗时={decodeMs:F0}ms");
 					return defs;
 				}
 			}

@@ -314,7 +314,10 @@ namespace VisionMeasure.Stations
 				int startYL = (int)(hL * pcRatio), startYR = (int)(hR * pcRatio);
 
 				string refPNumber = _currentSku?.FrontPCode;
+				string refPNumberRep = _currentSku?.FrontPNumberRep; // 转换第二标准(仅手动输入, 有值才参与比对)
 				bool hasRef = !string.IsNullOrEmpty(refPNumber);
+				bool hasRep = !string.IsNullOrEmpty(refPNumberRep);
+				Logger.Debug($"[Front] P号比对标准: 主={(hasRef ? refPNumber : "(无)")} 转换={(hasRep ? refPNumberRep : "(未输入→仅主标准比对)")}");
 
 				// 左半部分
 				for (int i = 0; i < halfP; i++)
@@ -327,7 +330,7 @@ namespace VisionMeasure.Stations
 						using (var roi = new Mat(left, new CvRect(sx, startYL, rw, rh)).Clone())
 						{
 							// 变更：将 pCount 传入 ProcessPNumberRoi
-							ProcessPNumberRoi(roi, i, refPNumber, hasRef, wL, hL, sx, startYL, pCount, results);
+							ProcessPNumberRoi(roi, i, refPNumber, hasRef, refPNumberRep, hasRep, wL, hL, sx, startYL, pCount, results);
 						}
 					}
 				}
@@ -344,7 +347,7 @@ namespace VisionMeasure.Stations
 						using (var roi = new Mat(right, new CvRect(sx, startYR, rw, rh)).Clone())
 						{
 							// 变更：将 pCount 传入 ProcessPNumberRoi
-							ProcessPNumberRoi(roi, gi, refPNumber, hasRef, wR, hR, sx, startYR, pCount, results);
+							ProcessPNumberRoi(roi, gi, refPNumber, hasRef, refPNumberRep, hasRep, wR, hR, sx, startYR, pCount, results);
 						}
 					}
 				}
@@ -358,6 +361,7 @@ namespace VisionMeasure.Stations
 		/// 处理单盒P号ROI: 旋转90度 -> 动态截取底部百分比 -> ViMo OCR -> 正则匹配
 		/// </summary>
 		private void ProcessPNumberRoi(Mat roi, int boxIdx, string refPNumber, bool hasRef,
+			string refPNumberRep, bool hasRep,
 			int fullW, int fullH, int offsetX, int offsetY, int pCount, Dictionary<int, List<BoxDefect>> results)
 		{
 			ResponseList<OcrResponse> ocrResults;
@@ -391,7 +395,7 @@ namespace VisionMeasure.Stations
 			// 3. 处理 OCR 推理失败或空结果的情况
 			if (ret != 0 || ocrResults == null || ocrResults.Count == 0)
 			{
-				if (hasRef && EnablePNumberCheck)
+				if ((hasRef || hasRep) && EnablePNumberCheck)
 				{
 					// "P号缺少"框覆盖整个ROI区域（原图归一化坐标）
 					AddDefect(results, boxIdx, "P号缺少", new float[] {
@@ -424,21 +428,25 @@ namespace VisionMeasure.Stations
 
 					// 完整逆变换: finalRoi → 去裁剪 → 逆时针90° → 去ROI偏移 → 原图归一化坐标
 					float[] normBox = ComputeNormBBox(block, fullW, fullH, offsetX, offsetY, roiW, roiH, cropRatio);
-					bool isMatch = (pNum == refPNumber);
+					// 第二标准(转换值)有输入时按OR比对: 命中任一标准即OK
+					bool matchMain = (pNum == refPNumber);
+					bool matchRep = (hasRep && pNum == refPNumberRep);
+					bool isMatch = matchMain || matchRep;
 
-					if (EnablePNumberCheck && hasRef && !isMatch)
+					if (EnablePNumberCheck && (hasRef || hasRep) && !isMatch)
 					{
 						AddDefect(results, boxIdx, $"P号错误:{pNum}", normBox);
+						Logger.Debug($"[Front] P号盒{boxIdx + 1}: 识别={pNum} 主={(hasRef ? refPNumber : "(无)")} 转换={(hasRep ? refPNumberRep : "(未输入)")} → NG(两个标准均不命中)");
 					}
 					else
 					{
 						AddDefect(results, boxIdx, pNum, normBox);
-						Logger.Debug($"[Front] P号盒{boxIdx + 1}: 识别={pNum}" + (isMatch ? " OK" : ""));
+						Logger.Debug($"[Front] P号盒{boxIdx + 1}: 识别={pNum}" + (isMatch ? (matchRep ? " OK(命中转换标准)" : " OK(命中主标准)") : ""));
 					}
 				}
 			}
 
-			if (!foundAny && hasRef && EnablePNumberCheck)
+			if (!foundAny && (hasRef || hasRep) && EnablePNumberCheck)
 			{
 				AddDefect(results, boxIdx, "P号缺少", new float[] {
 					(float)offsetX / fullW,

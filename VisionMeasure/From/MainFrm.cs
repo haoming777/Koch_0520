@@ -141,6 +141,12 @@ namespace VisionMeasure
 		public DaHuaSDK camera1SDK, camera2SDK, camera3SDK, camera4SDK;
 		public DaHuaSDK camera5SDK, camera6SDK, camera7SDK, camera8SDK;
 
+		// ========== 相机Ready信号(DB47.DBX12.4) ==========
+		// 索引1~8对应相机1~8的连接状态, 全部true才向PLC置位CameraReady
+		private readonly object _cameraReadyLock = new object();
+		private readonly bool[] _cameraConnected = new bool[9];
+		private bool? _lastCameraReadySent;  // null=从未发送, 用于启动时强制写一次当前状态
+
 		// ========== SKU搜索 ==========
 		private TextBox _skuSearchTextBox;
 		private ListBox _skuResultListBox;
@@ -388,7 +394,11 @@ namespace VisionMeasure
 						if (PlcState != null)
 							PlcState.State = connected ? UILightState.On : UILightState.Off;
 						if (connected)
+						{
 							Logger.Info($"[PLC状态] 已连接: {msg}");
+							// PLC重连后DB值可能被清, 相机Ready若此前已置位则重发一次
+							if (_lastCameraReadySent == true) _plcResultService?.SendCameraReady(true);
+						}
 						else
 							Logger.Warning($"[PLC状态] 已断开: {msg}");
 					}));
@@ -505,6 +515,9 @@ namespace VisionMeasure
 			}
 
 			Logger.Info($"========== 相机初始化完成: {successCount}/{cameraConfigs.Length} ==========");
+
+			// 初始化完成后强制评估一次CameraReady(8台全成功→置位, 部分失败→复位/不置位)
+			UpdateCameraReadySignal();
 
 			// 初始化触发管理器
 			if (_motionMgr != null && _motionMgr.IsConnected && !useSimulateMode)
@@ -1254,6 +1267,14 @@ namespace VisionMeasure
 		/// </summary>
 		private void UpdateCameraState(int cameraId, bool isConnected)
 		{
+			// 状态数组更新+CameraReady联动同步执行(调用方可能为SDK回调线程), 仅UI指示灯走BeginInvoke
+			lock (_cameraReadyLock)
+			{
+				if (cameraId >= 1 && cameraId <= 8)
+					_cameraConnected[cameraId] = isConnected;
+			}
+			UpdateCameraReadySignal();
+
 			this.BeginInvoke(new Action(() =>
 			{
 				var state = isConnected ? UILightState.On : UILightState.Off;
@@ -1270,6 +1291,30 @@ namespace VisionMeasure
 				}
 				Logger.Debug($"[Camera{cameraId}] 状态更新: {(isConnected ? "已连接" : "已断开")}");
 			}));
+		}
+
+		/// <summary>
+		/// 统计8台相机连接状态并联动PLC CameraReady信号(DB47.DBX12.4)
+		/// 仅在状态翻转时写入: 8台全true→写true, 任意false→写false
+		/// _lastCameraReadySent=null(从未发送)时强制写一次当前状态
+		/// </summary>
+		private void UpdateCameraReadySignal()
+		{
+			bool allReady;
+			lock (_cameraReadyLock)
+			{
+				allReady = true;
+				for (int i = 1; i <= 8; i++)
+				{
+					if (!_cameraConnected[i]) { allReady = false; break; }
+				}
+
+				if (_lastCameraReadySent == allReady) return;
+				_lastCameraReadySent = allReady;
+			}
+
+			_plcResultService?.SendCameraReady(allReady);
+			Logger.Info($"[CameraReady] 8台相机{(allReady ? "全部在线" : "存在离线")} → DB47.DBX12.4={(allReady ? "true" : "false")}");
 		}
 
 		/// <summary>根据相机序列号(Key)查找相机ID</summary>
@@ -1609,35 +1654,35 @@ namespace VisionMeasure
 		/// <summary>创建4个工位测试按钮: 正面/背面/端面/侧面, 添加到tableLayoutPanel34, 绑定Click事件</summary>
 		private void InitTestButtons()
 		{
-			if (tableLayoutPanel34 == null) return;
-			tableLayoutPanel34.SuspendLayout();
-			tableLayoutPanel34.Controls.Clear();
-			tableLayoutPanel34.RowCount = 4;
-			for (int i = 0; i < 4; i++)
-			{
-				string text; EventHandler handler;
-				switch (i)
-				{
-					case 0: text = "正面测试"; handler = TestFrontBtn_Click; break;
-					case 1: text = "背面测试"; handler = TestBackBtn_Click; break;
-					case 2: text = "端面测试"; handler = TestEndFaceBtn_Click; break;
-					default: text = "侧面测试"; handler = TestSideBtn_Click; break;
-				}
-				var btn = new Button
-				{
-					Text = text,
-					Dock = DockStyle.Fill,
-					FlatStyle = FlatStyle.Flat,
-					BackColor = Color.FromArgb(52, 152, 219),
-					ForeColor = Color.White,
-					Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-					Margin = new Padding(2)
-				};
-				btn.Click += handler;
-				tableLayoutPanel34.Controls.Add(btn, 0, i);
-			}
-			tableLayoutPanel34.ResumeLayout();
-			Logger.Info("工位测试按钮已初始化");
+			//if (tableLayoutPanel34 == null) return;
+			//tableLayoutPanel34.SuspendLayout();
+			//tableLayoutPanel34.Controls.Clear();
+			//tableLayoutPanel34.RowCount = 4;
+			//for (int i = 0; i < 4; i++)
+			//{
+			//	string text; EventHandler handler;
+			//	switch (i)
+			//	{
+			//		case 0: text = "正面测试"; handler = TestFrontBtn_Click; break;
+			//		case 1: text = "背面测试"; handler = TestBackBtn_Click; break;
+			//		case 2: text = "端面测试"; handler = TestEndFaceBtn_Click; break;
+			//		default: text = "侧面测试"; handler = TestSideBtn_Click; break;
+			//	}
+			//	var btn = new Button
+			//	{
+			//		Text = text,
+			//		Dock = DockStyle.Fill,
+			//		FlatStyle = FlatStyle.Flat,
+			//		BackColor = Color.FromArgb(52, 152, 219),
+			//		ForeColor = Color.White,
+			//		Font = new Font("微软雅黑", 10F, FontStyle.Bold),
+			//		Margin = new Padding(2)
+			//	};
+			//	btn.Click += handler;
+			//	tableLayoutPanel34.Controls.Add(btn, 0, i);
+			//}
+			//tableLayoutPanel34.ResumeLayout();
+			//Logger.Info("工位测试按钮已初始化");
 		}
 
 		/// <summary>选择图片文件: OpenFileDialog→过滤jpg/png/bmp/tiff→返回Bitmap, 测试用</summary>
@@ -1828,7 +1873,8 @@ namespace VisionMeasure
 				var data = new Dictionary<string, string>();
 				foreach (var kv in new (string, Control)[] {
 					("SKU", _skuSearchCombo), ("P", P_Lb), ("Z", Z_Lb), ("MM", MM_Lb),
-					("FrontPNumber", FrontPNumber_Lb), ("BackBarcode", BackBarcode_Lb), ("CodingFormat", CodingFormat_Lb)
+					("FrontPNumber", FrontPNumber_Lb), ("BackBarcode", BackBarcode_Lb), ("CodingFormat", CodingFormat_Lb),
+					("FrontPNumberRep", FrontPNumber_Rep_Lb), ("BackBarcodeRep", BackBarcode_Rep_Lb)
 				})
 				{
 					if (kv.Item2 == null) continue;
@@ -1864,6 +1910,8 @@ namespace VisionMeasure
 							case "FrontPNumber": ctrl = FrontPNumber_Lb; break;
 							case "BackBarcode": ctrl = BackBarcode_Lb; break;
 							case "CodingFormat": ctrl = CodingFormat_Lb; break;
+							case "FrontPNumberRep": ctrl = FrontPNumber_Rep_Lb; break;
+							case "BackBarcodeRep": ctrl = BackBarcode_Rep_Lb; break;
 						}
 						if (ctrl != null)
 						{
@@ -1891,7 +1939,9 @@ namespace VisionMeasure
 							if (data.TryGetValue("FrontPNumber", out string fp)) _currentSku.FrontPCode = fp;
 							if (data.TryGetValue("BackBarcode", out string bc)) _currentSku.BackBarcode = bc;
 							if (data.TryGetValue("CodingFormat", out string cf)) _currentSku.CodingFormat = cf;
-							Logger.Debug($"SKU参数已恢复(SKU匹配): P={_currentSku.P} Z={_currentSku.Z} MM={_currentSku.MM} P号={_currentSku.FrontPCode} 条码={_currentSku.BackBarcode} 格式={_currentSku.CodingFormat}");
+							if (data.TryGetValue("FrontPNumberRep", out string fpr)) _currentSku.FrontPNumberRep = fpr;
+							if (data.TryGetValue("BackBarcodeRep", out string bcr)) _currentSku.BackBarcodeRep = bcr;
+							Logger.Debug($"SKU参数已恢复(SKU匹配): P={_currentSku.P} Z={_currentSku.Z} MM={_currentSku.MM} P号={_currentSku.FrontPCode} 条码={_currentSku.BackBarcode} 格式={_currentSku.CodingFormat} P号转换={_currentSku.FrontPNumberRep} 条码转换={_currentSku.BackBarcodeRep}");
 						}
 						else
 						{
@@ -2143,6 +2193,18 @@ namespace VisionMeasure
 				{
 					CodingFormat_Lb.Text = string.IsNullOrEmpty(_currentSku.CodingFormat) ? "-" : _currentSku.CodingFormat;
 				}
+
+				// 正面P号码转换(第二标准, 仅手动输入; 空表示不启用转换比对)
+				if (FrontPNumber_Rep_Lb != null)
+				{
+					FrontPNumber_Rep_Lb.Text = _currentSku.FrontPNumberRep ?? "";
+				}
+
+				// 背面条形码转换(第二标准, 仅手动输入; 空表示不启用转换比对)
+				if (BackBarcode_Rep_Lb != null)
+				{
+					BackBarcode_Rep_Lb.Text = _currentSku.BackBarcodeRep ?? "";
+				}
 			}
 			catch (Exception ex)
 			{
@@ -2347,6 +2409,7 @@ namespace VisionMeasure
 				// 记录修改前值
 				int oldP = _currentSku.P, oldZ = _currentSku.Z, oldMM = _currentSku.MM;
 				string oldFP = _currentSku.FrontPCode ?? "-", oldBC = _currentSku.BackBarcode ?? "-", oldCF = _currentSku.CodingFormat ?? "-";
+				string oldFPR = _currentSku.FrontPNumberRep ?? "-", oldBCR = _currentSku.BackBarcodeRep ?? "-";
 				// 手动输入的值覆盖CSV
 				if (int.TryParse(P_Lb?.Text, out int pv) && pv > 0) _currentSku.P = pv;
 				if (int.TryParse(Z_Lb?.Text, out int zv)) _currentSku.Z = zv;
@@ -2354,6 +2417,9 @@ namespace VisionMeasure
 				if (FrontPNumber_Lb != null && !string.IsNullOrWhiteSpace(FrontPNumber_Lb.Text)) _currentSku.FrontPCode = FrontPNumber_Lb.Text.Trim();
 				if (BackBarcode_Lb != null && !string.IsNullOrWhiteSpace(BackBarcode_Lb.Text)) _currentSku.BackBarcode = BackBarcode_Lb.Text.Trim();
 				if (CodingFormat_Lb != null && !string.IsNullOrWhiteSpace(CodingFormat_Lb.Text)) _currentSku.CodingFormat = CodingFormat_Lb.Text.Trim();
+				// 转换标准(第二标准)直接以输入框为准: 清空输入框即可关闭转换比对
+				if (FrontPNumber_Rep_Lb != null) _currentSku.FrontPNumberRep = FrontPNumber_Rep_Lb.Text.Trim();
+				if (BackBarcode_Rep_Lb != null) _currentSku.BackBarcodeRep = BackBarcode_Rep_Lb.Text.Trim();
 				if (_currentSku.P <= 0) _currentSku.P = 12;
 				// 根据最新P值重新匹配裁图比例.csv中的裁图像素
 				_skuDb.ApplyCropData(_currentSku);
@@ -2366,6 +2432,8 @@ namespace VisionMeasure
 				if (oldFP != (_currentSku.FrontPCode ?? "-")) changes.Add("P号: " + oldFP + " → " + _currentSku.FrontPCode);
 				if (oldBC != (_currentSku.BackBarcode ?? "-")) changes.Add("条码: " + oldBC + " → " + _currentSku.BackBarcode);
 				if (oldCF != (_currentSku.CodingFormat ?? "-")) changes.Add("格式: " + oldCF + " → " + _currentSku.CodingFormat);
+				if (oldFPR != (_currentSku.FrontPNumberRep ?? "-")) changes.Add("P号转换: " + oldFPR + " → " + _currentSku.FrontPNumberRep);
+				if (oldBCR != (_currentSku.BackBarcodeRep ?? "-")) changes.Add("条码转换: " + oldBCR + " → " + _currentSku.BackBarcodeRep);
 				string diff = changes.Count > 0 ? "\n\n变更:\n" + string.Join("\n", changes) : "";
 				_frontStation?.UpdateSku(_currentSku);
 				_backStation?.UpdateSku(_currentSku);
@@ -2376,6 +2444,7 @@ namespace VisionMeasure
 				_detectionParams.SaveToFile();
 				SaveSkuParams();
 				SaveCounts();
+				Logger.Info($"SKU保存: {sku} P={_currentSku.P} Z={_currentSku.Z} MM={_currentSku.MM} P号={_currentSku.FrontPCode} 条码={_currentSku.BackBarcode} 格式={_currentSku.CodingFormat} P号转换={(!string.IsNullOrEmpty(_currentSku.FrontPNumberRep) ? _currentSku.FrontPNumberRep : "(未输入→仅主标准比对)")} 条码转换={(!string.IsNullOrEmpty(_currentSku.BackBarcodeRep) ? _currentSku.BackBarcodeRep : "(未输入→仅主标准比对)")}");
 				MessageBox.Show("SKU【" + sku + "】保存成功！\nP=" + _currentSku.P + " Z=" + _currentSku.Z + " MM=" + _currentSku.MM + diff, "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			};
 			// 各工位小清空
@@ -2634,6 +2703,13 @@ namespace VisionMeasure
 
 				_triggerMgr?.Dispose();         // 释放触发管理器（包含后台线程）
 
+				// 关闭前复位CameraReady(此时PLC仍连接), 防止PLC侧残留true
+				if (_lastCameraReadySent == true)
+				{
+					Logger.Info("[CameraReady] 程序关闭 → DB47.DBX12.4=false");
+					_plcResultService?.SendCameraReady(false);
+				}
+
 				DisposeAllCameras();            // 释放所有相机SDK实例
 				_motionMgr?.Disconnect();
 				_s7Plc?.CloseModbus();         // 断开PLC连接
@@ -2724,6 +2800,7 @@ namespace VisionMeasure
 						Z = _currentSku?.Z ?? 2,
 						MM = _currentSku?.MM ?? 42,
 						BackBarcode = _currentSku?.BackBarcode,
+						BackBarcodeRep = _currentSku?.BackBarcodeRep,
 						CodingFormat = _currentSku?.CodingFormat,
 						FrontPCode = _currentSku?.FrontPCode
 					});
@@ -2820,6 +2897,74 @@ namespace VisionMeasure
 
 			try
 			{
+				// 记录点击时的当前状态, 便于现场排错
+				Logger.Info($"[SKU下拉] 用户点击获取检测参数。当前: SKU={_currentSku?.SkuNumber ?? "(无)"} P号={_currentSku?.FrontPCode ?? "(无)"} 条码={_currentSku?.BackBarcode ?? "(无)"} P号转换={_currentSku?.FrontPNumberRep ?? "(未输入)"} 条码转换={_currentSku?.BackBarcodeRep ?? "(未输入)"}");
+
+				// 查询/确认/重试循环: 失败→"未获取到，请重新获取"弹窗; 成功→对比(旧→新)+[确认][重新获取]
+				await FetchSkuLoopAsync();
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[SKU下拉] 流程异常: {ex.Message}\r\n{ex.StackTrace}");
+				MessageBox.Show($"获取检测参数流程异常：{ex.Message}", "异常",
+					MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+			finally
+			{
+				// 7. 恢复按钮
+				uiButton1.Enabled = true;
+			}
+		}
+
+		/// <summary>SKU下拉主循环: 失败弹"未获取到，请重新获取"(可重试); 成功弹对比+[确认][重新获取]</summary>
+		private async Task FetchSkuLoopAsync()
+		{
+			while (true)
+			{
+				var fetched = await QuerySkuFromDbAsync();
+
+				if (!fetched.Success)
+				{
+					Logger.Info($"[SKU下拉] 查询失败, 弹出重试弹窗: {fetched.Error}");
+					using (var dlg = new SkuFetchDialog("获取检测参数",
+						"未获取到，请重新获取！\n\n失败原因：\n" + fetched.Error, hasConfirm: false))
+					{
+						dlg.ShowDialog(this);
+						if (dlg.Choice != SkuFetchDialog.DialogChoice.Retry)
+						{
+							Logger.Info("[SKU下拉] 失败弹窗用户取消，结束获取流程，保持原有数据不变");
+							return; // 用户取消
+						}
+					}
+					Logger.Info("[SKU下拉] 失败弹窗用户选择[重新获取]，重新查询数据库");
+					continue; // 重新获取
+				}
+
+				// 只显示获取到的SKU号, 用户确认后才应用
+				string msg = $"获取到SKU{fetched.Data.Sku}";
+				SkuFetchDialog.DialogChoice choice;
+				using (var dlg = new SkuFetchDialog("获取检测参数", msg, hasConfirm: true))
+				{
+					dlg.ShowDialog(this);
+					choice = dlg.Choice;
+				}
+
+				if (choice == SkuFetchDialog.DialogChoice.Retry)
+				{
+					Logger.Info("[SKU下拉] 对比弹窗用户选择[重新获取]，重新查询数据库");
+					continue; // 重新获取
+				}
+				if (choice == SkuFetchDialog.DialogChoice.Confirm) ApplyFetchedSku(fetched.Data);
+				else Logger.Info("[SKU下拉] ❌ 用户取消，保持原有数据不变");
+				return;
+			}
+		}
+
+		/// <summary>后台查询数据库并校验SKU字段(字段完整性+PMM格式), 成功返回数据/失败返回错误原因</summary>
+		private async Task<(bool Success, string Error, SkuFetchData Data)> QuerySkuFromDbAsync()
+		{
+			try
+			{
 				var connStr = _dbConfig.BuildConnectionString();
 				var machineId = _dbConfig.MachineID;
 
@@ -2834,12 +2979,7 @@ namespace VisionMeasure
 				if (data == null || data.Rows.Count == 0)
 				{
 					Logger.Error("[SKU下拉] 查询失败或无数据返回");
-					this.BeginInvoke(new Action(() =>
-					{
-						MessageBox.Show("获取数据失败：查询无结果，请检查数据库配置或机台号是否正确。",
-							"数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
-					}));
-					return;
+					return (false, "查询无结果，请检查数据库配置或机台号是否正确。", null);
 				}
 
 				var row = data.Rows[0];
@@ -2860,112 +3000,200 @@ namespace VisionMeasure
 
 				if (missingFields.Count > 0)
 				{
-					var msg = $"获取数据失败：缺少以下字段数据 — {string.Join("、", missingFields)}，请检查数据库配置。";
+					var msg = $"缺少以下字段数据 — {string.Join("、", missingFields)}，请检查数据库配置。";
 					Logger.Error($"[SKU下拉] {msg}");
-					this.BeginInvoke(new Action(() =>
-					{
-						MessageBox.Show(msg, "数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
-					}));
-					return;
+					return (false, msg, null);
 				}
 
 				// 5. PMM 字段解析
 				var pmmResult = ParsePMM(pmm);
 				if (pmmResult == null)
 				{
-					var msg = $"获取数据失败：PMM 字段格式异常（值=\"{pmm}\"），期望格式如 \"12P56MM\"。";
+					var msg = $"PMM 字段格式异常（值=\"{pmm}\"），期望格式如 \"12P56MM\"。";
 					Logger.Error($"[SKU下拉] {msg}");
-					this.BeginInvoke(new Action(() =>
-					{
-						MessageBox.Show(msg, "数据异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
-					}));
-					return;
+					return (false, msg, null);
 				}
 
-				int pValue = pmmResult.Value.P;
-				int mmValue = pmmResult.Value.MM;
-
-				// 6. 展示修改前后对比，用户确认后才应用
-				this.BeginInvoke(new Action(() =>
+				Logger.Info($"[SKU下拉] 查询成功: SKU={sku} P={pmmResult.Value.P} MM={pmmResult.Value.MM}");
+				return (true, null, new SkuFetchData
 				{
-					// 记录修改前的值
-					var oldSku = _currentSku;
-					string oldSkuNo = oldSku?.SkuNumber ?? "(无)";
-					int oldP = oldSku?.P ?? 0;
-					int oldMM = oldSku?.MM ?? 0;
-					string oldPCode = oldSku?.FrontPCode ?? "(无)";
-					string oldBarcode = oldSku?.BackBarcode ?? "(无)";
-					string oldFormat = oldSku?.CodingFormat ?? "(无)";
-
-					// 构建对比信息
-					var changes = new System.Text.StringBuilder();
-					changes.AppendLine("═══════ SQL Server 数据对比 ═══════");
-					changes.AppendLine();
-					changes.AppendLine($"  SKU号:    {oldSkuNo}  →  {sku}");
-					changes.AppendLine($"  P值:      {oldP}  →  {pValue}");
-					changes.AppendLine($"  MM值:     {oldMM}  →  {mmValue}");
-					changes.AppendLine($"  正面P号:  {oldPCode}  →  {pNoFront}");
-					changes.AppendLine($"  条码:     {oldBarcode}  →  {barcode}");
-					changes.AppendLine($"  打码格式: {oldFormat}  →  {printFormat}");
-					changes.AppendLine();
-					changes.AppendLine("是否使用数据库数据替换当前值？");
-
-					var result = MessageBox.Show(changes.ToString(),
-						"确认SKU数据更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-					if (result == DialogResult.Yes)
-					{
-						// 从现有SKU数据库查找匹配（获取裁图坐标等CSV字段）
-						var existingSku = _skuDb?.GetBySkuNumber(sku);
-
-						SkuData mergedSku;
-						if (existingSku != null)
-						{
-							mergedSku = existingSku;
-							Logger.Info($"[SKU下拉] 找到已存在SKU {sku}，保留裁图坐标，更新核心字段");
-						}
-						else
-						{
-							mergedSku = new SkuData();
-							_skuDb?.ApplyCropData(mergedSku);
-							Logger.Info($"[SKU下拉] 新SKU {sku}，从裁图比例.csv加载裁图坐标");
-						}
-
-						mergedSku.SkuNumber = sku;
-						mergedSku.FrontPCode = pNoFront;
-						mergedSku.BackBarcode = barcode;
-						mergedSku.CodingFormat = printFormat;
-						mergedSku.P = pValue;
-						mergedSku.MM = mmValue;
-
-						_currentSku = mergedSku;
-						ApplySkuChange();
-
-						// 持久化保存：下次启动自动恢复
-						SaveSkuParams();
-						_detectionParams.LastSkuNumber = sku;
-						_detectionParams.SaveToFile();
-
-						Logger.Info($"[SKU下拉] ✅ 用户确认，已应用并保存: SKU={sku} P={pValue} MM={mmValue}");
-					}
-					else
-					{
-						Logger.Info($"[SKU下拉] ❌ 用户取消，保持原有数据不变");
-					}
-				}));
+					Sku = sku,
+					Barcode = barcode,
+					PNoFront = pNoFront,
+					PrintFormat = printFormat,
+					P = pmmResult.Value.P,
+					MM = pmmResult.Value.MM
+				});
 			}
 			catch (Exception ex)
 			{
 				Logger.Error($"[SKU下拉] 异常: {ex.Message}");
-				this.BeginInvoke(new Action(() =>
-				{
-					MessageBox.Show($"获取数据失败：{ex.Message}", "异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
-				}));
+				return (false, ex.Message, null);
 			}
-			finally
+		}
+
+		/// <summary>应用数据库下拉的SKU数据: 合并裁图坐标→替换_currentSku→清空两个转换标准→持久化保存</summary>
+		private void ApplyFetchedSku(SkuFetchData f)
+		{
+			// 清空前记录旧转换标准, 便于现场核对(注意: 同一SKU号时GetBySkuNumber可能返回当前实例, 必须先取旧值)
+			var oldSku = _currentSku;
+			string oldFpr = oldSku?.FrontPNumberRep;
+			string oldBcr = oldSku?.BackBarcodeRep;
+
+			// 从现有SKU数据库查找匹配（获取裁图坐标等CSV字段）
+			var existingSku = _skuDb?.GetBySkuNumber(f.Sku);
+
+			SkuData mergedSku;
+			if (existingSku != null)
 			{
-				// 7. 恢复按钮
-				this.BeginInvoke(new Action(() => { uiButton1.Enabled = true; }));
+				mergedSku = existingSku;
+				Logger.Info($"[SKU下拉] 找到已存在SKU {f.Sku}，保留裁图坐标，更新核心字段");
+			}
+			else
+			{
+				mergedSku = new SkuData();
+				_skuDb?.ApplyCropData(mergedSku);
+				Logger.Info($"[SKU下拉] 新SKU {f.Sku}，从裁图比例.csv加载裁图坐标");
+			}
+
+			mergedSku.SkuNumber = f.Sku;
+			mergedSku.FrontPCode = f.PNoFront;
+			mergedSku.BackBarcode = f.Barcode;
+			mergedSku.CodingFormat = f.PrintFormat;
+			mergedSku.P = f.P;
+			mergedSku.MM = f.MM;
+
+			// 转换标准(第二标准)数据库不提供, 清空后由操作员重新手动输入
+			mergedSku.FrontPNumberRep = "";
+			mergedSku.BackBarcodeRep = "";
+
+			_currentSku = mergedSku;
+			ApplySkuChange(); // UpdateSkuDisplay 会将两个转换框刷新为空, 并推送到4个工位
+
+			// 持久化保存：下次启动自动恢复
+			SaveSkuParams();
+			_detectionParams.LastSkuNumber = f.Sku;
+			_detectionParams.SaveToFile();
+
+			Logger.Info($"[SKU下拉] ✅ 用户确认，已应用并保存: SKU={f.Sku} P={f.P} MM={f.MM} P号={f.PNoFront} 条码={f.Barcode} 格式={f.PrintFormat}");
+			Logger.Info($"[SKU下拉] 转换标准已清空(需重新输入): 旧P号转换={(!string.IsNullOrEmpty(oldFpr) ? oldFpr : "(本来为空)")} 旧条码转换={(!string.IsNullOrEmpty(oldBcr) ? oldBcr : "(本来为空)")}");
+		}
+
+		/// <summary>数据库下拉的单条SKU数据(查询成功结果)</summary>
+		private class SkuFetchData
+		{
+			public string Sku;
+			public string Barcode;
+			public string PNoFront;
+			public string PrintFormat;
+			public int P;
+			public int MM;
+		}
+
+		/// <summary>
+		/// SKU下拉专用弹窗
+		/// hasConfirm=true: [确认][重新获取]  (获取成功弹窗)
+		/// hasConfirm=false: [重新获取][取消] (未获取到弹窗)
+		/// 右上角X = 取消
+		/// </summary>
+		private class SkuFetchDialog : Form
+		{
+			public enum DialogChoice { Cancel = 0, Confirm = 1, Retry = 2 }
+
+			/// <summary>用户点击的按钮: Cancel/Confirm/Retry</summary>
+			public DialogChoice Choice { get; private set; } = DialogChoice.Cancel;
+
+			public SkuFetchDialog(string title, string message, bool hasConfirm)
+			{
+				Text = title;
+				FormBorderStyle = FormBorderStyle.FixedDialog;
+				MaximizeBox = false;
+				MinimizeBox = false;
+				StartPosition = FormStartPosition.CenterParent;
+				ShowInTaskbar = false;
+				Font = new Font("微软雅黑", 10F);
+				BackColor = System.Drawing.Color.FromArgb(245, 246, 250);
+
+				if (hasConfirm)
+				{
+					// 成功弹窗: 只居中显示一行SKU
+					ClientSize = new System.Drawing.Size(420, 170);
+					var lbl = new Label
+					{
+						Text = message,
+						TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
+						AutoSize = false,
+						Font = new Font("微软雅黑", 16F, FontStyle.Bold),
+						ForeColor = System.Drawing.Color.FromArgb(40, 40, 40),
+						Location = new System.Drawing.Point(20, 30),
+						Size = new System.Drawing.Size(380, 60)
+					};
+					Controls.Add(lbl);
+				}
+				else
+				{
+					// 失败弹窗: 多行错误信息
+					ClientSize = new System.Drawing.Size(500, 360);
+					var txt = new TextBox
+					{
+						Multiline = true,
+						ReadOnly = true,
+						BorderStyle = BorderStyle.None,
+						BackColor = BackColor,
+						ForeColor = System.Drawing.Color.FromArgb(40, 40, 40),
+						Font = new Font("微软雅黑", 10F),
+						Location = new System.Drawing.Point(20, 20),
+						Size = new System.Drawing.Size(460, 250),
+						TabStop = false
+					};
+					txt.Text = message;
+					Controls.Add(txt);
+				}
+
+				// 底部按钮行(右对齐): 重新获取恒在最右
+				int btnW = 120, btnH = 40, gap = 14;
+				int right = ClientSize.Width - 20;
+				int y = ClientSize.Height - btnH - 20;
+
+				var btnRetry = MakeButton("重新获取", right - btnW, y, btnW, btnH);
+				btnRetry.Click += (s, e) => { Choice = DialogChoice.Retry; Close(); };
+				Controls.Add(btnRetry);
+
+				if (hasConfirm)
+				{
+					var btnOk = MakeButton("确认", right - btnW - gap - btnW, y, btnW, btnH);
+					btnOk.BackColor = System.Drawing.Color.FromArgb(24, 144, 255);
+					btnOk.ForeColor = System.Drawing.Color.White;
+					btnOk.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(60, 165, 255);
+					btnOk.FlatAppearance.MouseDownBackColor = System.Drawing.Color.FromArgb(18, 120, 216);
+					btnOk.Click += (s, e) => { Choice = DialogChoice.Confirm; Close(); };
+					Controls.Add(btnOk);
+				}
+				else
+				{
+					var btnCancel = MakeButton("取消", right - btnW - gap - btnW, y, btnW, btnH);
+					btnCancel.Click += (s, e) => { Choice = DialogChoice.Cancel; Close(); };
+					Controls.Add(btnCancel);
+				}
+			}
+
+			private Button MakeButton(string text, int x, int y, int w, int h)
+			{
+				var btn = new Button
+				{
+					Text = text,
+					Size = new System.Drawing.Size(w, h),
+					Location = new System.Drawing.Point(x, y),
+					Font = new Font("微软雅黑", 10F, FontStyle.Bold),
+					FlatStyle = FlatStyle.Flat,
+					BackColor = System.Drawing.Color.White,
+					Cursor = Cursors.Hand,
+					TabStop = false
+				};
+				btn.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(200, 200, 200);
+				btn.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(235, 240, 250);
+				btn.FlatAppearance.MouseDownBackColor = System.Drawing.Color.FromArgb(215, 225, 245);
+				return btn;
 			}
 		}
 

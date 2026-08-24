@@ -128,15 +128,15 @@ namespace Hardware
             }
         }
 
-        /// <summary>发送全部相机就绪信号</summary>
-        public bool SendCameraReady()
+        /// <summary>发送全部相机就绪信号(ready=true置位 / ready=false复位)</summary>
+        public bool SendCameraReady(bool ready)
         {
             try
             {
                 if (_simulateMode)
                 {
-                    PlcLogger.Info($"[PlcResultService] [模拟] {CAMERA_READY_ADDR}=true (CameraReady)");
-                    Logger.Info("[PlcResultService] [模拟] CameraReady 已发送");
+                    PlcLogger.Info($"[PlcResultService] [模拟] {CAMERA_READY_ADDR}={ready} (CameraReady)");
+                    Logger.Info($"[PlcResultService] [模拟] CameraReady={ready} 已发送");
                     return true;
                 }
 
@@ -146,9 +146,9 @@ namespace Hardware
                     return false;
                 }
 
-                PlcLogger.Info($"[PlcResultService] → {CAMERA_READY_ADDR}=true (CameraReady)");
-                Logger.Info("[PlcResultService] CameraReady 已发送 → " + CAMERA_READY_ADDR);
-                _s7.WriteBool(CAMERA_READY_ADDR, true);
+                PlcLogger.Info($"[PlcResultService] → {CAMERA_READY_ADDR}={ready} (CameraReady)");
+                Logger.Info($"[PlcResultService] CameraReady={ready} 已发送 → " + CAMERA_READY_ADDR);
+                _s7.WriteBool(CAMERA_READY_ADDR, ready);
                 return true;
             }
             catch (Exception ex)
