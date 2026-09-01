@@ -257,7 +257,7 @@ namespace VisionMeasure
 				// 初始化相机
 				UpdateLoadingProgress(50, "正在初始化相机SDK...");
 				Logger.Info("正在初始化相机SDK...");
-				InitCameras();
+				//InitCameras();
 				UpdateLoadingProgress(65, "相机初始化完成");
 
 				// 初始化AI模型

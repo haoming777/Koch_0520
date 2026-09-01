@@ -1092,6 +1092,8 @@ namespace Stations
 				string rightDir = Path.Combine(baseDir, "右侧面");
 				Directory.CreateDirectory(leftDir); Directory.CreateDirectory(rightDir);
 				long pid = DateTime.Now.Ticks; string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
+				// 文件名长度保护: 防止超长缺陷名导致Windows 260字符路径限制存图失败
+				if (nt.Length > 80) nt = nt.Substring(0, 80);
 				string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 				// 左侧原图 (使用缓存leftResults, 避免后台Task访问已被Clear的共享列表)
 				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) { bool ln = isOk || (j < leftResults.Count && leftResults[j].Status != "OK"); if (ln) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); } }

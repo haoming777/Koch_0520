@@ -200,18 +200,25 @@ namespace Models
 				// 条形码检测模型 (Yolo -> .onnx + meta.json, 显卡0)
 				if (!string.IsNullOrEmpty(_config.BackBarcodeModel))
 				{
-					string fullPath = _config.GetFullPath(_config.BackBarcodeModel);
-					string metaPath = Path.ChangeExtension(fullPath, "json");
-					ReportProgress($"正在加载背面条形码检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 60, 100);
+					try
+					{
+						string fullPath = _config.GetFullPath(_config.BackBarcodeModel);
+						string metaPath = Path.ChangeExtension(fullPath, "json");
+						ReportProgress($"正在加载背面条形码检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 60, 100);
 
-					if (File.Exists(fullPath) && File.Exists(metaPath))
-					{
-						BackBarcodeModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackBarcode");
-						Logger.Info($"背面条形码检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						if (File.Exists(fullPath) && File.Exists(metaPath))
+						{
+							BackBarcodeModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackBarcode");
+							Logger.Info($"背面条形码检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						}
+						else
+						{
+							Logger.Warning($"背面条形码检测模型文件不存在: {fullPath} 或 {metaPath}");
+						}
 					}
-					else
+					catch (Exception ex)
 					{
-						Logger.Warning($"背面条形码检测模型文件不存在: {fullPath} 或 {metaPath}");
+						Logger.Error($"背面条形码检测模型加载异常: {ex.Message}");
 					}
 				}
 
@@ -223,35 +230,49 @@ namespace Models
 				// 明显挂钩错位模型 (Yolo -> .onnx + meta.json, 显卡0)
 				if (!string.IsNullOrEmpty(_config.BackHookDamageModel))
 				{
-					string fullPath = _config.GetFullPath(_config.BackHookDamageModel);
-					string metaPath = Path.ChangeExtension(fullPath, "json");
-					ReportProgress($"正在加载背面挂钩明显错位检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 75, 100);
+					try
+					{
+						string fullPath = _config.GetFullPath(_config.BackHookDamageModel);
+						string metaPath = Path.ChangeExtension(fullPath, "json");
+						ReportProgress($"正在加载背面挂钩明显错位检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 75, 100);
 
-					if (File.Exists(fullPath) && File.Exists(metaPath))
-					{
-						BackHookModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackHook");
-						Logger.Info($"背面挂钩明显错位检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						if (File.Exists(fullPath) && File.Exists(metaPath))
+						{
+							BackHookModel = new YoloOnnx(fullPath, metaPath, 2, modelName: "BackHook");
+							Logger.Info($"背面挂钩明显错位检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						}
+						else
+						{
+							Logger.Warning($"背面挂钩明显错位检测模型文件不存在: {fullPath} 或 {metaPath}");
+						}
 					}
-					else
+					catch (Exception ex)
 					{
-						Logger.Warning($"背面挂钩明显错位检测模型文件不存在: {fullPath} 或 {metaPath}");
+						Logger.Error($"背面挂钩明显错位检测模型加载异常: {ex.Message}");
 					}
 				}
 
 				// 轻微挂钩错位模型 (分割 -> .onnx, 显卡0)
 				if (!string.IsNullOrEmpty(_config.BackHookSlightModel))
 				{
-					string fullPath = _config.GetFullPath(_config.BackHookSlightModel);
-					ReportProgress($"正在加载背面挂钩轻微错位分割模型(显卡{_config.YoloGpuDeviceId}): {fullPath}", 80, 100);
+					try
+					{
+						string fullPath = _config.GetFullPath(_config.BackHookSlightModel);
+						ReportProgress($"正在加载背面挂钩轻微错位分割模型(显卡{_config.YoloGpuDeviceId}): {fullPath}", 80, 100);
 
-					if (File.Exists(fullPath))
-					{
-						HookSlightModel = new YoloOnnxSegmentation(fullPath, 1);
-						Logger.Info($"背面挂钩轻微错位分割模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						if (File.Exists(fullPath))
+						{
+							HookSlightModel = new YoloOnnxSegmentation(fullPath, 1);
+							Logger.Info($"背面挂钩轻微错位分割模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						}
+						else
+						{
+							Logger.Warning($"背面挂钩轻微错位分割模型文件不存在: {fullPath}");
+						}
 					}
-					else
+					catch (Exception ex)
 					{
-						Logger.Warning($"背面挂钩轻微错位分割模型文件不存在: {fullPath}");
+						Logger.Error($"背面挂钩轻微错位分割模型加载异常: {ex.Message}");
 					}
 				}
 
@@ -280,18 +301,25 @@ namespace Models
 				// 盒子破损检测模型 (Yolo -> .onnx + meta.json, 显卡0)
 				if (!string.IsNullOrEmpty(_config.BackBoxBreakModel))
 				{
-					string fullPath = _config.GetFullPath(_config.BackBoxBreakModel);
-					string metaPath = Path.ChangeExtension(fullPath, "json");
-					ReportProgress($"正在加载背面盒子破损检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 87, 100);
+					try
+					{
+						string fullPath = _config.GetFullPath(_config.BackBoxBreakModel);
+						string metaPath = Path.ChangeExtension(fullPath, "json");
+						ReportProgress($"正在加载背面盒子破损检测模型(Yolo, 显卡{_config.YoloGpuDeviceId}): {fullPath}", 87, 100);
 
-					if (File.Exists(fullPath) && File.Exists(metaPath))
-					{
-						BackBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1, modelName: "BackBoxBreak");
-						Logger.Info($"背面盒子破损检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						if (File.Exists(fullPath) && File.Exists(metaPath))
+						{
+							BackBoxBreakModel = new YoloOnnx(fullPath, metaPath, 1, modelName: "BackBoxBreak");
+							Logger.Info($"背面盒子破损检测模型加载成功(显卡{_config.YoloGpuDeviceId})");
+						}
+						else
+						{
+							Logger.Warning($"背面盒子破损检测模型文件不存在: {fullPath} 或 {metaPath}");
+						}
 					}
-					else
+					catch (Exception ex)
 					{
-						Logger.Warning($"背面盒子破损检测模型文件不存在: {fullPath} 或 {metaPath}");
+						Logger.Error($"背面盒子破损检测模型加载异常: {ex.Message}");
 					}
 				}
 

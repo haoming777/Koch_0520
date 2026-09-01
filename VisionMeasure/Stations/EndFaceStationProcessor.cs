@@ -860,7 +860,10 @@ namespace Stations
 		{
 			var ngTypes = statusList.Where(s => s != "OK").Distinct().ToList();
 			if (ngTypes.Count == 0) return "OK";
-			return string.Join("_", ngTypes);
+			string nt = string.Join("_", ngTypes);
+			// 文件名长度保护: 多盒多缺陷拼接会超Windows 260字符路径限制导致存图失败
+			if (nt.Length > 80) nt = nt.Substring(0, 80);
+			return nt;
 		}
 
 	/// <summary>缺陷classId→中文名称映射: 0=搭舌缺陷 1=边缘问题 2=破损</summary>

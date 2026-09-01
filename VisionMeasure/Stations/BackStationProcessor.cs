@@ -1361,6 +1361,8 @@ namespace Stations
 		{
 			var results = new Dictionary<int, List<BoxDefect>>();
 			if (!EnableHookCheck || _models.BackHookModel == null) return results;
+			bool slightAvailable = _models.HookSlightModel != null;
+			if (!slightAvailable) Logger.Warning("[Back] 轻微挂钩分割模型未加载(文件不存在或加载失败), 跳过轻微挂钩检测");
 			try
 			{
 				var images = new List<Mat> { left, right };
@@ -1402,15 +1404,34 @@ namespace Stations
 							using (Mat cropImg = new Mat(curImg, new CvRect(x1, y1, x2 - x1, y2 - y1)))
 							{
 								if (cropImg.Empty()) continue;
+								if (!slightAvailable) continue;
 								var segR = _models.HookSlightModel.Predict(cropImg, ConfThreshold);
-								if (segR?.Masks == null) continue;
+								if (segR == null)
+								{
+									Logger.Warning($"[Back] 盒{gi+1}轻微挂钩分割模型推理返回null, 跳过该挂钩区域");
+									continue;
+								}
+								if (segR.Masks == null || segR.Masks.Length == 0)
+								{
+									Logger.Warning($"[Back] 盒{gi+1}轻微挂钩分割模型未输出任何掩码, 跳过该挂钩区域");
+									continue;
+								}
 								CvPoint[] inner = null, outer = null;
+								var segOutInfo = new List<string>();
 								for (int m = 0; m < segR.ClassIds.Length; m++)
 								{
-									var pts = segR.Masks[m].Select(pt => new CvPoint((int)Math.Round(pt.X), (int)Math.Round(pt.Y))).ToArray();
+									var mask = segR.Masks[m];
+									var pts = (mask == null || mask.Length == 0) ? new CvPoint[0]
+										: mask.Select(pt => new CvPoint((int)Math.Round(pt.X), (int)Math.Round(pt.Y))).ToArray();
+									segOutInfo.Add("cls" + segR.ClassIds[m] + "=" + pts.Length + "pts(score=" + (m < segR.Scores.Length ? segR.Scores[m].ToString("F2") : "?") + ")");
 									if (segR.ClassIds[m] == BlueAreaClassId) inner = pts;
 									else if (segR.ClassIds[m] == HangHoleClassId) outer = pts;
 								}
+								string segOutStr = segOutInfo.Count > 0 ? string.Join(", ", segOutInfo) : "无";
+								if (inner == null || inner.Length == 0)
+									Logger.Warning($"[Back] 盒{gi+1}挂钩内圈(蓝色区,cls{BlueAreaClassId})未分割到, 分割实际输出[{segOutStr}], 跳过轻微判断");
+								if (outer == null || outer.Length == 0)
+									Logger.Warning($"[Back] 盒{gi+1}挂钩外圈(挂钩孔,cls{HangHoleClassId})未分割到, 分割实际输出[{segOutStr}], 跳过轻微判断");
 								if (inner != null && outer != null && inner.Length > 0 && outer.Length > 0)
 								{
 									var thick = CalcThickness(cropImg.Size(), inner, outer);
@@ -1424,6 +1445,7 @@ namespace Stations
 											new float[] { (float)bboxN.X, (float)bboxN.Y, (float)(bboxN.X + bboxN.Width), (float)(bboxN.Y + bboxN.Height) },
 											score);
 										def.CircleInfo = new float[] { circCxN, circCyN, circRN };
+										def.ThicknessPx = (float)thick.Item1;
 										if (!results.ContainsKey(gi)) results[gi] = new List<BoxDefect>();
 										results[gi].Add(def);
 									}
@@ -1539,6 +1561,21 @@ namespace Stations
 						g.DrawLine(crossPen, cxPx - cs, cyPx, cxPx + cs, cyPx);
 						g.DrawLine(crossPen, cxPx, cyPx - cs, cxPx, cyPx + cs);
 					}
+					// 圆旁显示最大厚度(px)
+					if (d.ThicknessPx > 0)
+					{
+						string t = d.ThicknessPx.ToString("F1") + "px";
+						using (var f2 = new Font("微软雅黑", 14, FontStyle.Bold))
+						{
+							var tsz = g.MeasureString(t, f2);
+							int tx = cxPx + rPx + 8;
+							if (tx + (int)tsz.Width + 4 > w) tx = Math.Max(0, cxPx - rPx - 8 - (int)tsz.Width - 4); // 右侧放不下则放圆左侧
+							int ty = Math.Max(2, Math.Min(cyPx - (int)tsz.Height / 2, h - (int)tsz.Height - 2));
+							using (var bg = new SolidBrush(Color.FromArgb(160, Color.Black)))
+								g.FillRectangle(bg, tx - 2, ty - 2, tsz.Width + 4, tsz.Height + 4);
+							g.DrawString(t, f2, Brushes.Cyan, tx, ty);
+						}
+					}
 				}
 
 				bool isBarcode = d.DefectType.StartsWith("条码") || d.DefectType.Contains("条码");
@@ -1619,15 +1656,22 @@ namespace Stations
 			string shift = GetShift(), dd = DateTime.Now.ToString("yyMMdd");
 			string nt = string.Join("_", st.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
 			foreach (var ch in new char[] { ':', '/', '\\', '<', '>', '"', '|', '?', '*', '(', ')', '（', '）' }) nt = nt.Replace(ch, '_');
+			// 文件名长度保护: 多盒缺陷拼接会超Windows 260字符路径限制导致存图失败
+			if (nt.Length > 80) nt = nt.Substring(0, 80);
 			string resultDir = isOk ? "OK" : "NG";
 			string dir = Path.Combine(_savePath, dd, shift, "背面工位", resultDir); Directory.CreateDirectory(dir);
+			Logger.Info($"[Back] 存图决策: isOk={isOk} SaveOk={so} SaveNg={sn} SaveOkRaw={sor} SaveNgRaw={snr} → {dir}");
 			string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 			if ((isOk && so) || (!isOk && sn))
+			{
 				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_渲染_" + nt + ".jpg"), merged.ToJpegBytesFast(85), true, 85);
+				Logger.Info($"[Back] 渲染图已入队: {ts}_渲染_{nt}.jpg");
+			}
 			if ((isOk && sor) || (!isOk && snr))
 			{
 				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_左原图_" + nt + ".jpg"), leftRaw.ToJpegBytesFast(85), false);
 				_imageSaver.AddSaveTask(Path.Combine(dir, ts + "_右原图_" + nt + ".jpg"), rightRaw.ToJpegBytesFast(85), false);
+				Logger.Info($"[Back] 左右原图已入队: {ts}_左原图/右原图_{nt}.jpg");
 			}
 		}
 
