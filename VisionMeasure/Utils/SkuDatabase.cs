@@ -26,6 +26,18 @@ namespace VisionMeasure.Utils
 		public string SqlConnectionString { get; set; } = "";
 		public string CsvPath { get; set; } = "";
 
+		/// <summary>裁图比例.csv完整路径: 以Config目录(与主数据.csv同目录)为准, 不存在时回退程序根目录</summary>
+		public string CropCsvPath
+		{
+			get
+			{
+				string cropPath = Path.Combine(Path.GetDirectoryName(CsvPath) ?? ".", "裁图比例.csv");
+				if (!File.Exists(cropPath))
+					cropPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "裁图比例.csv");
+				return cropPath;
+			}
+		}
+
 		public SkuDatabase()
 		{
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -46,7 +58,7 @@ namespace VisionMeasure.Utils
 					ok = LoadFromSqlServer();
 				else
 					ok = LoadFromCsv();
-				if (ok) LoadCropData();
+				if (ok) ReloadCropData();
 				return ok;
 			}
 			catch (Exception ex)
@@ -56,15 +68,11 @@ namespace VisionMeasure.Utils
 			}
 		}
 
-		/// <summary>加载裁图比例CSV，合并到已有SKU数据</summary>
-		private void LoadCropData()
+		/// <summary>加载裁图比例CSV，合并到已有SKU数据(启动加载+热更新轮询检测到修改时都会调用)</summary>
+		public void ReloadCropData()
 		{
-			string cropPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "裁图比例.csv");
-			if (!File.Exists(cropPath))
-			{
-				cropPath = Path.Combine(Path.GetDirectoryName(CsvPath) ?? ".", "裁图比例.csv");
-				if (!File.Exists(cropPath)) { Logger.Info("裁图比例CSV未找到，跳过"); return; }
-			}
+			string cropPath = CropCsvPath;
+			if (!File.Exists(cropPath)) { Logger.Info("裁图比例CSV未找到，跳过"); return; }
 			try
 			{
 				var lines = File.ReadAllLines(cropPath, Encoding.GetEncoding("GB2312"));
@@ -359,12 +367,8 @@ namespace VisionMeasure.Utils
 		/// <summary>按SKU当前P值重新匹配裁图比例.csv, 更新裁图像素字段</summary>
 		public void ApplyCropData(SkuData sku)
 		{
-			string cropPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "裁图比例.csv");
-			if (!File.Exists(cropPath))
-			{
-				cropPath = Path.Combine(Path.GetDirectoryName(CsvPath) ?? ".", "裁图比例.csv");
-				if (!File.Exists(cropPath)) return;
-			}
+			string cropPath = CropCsvPath;
+			if (!File.Exists(cropPath)) return;
 			try
 			{
 				var lines = File.ReadAllLines(cropPath, Encoding.GetEncoding("GB2312"));

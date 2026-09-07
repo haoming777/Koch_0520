@@ -124,6 +124,10 @@ namespace VisionMeasure
 		private System.Timers.Timer _shiftCheckTimer;
 		private System.Windows.Forms.Timer _statusPollTimer;
 
+		// ========== 裁图比例热更新 ==========
+		private System.Timers.Timer _cropCsvWatchTimer;   // 裁图比例.csv修改轮询(2s, 后台线程不占UI)
+		private long _cropCsvLastWriteTicks = 0;          // 上次记录的修改时间(ticks)
+
 		// ========== 数据库连接 ==========
 		private DatabaseConfig _dbConfig;
 		private OdbcDatabaseService _odbcService;
@@ -221,6 +225,9 @@ namespace VisionMeasure
 					_skuDb.LoadData();
 				}
 
+				// 裁图比例.csv热更新: 2s轮询修改时间, 变了自动重读并推送到工位
+				StartCropCsvWatcher();
+
 				// 初始化数据库连接（Loading界面还在显示）
 				UpdateLoadingProgress(18, "正在连接数据库...");
 				InitDatabaseHeartbeat();
@@ -257,7 +264,7 @@ namespace VisionMeasure
 				// 初始化相机
 				UpdateLoadingProgress(50, "正在初始化相机SDK...");
 				Logger.Info("正在初始化相机SDK...");
-				//InitCameras();
+				InitCameras();
 				UpdateLoadingProgress(65, "相机初始化完成");
 
 				// 初始化AI模型
@@ -2537,6 +2544,66 @@ namespace VisionMeasure
 
 		#endregion
 
+		#region 裁图比例热更新
+
+		/// <summary>启动裁图比例.csv热更新轮询(2s): 修改时间变了→重读CSV→刷新当前SKU→推送4工位</summary>
+		private void StartCropCsvWatcher()
+		{
+			try
+			{
+				string path = _skuDb?.CropCsvPath ?? "";
+				if (File.Exists(path))
+					_cropCsvLastWriteTicks = File.GetLastWriteTimeUtc(path).Ticks;
+			}
+			catch (Exception ex) { Logger.Warning($"裁图热更新初始化读取修改时间失败: {ex.Message}"); }
+
+			// 用System.Timers.Timer跑后台线程: 文件检查+UpdateSku(仅引用赋值)都不碰UI, 不给UI线程加任何负担
+			_cropCsvWatchTimer = new System.Timers.Timer(2000);
+			_cropCsvWatchTimer.Elapsed += (s, e) => CheckCropCsvChanged();
+			_cropCsvWatchTimer.AutoReset = true;
+			_cropCsvWatchTimer.Start();
+			Logger.Info($"裁图热更新已启动(2s轮询): {_skuDb?.CropCsvPath}");
+		}
+
+		/// <summary>轮询检查裁图比例.csv修改时间: 变了→重读CSV→刷新当前SKU裁图值→推送4个工位(后台线程执行)</summary>
+		private void CheckCropCsvChanged()
+		{
+			if (_skuDb == null || _isClosing) return;
+			try
+			{
+				string path = _skuDb.CropCsvPath;
+				if (!File.Exists(path)) return;
+				long ticks = File.GetLastWriteTimeUtc(path).Ticks;
+				if (ticks == _cropCsvLastWriteTicks) return;
+
+				Logger.Info($"[裁图热更新] 检测到文件修改: {path}");
+				_skuDb.ReloadCropData();                    // 刷新列表内所有SKU的裁图字段
+				if (_currentSku != null)
+				{
+					_skuDb.ApplyCropData(_currentSku);      // 按当前P/MM重新匹配当前SKU
+					// 推送到4个工位, 让正在运行的检测立即使用新裁图值
+					_frontStation?.UpdateSku(_currentSku);
+					_backStation?.UpdateSku(_currentSku);
+					_sideStation?.UpdateSku(_currentSku);
+					_endFaceStation?.UpdateSku(_currentSku);
+					Logger.Info("[裁图热更新] 已刷新当前SKU裁图值并推送到4个工位");
+				}
+				// 读取成功后才记录修改时间, 文件被锁时下个tick会再试
+				_cropCsvLastWriteTicks = ticks;
+			}
+			catch (IOException)
+			{
+				// 文件正被Excel/WPS保存占用, 跳过本次, 下个tick自动重试
+				Logger.Warning("[裁图热更新] 文件正被占用, 2秒后重试");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[裁图热更新] 异常: {ex.Message}");
+			}
+		}
+
+		#endregion
+
 		#region 班次管理
 
 		/// <summary>启动班次检查(60s): 早08~16/中16~24/晚00~08, 切换自动保存</summary>
@@ -2720,6 +2787,7 @@ namespace VisionMeasure
 				_imageSaver?.Dispose();
 				_statusPollTimer?.Stop(); _statusPollTimer?.Dispose();
 				_shiftCheckTimer?.Stop(); _shiftCheckTimer?.Dispose();
+				_cropCsvWatchTimer?.Stop(); _cropCsvWatchTimer?.Dispose();
 				_aiModels?.Dispose();
 
 				Logger.Shutdown();
@@ -3047,13 +3115,12 @@ namespace VisionMeasure
 			if (existingSku != null)
 			{
 				mergedSku = existingSku;
-				Logger.Info($"[SKU下拉] 找到已存在SKU {f.Sku}，保留裁图坐标，更新核心字段");
+				Logger.Info($"[SKU下拉] 找到已存在SKU {f.Sku}，更新核心字段");
 			}
 			else
 			{
 				mergedSku = new SkuData();
-				_skuDb?.ApplyCropData(mergedSku);
-				Logger.Info($"[SKU下拉] 新SKU {f.Sku}，从裁图比例.csv加载裁图坐标");
+				Logger.Info($"[SKU下拉] 新SKU {f.Sku}");
 			}
 
 			mergedSku.SkuNumber = f.Sku;
@@ -3062,6 +3129,12 @@ namespace VisionMeasure
 			mergedSku.CodingFormat = f.PrintFormat;
 			mergedSku.P = f.P;
 			mergedSku.MM = f.MM;
+
+			// ★ 裁图坐标必须用数据库返回的P/MM重新匹配裁图比例.csv, 且必须在P/MM赋值之后调用:
+			//   1) 旧代码只在"新SKU"分支匹配, 且顺序在P/MM赋值之前→查"0P0mm"永远匹配不上;
+			//   2) "已存在"分支保留的裁图坐标可能是0(启动合并时本地主数据.csv无P值, 查"0P56mm"未命中);
+			//   导致切换SKU后不裁图, 只能重启恢复。改为两条分支统一在P/MM就绪后匹配一次。
+			_skuDb?.ApplyCropData(mergedSku);
 
 			// 转换标准(第二标准)数据库不提供, 清空后由操作员重新手动输入
 			mergedSku.FrontPNumberRep = "";
