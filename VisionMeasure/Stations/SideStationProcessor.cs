@@ -186,7 +186,7 @@ namespace Stations
 						merged.Add((_leftResults[i].Status == "OK" && _rightResults[i].Status == "OK") ? "OK" : (_leftResults[i].Status != "OK" ? _leftResults[i].Status : _rightResults[i].Status));
 					bool isOk = merged.All(s => s == "OK");
 					if (isOk) _okCount += _sku.P; else { _okCount += _sku.P - merged.Count(s => s != "OK"); _ngCount += merged.Count(s => s != "OK"); }
-					BuildDisplayImages(leftImgs, rightImgs, _sku.P);
+					BuildDisplayImages(leftImgs, rightImgs, null, null, _sku.P, _leftResults.ToList(), _rightResults.ToList());
 					var result = new ProductResult { ProductId = pid, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = merged.Where(s => s != "OK").Distinct().ToList() };
 					lock (_resultLock) { if (_displayBitmaps.Count > 0) result.SideRenderImage = (Bitmap)_displayBitmaps[0].Clone(); }
 					SaveImages(leftImgs, rightImgs, merged, isOk, _leftResults.ToList(), _rightResults.ToList());
@@ -558,8 +558,8 @@ namespace Stations
 		private List<SideImageCtx> _processedLeftImgs = new List<SideImageCtx>();
 		private List<SideImageCtx> _processedRightImgs = new List<SideImageCtx>();
 
-	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 处理完p*2张或cancel退出
-		/// <summary>按数量把控: 收够p*2张立即退出, 不够运动完成后500ms退出. 多余图ClearBatch清理</summary>
+	/// <summary>实时流式处理 — 运动中交替取左右队列图片, 每张即刻InferSingle推理→OnRealTimeDisplay推送UI, 每侧收满P张或cancel退出
+		/// <summary>按数量把控: 每侧最多收P张, 收满立即退出, 不够运动完成后500ms退出. 满侧队列多出的图FinalizeResults判定为"溢出"</summary>
 		private void ProcessStream(CancellationToken cancel)
 		{
 			int p = _sku.P, processed = 0, procL = 0, procR = 0;
@@ -573,15 +573,23 @@ namespace Stations
 			string exitReason = "count";
 			_processedLeftImgs.Clear(); _processedRightImgs.Clear();
 			Logger.Info("[Side] PS start: need=" + expect + " P=" + p + " Lq=" + _leftCount + " Rq=" + _rightCount + " busy=" + IsMoving);
-			while (!cancel.IsCancellationRequested && processed < expect)
+			// 单侧上限P张: 防止多触发时交替Fallback吃成9/7失衡(右侧假缺少). 多出的图留在队列, FinalizeResults判为"溢出"
+			while (!cancel.IsCancellationRequested && (procL < p || procR < p))
 			{
-				SideImageCtx ctx; bool gotOne;
-				if (tryLeftFirst) gotOne = _leftQueue.TryDequeue(out ctx) || _rightQueue.TryDequeue(out ctx);
-				else gotOne = _rightQueue.TryDequeue(out ctx) || _leftQueue.TryDequeue(out ctx);
-				tryLeftFirst = !tryLeftFirst;
-				if (!gotOne)
+				SideImageCtx ctx = null; bool isLeft = false;
+				if (tryLeftFirst)
 				{
-					if (processed >= expect) { exitReason = "count"; break; }
+					if (procL < p && _leftQueue.TryDequeue(out var lc)) { ctx = lc; isLeft = true; }
+					else if (procR < p && _rightQueue.TryDequeue(out var rc)) { ctx = rc; }
+				}
+				else
+				{
+					if (procR < p && _rightQueue.TryDequeue(out var rc)) { ctx = rc; }
+					else if (procL < p && _leftQueue.TryDequeue(out var lc)) { ctx = lc; isLeft = true; }
+				}
+				tryLeftFirst = !tryLeftFirst;
+				if (ctx == null)
+				{
 					Thread.Sleep(1); noImgCount++;
 					if (cancel.IsCancellationRequested) { exitReason = "cancel"; break; }
 					if (firstImgTicks > 0 && noImgCount > 500) { exitReason = "idle500ms"; Logger.Warning("[Side] PS: no image for " + noImgCount + "ms, got " + processed + "/" + expect + " (ZMC trigger stopped?)"); break; }
@@ -590,7 +598,6 @@ namespace Stations
 				}
 				noImgCount = 0;
 				if (firstImgTicks == 0) { firstImgTicks = DateTime.Now.Ticks; }
-				bool isLeft = ctx.Side == Side.Left;
 				if (isLeft) procL++; else procR++;
 				var tr = isLeft ? _leftResults : _rightResults;
 				var tl = isLeft ? _processedLeftImgs : _processedRightImgs;
@@ -603,7 +610,7 @@ namespace Stations
 				tl.Add(ctx);
 				Logger.Debug("[Side] " + (isLeft ? "L" : "R") + (idx+1) + "/" + p + " " + ims.ToString("F0") + "ms " + res.Status);
 				dispT++; statT++;
-				if (dispT >= 3 || processed >= expect - 3) { try { var rb = RenderSideImage(ctx, idx, p, tr); OnRealTimeDisplay?.Invoke(ctx.Side, rb); } catch { } dispT = 0; }
+				if (dispT >= 3 || processed >= expect - 3) { try { var rb = RenderSideImage(ctx, idx, p, res); OnRealTimeDisplay?.Invoke(ctx.Side, rb); } catch { } dispT = 0; }
 				if (statT >= 4 || processed >= expect - 3) { EmitPartial(p); statT = 0; }
 				processed++;
 				Thread.Sleep(2);
@@ -642,6 +649,15 @@ namespace Stations
 			Logger.Debug($"[Side] ⏱ FinalizeResults诊断: P={expectedP} 左结果={_leftResults.Count} 右结果={_rightResults.Count} 左队列剩余={Interlocked.CompareExchange(ref _leftCount,0,0)} 右队列剩余={Interlocked.CompareExchange(ref _rightCount,0,0)} 左已处理={_processedLeftImgs.Count} 右已处理={_processedRightImgs.Count}");
 			int p = _sku.P;
 
+			// ─── 溢出判定: 队列中剩余(多触发)的图→"溢出", 在填充"缺少"之前收集 ───
+			// 溢出=比标准P多收的图(多触发). 本批判NG(可查可存图), 但不写入逐盒列表(不剔除不停机)
+			var leftOverflow = new List<SideImageCtx>();
+			var rightOverflow = new List<SideImageCtx>();
+			while (_leftQueue.TryDequeue(out var le)) leftOverflow.Add(le);
+			while (_rightQueue.TryDequeue(out var re)) rightOverflow.Add(re);
+			if (leftOverflow.Count > 0 || rightOverflow.Count > 0)
+				Logger.Warning("[Side] ⚠ 溢出: 比标准多收图 左+" + leftOverflow.Count + " 右+" + rightOverflow.Count + " (疑似多触发)");
+
 			// ─── 阶段1: 快速汇总(同步, 不渲染) ───
 			while (_leftResults.Count < p) _leftResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Left, Index = _leftResults.Count });
 			while (_rightResults.Count < p) _rightResults.Add(new SideResult { Status = MissingAsNg ? "缺少" : "OK", Side = Side.Right, Index = _rightResults.Count });
@@ -652,9 +668,11 @@ namespace Stations
 				string rs = i < _rightResults.Count ? _rightResults[i].Status : (MissingAsNg ? "缺少" : "OK");
 				mergedStatus.Add((ls == "OK" && rs == "OK") ? "OK" : (ls != "OK" ? ls : rs));
 			}
-			bool isOk = mergedStatus.All(s => s == "OK");
+			bool hasOverflow = leftOverflow.Count > 0 || rightOverflow.Count > 0;
+			bool isOk = mergedStatus.All(s => s == "OK") && !hasOverflow;
+			int boxNg = mergedStatus.Count(s => s != "OK");
 			Interlocked.Increment(ref _totalCount);
-			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
+			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - boxNg); Interlocked.Add(ref _ngCount, boxNg + (hasOverflow ? 1 : 0)); }
 
 			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
 
@@ -664,6 +682,7 @@ namespace Stations
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats2.ContainsKey(sr.Status)) rStats2[sr.Status]++; else rStats2[sr.Status] = 1; } }
 			string defStr2 = " | 左侧面:" + (lStats2.Count > 0 ? string.Join(" ", lStats2.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr2 += " 右侧面:" + (rStats2.Count > 0 ? string.Join(" ", rStats2.Select(kv => kv.Key + kv.Value)) : "0");
+			if (hasOverflow) defStr2 += " | 溢出:左+" + leftOverflow.Count + " 右+" + rightOverflow.Count;
 			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr2 + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle);
 			ModelPerfTracker.Count("Side", "收图", _cam7ThisCycle + _cam8ThisCycle);
 
@@ -681,25 +700,41 @@ namespace Stations
 			var savedLeftRes = _leftResults.ToList();
 			var savedRightRes = _rightResults.ToList();
 			var savedMerged = mergedStatus.ToList();
+			var savedLeftOv = leftOverflow.ToList();
+			var savedRightOv = rightOverflow.ToList();
 			bool savedIsOk = isOk;
 
 			new System.Threading.Thread(() =>
 			{
 				try
 				{
-					BuildDisplayImages(savedLeftImgs, savedRightImgs, p);
+					BuildDisplayImages(savedLeftImgs, savedRightImgs, savedLeftOv, savedRightOv, p, savedLeftRes, savedRightRes);
 					Bitmap leftRender = null, rightRender = null;
 					lock (_resultLock)
 					{
 						if (savedLeftImgs.Count > 0)
-							leftRender = RenderSideImage(savedLeftImgs[0], 0, p, savedLeftRes);
+							leftRender = RenderSideImage(savedLeftImgs[0], 0, p, savedLeftRes.FirstOrDefault(r => r.Index == 0));
 						if (savedRightImgs.Count > 0)
-							rightRender = RenderSideImage(savedRightImgs[0], 0, p, savedRightRes);
+							rightRender = RenderSideImage(savedRightImgs[0], 0, p, savedRightRes.FirstOrDefault(r => r.Index == 0));
 					}
 					result.SideRenderImage = leftRender;
 					result.SideLeftRenderImage = leftRender;
 					result.SideRightRenderImage = rightRender;
-					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk, savedLeftRes, savedRightRes);
+					SaveImages(savedLeftImgs, savedRightImgs, savedMerged, savedIsOk, savedLeftRes, savedRightRes, savedLeftOv, savedRightOv);
+					// 最终画面推送: 有溢出时画面停在溢出图(醒目提示"溢出"), 否则停在最后一张常规图
+					try
+					{
+						lock (_resultLock)
+						{
+							if (_leftDisplayBitmaps.Count > 0 && _leftDisplayIndex >= 0 && _leftDisplayIndex < _leftDisplayBitmaps.Count && _leftDisplayBitmaps[_leftDisplayIndex] != null)
+								OnRealTimeDisplay?.Invoke(Side.Left, (Bitmap)_leftDisplayBitmaps[_leftDisplayIndex].Clone());
+							if (_rightDisplayBitmaps.Count > 0 && _rightDisplayIndex >= 0 && _rightDisplayIndex < _rightDisplayBitmaps.Count && _rightDisplayBitmaps[_rightDisplayIndex] != null)
+								OnRealTimeDisplay?.Invoke(Side.Right, (Bitmap)_rightDisplayBitmaps[_rightDisplayIndex].Clone());
+						}
+					}
+					catch { }
+					// 补发状态: 阶段1触发时显示列表还未重建(索引是旧值), 重建完成后刷新序号标签("溢出"/"N/P")
+					try { OnStatusUpdate?.Invoke(new List<string>(), new List<string>(), savedMerged, p); } catch { }
 				}
 				catch (Exception ex) { Logger.Error("[Side] render: " + ex.Message); }
 				}) { Name = "SideRender", IsBackground = true, Priority = System.Threading.ThreadPriority.BelowNormal }.Start();
@@ -717,7 +752,12 @@ namespace Stations
 			while (rightImages.Count < _rightCount && _rightQueue.TryDequeue(out var ctx)) rightImages.Add(ctx);
 			_leftCount = 0; _rightCount = 0;
 
-			Logger.Info("[Side] 推理开始 L=" + leftImages.Count + " R=" + rightImages.Count + " 模式=" + InferenceMode);
+			// 溢出: 超过P张的图单独列出(与FinalizeResults口径一致, 判NG但不进逐盒列表)
+			var leftOverflow = leftImages.Skip(p).ToList(); if (leftOverflow.Count > 0) leftImages.RemoveRange(p, leftImages.Count - p);
+			var rightOverflow = rightImages.Skip(p).ToList(); if (rightOverflow.Count > 0) rightImages.RemoveRange(p, rightImages.Count - p);
+			bool hasOverflow = leftOverflow.Count > 0 || rightOverflow.Count > 0;
+
+			Logger.Info("[Side] 推理开始 L=" + leftImages.Count + " R=" + rightImages.Count + " 模式=" + InferenceMode + (hasOverflow ? " 溢出:左+" + leftOverflow.Count + " 右+" + rightOverflow.Count : ""));
 
 			var sw = Stopwatch.StartNew();
 			if (InferenceMode == InferenceMode.Batch)
@@ -739,9 +779,10 @@ namespace Stations
 				string rs = i < _rightResults.Count ? _rightResults[i].Status : (MissingAsNg ? "缺少" : "OK");
 				mergedStatus.Add((ls == "OK" && rs == "OK") ? "OK" : (ls != "OK" ? ls : rs));
 			}
-			bool isOk = mergedStatus.All(s => s == "OK");
+			bool isOk = mergedStatus.All(s => s == "OK") && !hasOverflow;
+			int boxNg2 = mergedStatus.Count(s => s != "OK");
 			Interlocked.Increment(ref _totalCount);
-			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - mergedStatus.Count(s => s != "OK")); Interlocked.Add(ref _ngCount, mergedStatus.Count(s => s != "OK")); }
+			if (isOk) Interlocked.Add(ref _okCount, p); else { Interlocked.Add(ref _okCount, p - boxNg2); Interlocked.Add(ref _ngCount, boxNg2 + (hasOverflow ? 1 : 0)); }
 
 			// ☆ 阶段1: 快速汇总(同步)
 			var result = new ProductResult { ProductId = DateTime.Now.Ticks, CreateTime = DateTime.Now, SideResult = isOk, SideDefects = mergedStatus.Where(s => s != "OK").Distinct().ToList() };
@@ -750,6 +791,7 @@ namespace Stations
 			foreach (var sr in _rightResults) { if (sr.Status != "OK") { if (rStats.ContainsKey(sr.Status)) rStats[sr.Status]++; else rStats[sr.Status] = 1; } }
 			string defStr = " | 左侧面:" + (lStats.Count > 0 ? string.Join(" ", lStats.Select(kv => kv.Key + kv.Value)) : "0");
 			defStr += " 右侧面:" + (rStats.Count > 0 ? string.Join(" ", rStats.Select(kv => kv.Key + kv.Value)) : "0");
+			if (hasOverflow) defStr += " | 溢出:左+" + leftOverflow.Count + " 右+" + rightOverflow.Count;
 			Logger.Info("[Side] DONE: P=" + p + " OK=" + mergedStatus.Count(s => s == "OK") + " NG=" + mergedStatus.Count(s => s != "OK") + defStr + " | img:C7=" + _cam7ThisCycle + " C8=" + _cam8ThisCycle + " | time=" + sw.Elapsed.TotalMilliseconds.ToString("F0") + "ms");
 			// 保存副本供PLC读取（Bug修复: 此前从未赋值StatusList）
 			StatusList = new List<string>(mergedStatus);
@@ -763,9 +805,9 @@ namespace Stations
 			var pms = mergedStatus.ToList(); bool pisOk = isOk;
 			Task.Run(() => {
 				try {
-					BuildDisplayImages(pli, pri, p);
+					BuildDisplayImages(pli, pri, leftOverflow, rightOverflow, p, plr, prr);
 					lock (_resultLock) { if (_displayBitmaps.Count > 0) { result.SideRenderImage = (Bitmap)_displayBitmaps[0].Clone(); result.SideLeftRenderImage = result.SideRenderImage; } }
-					SaveImages(pli, pri, pms, pisOk, plr, prr);
+					SaveImages(pli, pri, pms, pisOk, plr, prr, leftOverflow, rightOverflow);
 				} catch (Exception ex) { Logger.Error("[Side] 后台渲染异常: " + ex.Message); }
 			});
 		}
@@ -900,7 +942,10 @@ namespace Stations
 
 	/// <summary>构建左右独立显示图: 左侧→_leftDisplayBitmaps, 右侧→_rightDisplayBitmaps, 同时填充合并列表(存图用)</summary>
 	/// <summary>优化: 渲染移到_resultLock外执行(耗时数百ms), 锁内只做快速引用交换</summary>
-		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, int p)
+	/// <summary>溢出槽: 比P多收的图追加为"溢出N"槽位, 状态红色"溢出"(不写"缺少", 避免误导)</summary>
+		private void BuildDisplayImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages,
+			List<SideImageCtx> leftOverflow, List<SideImageCtx> rightOverflow, int p,
+			List<SideResult> leftResults, List<SideResult> rightResults)
 		{
 			// 阶段1: 快照旧引用+Clear(微秒级, ToArray避免Clear后引用失效)
 			Bitmap[] oldLeft, oldRight, oldDisplay;
@@ -924,24 +969,44 @@ namespace Stations
 			var newRight = new List<Bitmap>();
 			var newDisplay = new List<Bitmap>();
 			var newImages = new List<Mat>();
-			int count = Math.Max(leftImages.Count, rightImages.Count);
+			int count = Math.Max(leftImages.Count, rightImages.Count);  // ≤P(ProcessStream每侧上限)
+			int leftOvN = leftOverflow?.Count ?? 0;
+			int rightOvN = rightOverflow?.Count ?? 0;
 
-			// 左侧渲染
+			// 左侧常规槽渲染
 			for (int i = 0; i < count; i++)
 			{
 				Bitmap bmp = i < leftImages.Count
-					? (RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _leftResults) ?? CreateMissingBmp(i, count))
-					: CreateMissingBmp(i, count);
+					? (RenderSideImage(leftImages[i], ReverseBoxOrder ? (count - 1 - i) : i, p, leftResults.FirstOrDefault(r => r.Index == i)) ?? CreateMissingBmp(i, p))
+					: CreateMissingBmp(i, p);
 				newLeft.Add(bmp);
 				newDisplay.Add(bmp);
 				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
 			}
-			// 右侧渲染
+			// 左侧溢出槽渲染: 序号"溢出N", 状态红色"溢出"
+			for (int k = 0; k < leftOvN; k++)
+			{
+				var ovRes = new SideResult { Index = -1, Side = Side.Left, Status = "溢出" };
+				Bitmap bmp = RenderSideImage(leftOverflow[k], count + k, p, ovRes, "溢出" + (k + 1)) ?? CreateOverflowBmp(k);
+				newLeft.Add(bmp);
+				newDisplay.Add(bmp);
+				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
+			}
+			// 右侧常规槽渲染
 			for (int i = 0; i < count; i++)
 			{
 				Bitmap bmp = i < rightImages.Count
-					? (RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, count, _rightResults) ?? CreateMissingBmp(i, count))
-					: CreateMissingBmp(i, count);
+					? (RenderSideImage(rightImages[i], ReverseBoxOrder ? (count - 1 - i) : i, p, rightResults.FirstOrDefault(r => r.Index == i)) ?? CreateMissingBmp(i, p))
+					: CreateMissingBmp(i, p);
+				newRight.Add(bmp);
+				newDisplay.Add(bmp);
+				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
+			}
+			// 右侧溢出槽渲染
+			for (int k = 0; k < rightOvN; k++)
+			{
+				var ovRes = new SideResult { Index = -1, Side = Side.Right, Status = "溢出" };
+				Bitmap bmp = RenderSideImage(rightOverflow[k], count + k, p, ovRes, "溢出" + (k + 1)) ?? CreateOverflowBmp(k);
 				newRight.Add(bmp);
 				newDisplay.Add(bmp);
 				newImages.Add(OpenCvSharp.Extensions.BitmapConverter.ToMat(bmp));
@@ -954,8 +1019,9 @@ namespace Stations
 				_rightDisplayBitmaps.AddRange(newRight);
 				_displayBitmaps.AddRange(newDisplay);
 				_displayImages.AddRange(newImages);
-				_leftDisplayIndex = Math.Max(0, count - 1);
-				_rightDisplayIndex = Math.Max(0, count - 1);
+				// 有溢出时当前显示停在溢出图(醒目提示), 否则停在最后一张常规图
+				_leftDisplayIndex = leftOvN > 0 ? count : Math.Max(0, count - 1);
+				_rightDisplayIndex = rightOvN > 0 ? count : Math.Max(0, count - 1);
 				_displayIndex = Math.Max(0, _displayImages.Count - 1);
 			}
 		}
@@ -972,8 +1038,20 @@ namespace Stations
 			}
 			return bmp;
 		}
-	/// <summary>渲染单张侧面图: 1.裁图区半透明橙色覆盖+边界线 2.缺陷红框+标签 3.旋转(左-90°/右+90°) 4.状态文字+序号(图片正中)</summary>
-		private Bitmap RenderSideImage(SideImageCtx ctx, int index, int total, List<SideResult> results)
+		/// <summary>创建溢出占位Bitmap: 暗红底色+"溢出N"文字, 用于多触发图的渲染失败兜底</summary>
+		private Bitmap CreateOverflowBmp(int k)
+		{
+			var bmp = new Bitmap(800, 600);
+			using (var g = Graphics.FromImage(bmp))
+			{
+				g.Clear(Color.FromArgb(60, 10, 10));
+				using (var f = new Font("微软雅黑", Math.Max(48f, bmp.Height / 30f), FontStyle.Bold))
+					g.DrawString("溢出" + (k + 1), f, Brushes.Red, 50, bmp.Height / 2 - 30);
+			}
+			return bmp;
+		}
+	/// <summary>渲染单张侧面图: 1.裁图区半透明橙色覆盖+边界线 2.缺陷红框+标签 3.旋转(左-90°/右+90°) 4.状态文字+序号(图片正中). labelOverride=自定义序号(如溢出图"溢出1")</summary>
+		private Bitmap RenderSideImage(SideImageCtx ctx, int index, int total, SideResult res, string labelOverride = null)
 		{
 			try
 			{
@@ -995,7 +1073,6 @@ namespace Stations
 					Cv2.Line(drawImg, new OpenCvSharp.Point(w - cropW, 0), new OpenCvSharp.Point(w - cropW, h), new Scalar(0, 165, 255), 2);
 
 					// ── 2. 缺陷框：绘制在原始方向（随图片旋转）──
-					var res = results.FirstOrDefault(r => r.Index == index);
 					var bmp = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(drawImg);
 					using (var g = Graphics.FromImage(bmp))
 					{
@@ -1045,7 +1122,7 @@ namespace Stations
 								g2.DrawString(status, sf, stBr, stX, stY);
 						}
 						// 序号：图片正中偏下
-						string label = (index + 1) + "/" + total;
+						string label = labelOverride ?? ((index + 1) + "/" + total);
 						using (var f = new Font("微软雅黑", bigFontSz * 0.7f, FontStyle.Bold))
 						{
 							var sz = g2.MeasureString(label, f);
@@ -1074,9 +1151,10 @@ namespace Stations
 		public void NavigatePrev() { }
 		public void NavigateNext() { }
 
-	/// <summary>保存侧面工位图片: 左/右原图+渲染图 → JPEG 85% → Images/{日期}/{班次}/侧面工位/{OK|NG}/{左/右侧面}/</summary>
+	/// <summary>保存侧面工位图片: 左/右原图+渲染图 → JPEG 85% → Images/{日期}/{班次}/侧面工位/{OK|NG}/{左/右侧面}/. leftOverflow/rightOverflow=溢出图(多触发), 文件名标"溢出N"</summary>
 		private void SaveImages(List<SideImageCtx> leftImages, List<SideImageCtx> rightImages, List<string> status, bool isOk,
-			List<SideResult> leftResults, List<SideResult> rightResults)
+			List<SideResult> leftResults, List<SideResult> rightResults,
+			List<SideImageCtx> leftOverflow = null, List<SideImageCtx> rightOverflow = null)
 		{
 			try
 			{
@@ -1091,7 +1169,10 @@ namespace Stations
 				string leftDir = Path.Combine(baseDir, "左侧面");
 				string rightDir = Path.Combine(baseDir, "右侧面");
 				Directory.CreateDirectory(leftDir); Directory.CreateDirectory(rightDir);
-				long pid = DateTime.Now.Ticks; string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
+				long pid = DateTime.Now.Ticks;
+				bool hasOv = (leftOverflow?.Count ?? 0) > 0 || (rightOverflow?.Count ?? 0) > 0;
+				string nt = string.Join("_", status.Where(s => s != "OK").Distinct().DefaultIfEmpty("OK"));
+				if (hasOv) nt = (nt == "OK" ? "" : nt + "_") + "溢出";  // 溢出批文件名标"溢出", 避免写成"OK"误导
 				// 文件名长度保护: 防止超长缺陷名导致Windows 260字符路径限制存图失败
 				if (nt.Length > 80) nt = nt.Substring(0, 80);
 				string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
@@ -1099,23 +1180,29 @@ namespace Stations
 				for (int j = 0; j < leftImages.Count; j++) { if (leftImages[j].Image != null) { bool ln = isOk || (j < leftResults.Count && leftResults[j].Status != "OK"); if (ln) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), leftImages[j].Image.ToJpegBytesFast(85), true, 85); } }
 				// 右侧原图 (使用缓存rightResults, 避免后台Task访问已被Clear的共享列表)
 				for (int j = 0; j < rightImages.Count; j++) { if (rightImages[j].Image != null) { bool rn = isOk || (j < rightResults.Count && rightResults[j].Status != "OK"); if (rn) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_" + (j + 1) + "_" + nt + ".jpg"), rightImages[j].Image.ToJpegBytesFast(85), true, 85); } }
+				// 溢出原图 (多触发图, 单独存以便排查触发问题)
+				if (leftOverflow != null) for (int j = 0; j < leftOverflow.Count; j++) { if (leftOverflow[j].Image != null) _imageSaver.AddSaveTask(Path.Combine(leftDir, ts + "_原图_溢出" + (j + 1) + "_" + nt + ".jpg"), leftOverflow[j].Image.ToJpegBytesFast(85), true, 85); }
+				if (rightOverflow != null) for (int j = 0; j < rightOverflow.Count; j++) { if (rightOverflow[j].Image != null) _imageSaver.AddSaveTask(Path.Combine(rightDir, ts + "_原图_溢出" + (j + 1) + "_" + nt + ".jpg"), rightOverflow[j].Image.ToJpegBytesFast(85), true, 85); }
 				// 渲染图：左侧渲染图存左目录，右侧存右目录
 				int savedRender = 0;
 				lock (_resultLock)
 				{
-					// 修复: 使用count(displayBitmaps每侧数量)而非lc(leftImages.Count)做索引映射
-					// 原bug: 左右图数量不等时, boxIdx = i - lc 会偏移错误, 导致OK图被误存到NG目录
-					int count = Math.Max(leftImages.Count, rightImages.Count);
+					// 索引映射: 与BuildDisplayImages一致 — 每侧常规槽=baseSlots(含缺少补位)+溢出槽. 左右数量不等时用各自槽位数分段, 避免偏移错误
+					int baseSlots = Math.Max(leftImages.Count, rightImages.Count);
+					int leftSlots = baseSlots + (leftOverflow?.Count ?? 0);
+					int rightSlots = baseSlots + (rightOverflow?.Count ?? 0);
 					for (int i = 0; i < _displayBitmaps.Count; i++) {
 						if (_displayBitmaps[i] == null) continue;
-						bool isLeft = i < count;
-						int boxIdx = isLeft ? i : (i - count);
-						bool ng = isOk || (isLeft ? (boxIdx < leftResults.Count && leftResults[boxIdx].Status != "OK") : (boxIdx < rightResults.Count && rightResults[boxIdx].Status != "OK")); if (!ng) continue;
+						bool isLeft = i < leftSlots;
+						int boxIdx = isLeft ? i : (i - leftSlots);
+						bool isOv = boxIdx >= baseSlots;
+						bool ng = isOk || isOv || (isLeft ? (boxIdx < leftResults.Count && leftResults[boxIdx].Status != "OK") : (boxIdx < rightResults.Count && rightResults[boxIdx].Status != "OK")); if (!ng) continue;
 						var d = isLeft ? leftDir : rightDir;
-						int idx = boxIdx + 1;
-						_imageSaver.AddSaveTask(Path.Combine(d, ts + "_渲染_" + idx + "_" + nt + ".jpg"), _displayBitmaps[i].ToJpegBytesFast(85), true, 85);
+						// 溢出槽文件名标"溢出N", 常规盒用序号
+						string idxName = isOv ? ("溢出" + (boxIdx - baseSlots + 1)) : (boxIdx + 1).ToString();
+						_imageSaver.AddSaveTask(Path.Combine(d, ts + "_渲染_" + idxName + "_" + nt + ".jpg"), _displayBitmaps[i].ToJpegBytesFast(85), true, 85);
 						savedRender++;
-						Logger.Debug("[Side] 存渲染图: " + (isLeft ? "左" : "右") + "盒" + idx + " 状态=" + (isLeft ? leftResults[boxIdx].Status : rightResults[boxIdx].Status));
+						Logger.Debug("[Side] 存渲染图: " + (isLeft ? "左" : "右") + (isOv ? "溢出" : "盒") + idxName + " 状态=" + (isOv ? "溢出" : (isLeft ? leftResults[boxIdx].Status : rightResults[boxIdx].Status)));
 					}
 				}
 				Logger.Info("[Side] 存图完成: 左原图" + leftImages.Count + " 右原图" + rightImages.Count + " 渲染图" + savedRender);

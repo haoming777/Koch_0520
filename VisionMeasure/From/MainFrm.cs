@@ -795,7 +795,10 @@ namespace VisionMeasure
 
 			if (Interlocked.CompareExchange(ref _sideTriggered, 0, 0) == 1) return; // 已锁, 静默
 
-			// 活件检测: 端面收到过图像
+			// ── 活件检测: 端面收到过图像 ──
+			// 【暂时屏蔽 2026-09-11】
+			// 恢复方法: 取消下面注释块即可
+			/*
 			long lft = Interlocked.Read(ref _lastEndFaceImageTicks);
 			if (lft == 0 || (nowTicks - lft) > NoProductTimeoutTicks)
 			{
@@ -805,6 +808,7 @@ namespace VisionMeasure
 				return;
 			}
 			Interlocked.Exchange(ref _sideNoEndFaceWarnCount, 0);  // 重置计数
+			*/
 
 			// 去抖: 距上次接受 <2s
 			long lastAccepted = Interlocked.Read(ref _lastAcceptedIn13Tick);
@@ -1598,7 +1602,8 @@ namespace VisionMeasure
 			{
 				if (_sideIndexLabel != null && _sideStation != null)
 				{
-					_sideIndexLabel.Text = $"{_sideStation.CurrentIndex + 1}/{p}";
+					// 溢出图(序号>P)时标签显示"溢出", 不再显示"N/P"避免误导
+					_sideIndexLabel.Text = _sideStation.CurrentIndex >= p ? "溢出" : $"{_sideStation.CurrentIndex + 1}/{p}";
 				}
 				RefreshCarouselDisplays();
 			}));
