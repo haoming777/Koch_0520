@@ -35,6 +35,7 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.mainTitleBar1 = new CrsdetSoft.UIControls.MainTitleBar();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.SocketServerState = new Sunny.UI.UILight();
             this.DatabaseState = new Sunny.UI.UILight();
             this.SafetyDoorState = new Sunny.UI.UILight();
             this.PlcState = new Sunny.UI.UILight();
@@ -109,6 +110,16 @@
             this.uiLabel19 = new Sunny.UI.UILabel();
             this.panel90 = new System.Windows.Forms.Panel();
             this.BackBarcode_Rep_Lb = new Sunny.UI.UITextBox();
+            this.panel81 = new System.Windows.Forms.Panel();
+            this.tableLayoutPanel35 = new System.Windows.Forms.TableLayoutPanel();
+            this.panel91 = new System.Windows.Forms.Panel();
+            this.uiButton2 = new Sunny.UI.UIButton();
+            this.panel92 = new System.Windows.Forms.Panel();
+            this.uiButton3 = new Sunny.UI.UIButton();
+            this.panel93 = new System.Windows.Forms.Panel();
+            this.uiButton4 = new Sunny.UI.UIButton();
+            this.panel94 = new System.Windows.Forms.Panel();
+            this.uiButton5 = new Sunny.UI.UIButton();
             this.tableLayoutPanel3 = new System.Windows.Forms.TableLayoutPanel();
             this.panel4 = new System.Windows.Forms.Panel();
             this.tableLayoutPanel4 = new System.Windows.Forms.TableLayoutPanel();
@@ -239,16 +250,7 @@
             this.xlPictureBox5 = new XL.Controls.XLPictureBox();
             this.bindingSource1 = new System.Windows.Forms.BindingSource(this.components);
             this.tableLayoutPanel34 = new System.Windows.Forms.TableLayoutPanel();
-            this.panel81 = new System.Windows.Forms.Panel();
-            this.tableLayoutPanel35 = new System.Windows.Forms.TableLayoutPanel();
-            this.panel91 = new System.Windows.Forms.Panel();
-            this.panel92 = new System.Windows.Forms.Panel();
-            this.panel93 = new System.Windows.Forms.Panel();
-            this.panel94 = new System.Windows.Forms.Panel();
-            this.uiButton2 = new Sunny.UI.UIButton();
-            this.uiButton3 = new Sunny.UI.UIButton();
-            this.uiButton4 = new Sunny.UI.UIButton();
-            this.uiButton5 = new Sunny.UI.UIButton();
+            this.SocketClientCountState = new Sunny.UI.UILight();
             this.tableLayoutPanel1.SuspendLayout();
             this.panel1.SuspendLayout();
             this.panel2.SuspendLayout();
@@ -285,6 +287,12 @@
             this.panel88.SuspendLayout();
             this.panel89.SuspendLayout();
             this.panel90.SuspendLayout();
+            this.panel81.SuspendLayout();
+            this.tableLayoutPanel35.SuspendLayout();
+            this.panel91.SuspendLayout();
+            this.panel92.SuspendLayout();
+            this.panel93.SuspendLayout();
+            this.panel94.SuspendLayout();
             this.tableLayoutPanel3.SuspendLayout();
             this.panel4.SuspendLayout();
             this.tableLayoutPanel4.SuspendLayout();
@@ -371,12 +379,6 @@
             this.panel83.SuspendLayout();
             this.panel86.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.bindingSource1)).BeginInit();
-            this.panel81.SuspendLayout();
-            this.tableLayoutPanel35.SuspendLayout();
-            this.panel91.SuspendLayout();
-            this.panel92.SuspendLayout();
-            this.panel93.SuspendLayout();
-            this.panel94.SuspendLayout();
             this.SuspendLayout();
             // 
             // timer1
@@ -432,6 +434,8 @@
             // panel2
             // 
             this.panel2.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(47)))), ((int)(((byte)(60)))), ((int)(((byte)(76)))));
+            this.panel2.Controls.Add(this.SocketClientCountState);
+            this.panel2.Controls.Add(this.SocketServerState);
             this.panel2.Controls.Add(this.DatabaseState);
             this.panel2.Controls.Add(this.SafetyDoorState);
             this.panel2.Controls.Add(this.PlcState);
@@ -454,6 +458,27 @@
             this.panel2.Padding = new System.Windows.Forms.Padding(10, 7, 10, 7);
             this.panel2.Size = new System.Drawing.Size(1711, 35);
             this.panel2.TabIndex = 1;
+            // 
+            // SocketServerState
+            // 
+            this.SocketServerState.CenterColor = System.Drawing.Color.PaleGreen;
+            this.SocketServerState.Dock = System.Windows.Forms.DockStyle.Left;
+            this.SocketServerState.Font = new System.Drawing.Font("微软雅黑", 12F);
+            this.SocketServerState.ForeColor = System.Drawing.Color.White;
+            this.SocketServerState.Location = new System.Drawing.Point(1389, 7);
+            this.SocketServerState.MinimumSize = new System.Drawing.Size(1, 1);
+            this.SocketServerState.Name = "SocketServerState";
+            this.SocketServerState.OffCenterColor = System.Drawing.Color.Salmon;
+            this.SocketServerState.OffColor = System.Drawing.Color.Red;
+            this.SocketServerState.OnCenterColor = System.Drawing.Color.PaleGreen;
+            this.SocketServerState.OnColor = System.Drawing.Color.ForestGreen;
+            this.SocketServerState.Radius = 21;
+            this.SocketServerState.ShowText = true;
+            this.SocketServerState.Size = new System.Drawing.Size(130, 21);
+            this.SocketServerState.State = Sunny.UI.UILightState.Off;
+            this.SocketServerState.TabIndex = 40;
+            this.SocketServerState.Text = "Socket服务端";
+            this.SocketServerState.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // DatabaseState
             // 
@@ -1663,6 +1688,189 @@
             this.BackBarcode_Rep_Lb.TabIndex = 2;
             this.BackBarcode_Rep_Lb.TextAlignment = System.Drawing.ContentAlignment.MiddleCenter;
             this.BackBarcode_Rep_Lb.Watermark = "";
+            // 
+            // panel81
+            // 
+            this.panel81.Controls.Add(this.tableLayoutPanel35);
+            this.panel81.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panel81.Location = new System.Drawing.Point(5, 685);
+            this.panel81.Margin = new System.Windows.Forms.Padding(0);
+            this.panel81.Name = "panel81";
+            this.panel81.Size = new System.Drawing.Size(180, 35);
+            this.panel81.TabIndex = 39;
+            // 
+            // tableLayoutPanel35
+            // 
+            this.tableLayoutPanel35.ColumnCount = 4;
+            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
+            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
+            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
+            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
+            this.tableLayoutPanel35.Controls.Add(this.panel91, 0, 0);
+            this.tableLayoutPanel35.Controls.Add(this.panel92, 1, 0);
+            this.tableLayoutPanel35.Controls.Add(this.panel93, 2, 0);
+            this.tableLayoutPanel35.Controls.Add(this.panel94, 3, 0);
+            this.tableLayoutPanel35.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.tableLayoutPanel35.Location = new System.Drawing.Point(0, 0);
+            this.tableLayoutPanel35.Margin = new System.Windows.Forms.Padding(0);
+            this.tableLayoutPanel35.Name = "tableLayoutPanel35";
+            this.tableLayoutPanel35.RowCount = 1;
+            this.tableLayoutPanel35.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.tableLayoutPanel35.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 35F));
+            this.tableLayoutPanel35.Size = new System.Drawing.Size(180, 35);
+            this.tableLayoutPanel35.TabIndex = 0;
+            // 
+            // panel91
+            // 
+            this.panel91.Controls.Add(this.uiButton2);
+            this.panel91.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panel91.Location = new System.Drawing.Point(0, 0);
+            this.panel91.Margin = new System.Windows.Forms.Padding(0);
+            this.panel91.Name = "panel91";
+            this.panel91.Size = new System.Drawing.Size(45, 35);
+            this.panel91.TabIndex = 0;
+            // 
+            // uiButton2
+            // 
+            this.uiButton2.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.uiButton2.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.uiButton2.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton2.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton2.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton2.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton2.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton2.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
+            this.uiButton2.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
+            this.uiButton2.Location = new System.Drawing.Point(0, 0);
+            this.uiButton2.Margin = new System.Windows.Forms.Padding(0);
+            this.uiButton2.MinimumSize = new System.Drawing.Size(1, 1);
+            this.uiButton2.Name = "uiButton2";
+            this.uiButton2.Radius = 30;
+            this.uiButton2.RadiusSides = ((Sunny.UI.UICornerRadiusSides)((Sunny.UI.UICornerRadiusSides.LeftTop | Sunny.UI.UICornerRadiusSides.LeftBottom)));
+            this.uiButton2.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton2.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton2.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton2.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton2.Size = new System.Drawing.Size(45, 35);
+            this.uiButton2.Style = Sunny.UI.UIStyle.Custom;
+            this.uiButton2.TabIndex = 5;
+            this.uiButton2.Text = "  正面";
+            this.uiButton2.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.uiButton2.Click += new System.EventHandler(this.TestFrontBtn_Click);
+            // 
+            // panel92
+            // 
+            this.panel92.Controls.Add(this.uiButton3);
+            this.panel92.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panel92.Location = new System.Drawing.Point(45, 0);
+            this.panel92.Margin = new System.Windows.Forms.Padding(0);
+            this.panel92.Name = "panel92";
+            this.panel92.Size = new System.Drawing.Size(45, 35);
+            this.panel92.TabIndex = 1;
+            // 
+            // uiButton3
+            // 
+            this.uiButton3.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.uiButton3.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.uiButton3.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton3.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton3.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton3.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton3.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton3.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
+            this.uiButton3.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
+            this.uiButton3.Location = new System.Drawing.Point(0, 0);
+            this.uiButton3.Margin = new System.Windows.Forms.Padding(0);
+            this.uiButton3.MinimumSize = new System.Drawing.Size(1, 1);
+            this.uiButton3.Name = "uiButton3";
+            this.uiButton3.Radius = 30;
+            this.uiButton3.RadiusSides = Sunny.UI.UICornerRadiusSides.None;
+            this.uiButton3.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton3.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton3.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton3.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton3.Size = new System.Drawing.Size(45, 35);
+            this.uiButton3.Style = Sunny.UI.UIStyle.Custom;
+            this.uiButton3.TabIndex = 6;
+            this.uiButton3.Text = "端面";
+            this.uiButton3.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.uiButton3.Click += new System.EventHandler(this.TestEndFaceBtn_Click);
+            // 
+            // panel93
+            // 
+            this.panel93.Controls.Add(this.uiButton4);
+            this.panel93.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panel93.Location = new System.Drawing.Point(90, 0);
+            this.panel93.Margin = new System.Windows.Forms.Padding(0);
+            this.panel93.Name = "panel93";
+            this.panel93.Size = new System.Drawing.Size(45, 35);
+            this.panel93.TabIndex = 2;
+            // 
+            // uiButton4
+            // 
+            this.uiButton4.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.uiButton4.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.uiButton4.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton4.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton4.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton4.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton4.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton4.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
+            this.uiButton4.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
+            this.uiButton4.Location = new System.Drawing.Point(0, 0);
+            this.uiButton4.Margin = new System.Windows.Forms.Padding(0);
+            this.uiButton4.MinimumSize = new System.Drawing.Size(1, 1);
+            this.uiButton4.Name = "uiButton4";
+            this.uiButton4.Radius = 30;
+            this.uiButton4.RadiusSides = Sunny.UI.UICornerRadiusSides.None;
+            this.uiButton4.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton4.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton4.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton4.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton4.Size = new System.Drawing.Size(45, 35);
+            this.uiButton4.Style = Sunny.UI.UIStyle.Custom;
+            this.uiButton4.TabIndex = 6;
+            this.uiButton4.Text = "背面";
+            this.uiButton4.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.uiButton4.Click += new System.EventHandler(this.TestBackBtn_Click);
+            // 
+            // panel94
+            // 
+            this.panel94.Controls.Add(this.uiButton5);
+            this.panel94.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panel94.Location = new System.Drawing.Point(135, 0);
+            this.panel94.Margin = new System.Windows.Forms.Padding(0);
+            this.panel94.Name = "panel94";
+            this.panel94.Size = new System.Drawing.Size(45, 35);
+            this.panel94.TabIndex = 3;
+            // 
+            // uiButton5
+            // 
+            this.uiButton5.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.uiButton5.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.uiButton5.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton5.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton5.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton5.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton5.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton5.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
+            this.uiButton5.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
+            this.uiButton5.Location = new System.Drawing.Point(0, 0);
+            this.uiButton5.Margin = new System.Windows.Forms.Padding(0);
+            this.uiButton5.MinimumSize = new System.Drawing.Size(1, 1);
+            this.uiButton5.Name = "uiButton5";
+            this.uiButton5.Radius = 30;
+            this.uiButton5.RadiusSides = ((Sunny.UI.UICornerRadiusSides)((Sunny.UI.UICornerRadiusSides.RightTop | Sunny.UI.UICornerRadiusSides.RightBottom)));
+            this.uiButton5.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
+            this.uiButton5.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
+            this.uiButton5.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton5.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
+            this.uiButton5.Size = new System.Drawing.Size(45, 35);
+            this.uiButton5.Style = Sunny.UI.UIStyle.Custom;
+            this.uiButton5.TabIndex = 6;
+            this.uiButton5.Text = "侧面  ";
+            this.uiButton5.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.uiButton5.Click += new System.EventHandler(this.TestSideBtn_Click);
             // 
             // tableLayoutPanel3
             // 
@@ -3435,188 +3643,26 @@
             this.tableLayoutPanel34.Size = new System.Drawing.Size(180, 150);
             this.tableLayoutPanel34.TabIndex = 32;
             // 
-            // panel81
+            // SocketClientCountState
             // 
-            this.panel81.Controls.Add(this.tableLayoutPanel35);
-            this.panel81.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.panel81.Location = new System.Drawing.Point(5, 685);
-            this.panel81.Margin = new System.Windows.Forms.Padding(0);
-            this.panel81.Name = "panel81";
-            this.panel81.Size = new System.Drawing.Size(180, 35);
-            this.panel81.TabIndex = 39;
-            // 
-            // tableLayoutPanel35
-            // 
-            this.tableLayoutPanel35.ColumnCount = 4;
-            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
-            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
-            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
-            this.tableLayoutPanel35.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25F));
-            this.tableLayoutPanel35.Controls.Add(this.panel91, 0, 0);
-            this.tableLayoutPanel35.Controls.Add(this.panel92, 1, 0);
-            this.tableLayoutPanel35.Controls.Add(this.panel93, 2, 0);
-            this.tableLayoutPanel35.Controls.Add(this.panel94, 3, 0);
-            this.tableLayoutPanel35.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.tableLayoutPanel35.Location = new System.Drawing.Point(0, 0);
-            this.tableLayoutPanel35.Margin = new System.Windows.Forms.Padding(0);
-            this.tableLayoutPanel35.Name = "tableLayoutPanel35";
-            this.tableLayoutPanel35.RowCount = 1;
-            this.tableLayoutPanel35.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.tableLayoutPanel35.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
-            this.tableLayoutPanel35.Size = new System.Drawing.Size(180, 35);
-            this.tableLayoutPanel35.TabIndex = 0;
-            // 
-            // panel91
-            // 
-            this.panel91.Controls.Add(this.uiButton2);
-            this.panel91.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.panel91.Location = new System.Drawing.Point(0, 0);
-            this.panel91.Margin = new System.Windows.Forms.Padding(0);
-            this.panel91.Name = "panel91";
-            this.panel91.Size = new System.Drawing.Size(45, 35);
-            this.panel91.TabIndex = 0;
-            // 
-            // panel92
-            // 
-            this.panel92.Controls.Add(this.uiButton3);
-            this.panel92.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.panel92.Location = new System.Drawing.Point(45, 0);
-            this.panel92.Margin = new System.Windows.Forms.Padding(0);
-            this.panel92.Name = "panel92";
-            this.panel92.Size = new System.Drawing.Size(45, 35);
-            this.panel92.TabIndex = 1;
-            // 
-            // panel93
-            // 
-            this.panel93.Controls.Add(this.uiButton4);
-            this.panel93.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.panel93.Location = new System.Drawing.Point(90, 0);
-            this.panel93.Margin = new System.Windows.Forms.Padding(0);
-            this.panel93.Name = "panel93";
-            this.panel93.Size = new System.Drawing.Size(45, 35);
-            this.panel93.TabIndex = 2;
-            // 
-            // panel94
-            // 
-            this.panel94.Controls.Add(this.uiButton5);
-            this.panel94.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.panel94.Location = new System.Drawing.Point(135, 0);
-            this.panel94.Margin = new System.Windows.Forms.Padding(0);
-            this.panel94.Name = "panel94";
-            this.panel94.Size = new System.Drawing.Size(45, 35);
-            this.panel94.TabIndex = 3;
-            // 
-            // uiButton2
-            // 
-            this.uiButton2.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.uiButton2.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.uiButton2.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton2.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton2.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton2.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton2.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton2.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
-            this.uiButton2.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
-            this.uiButton2.Location = new System.Drawing.Point(0, 0);
-            this.uiButton2.Margin = new System.Windows.Forms.Padding(0);
-            this.uiButton2.MinimumSize = new System.Drawing.Size(1, 1);
-            this.uiButton2.Name = "uiButton2";
-            this.uiButton2.Radius = 30;
-            this.uiButton2.RadiusSides = ((Sunny.UI.UICornerRadiusSides)((Sunny.UI.UICornerRadiusSides.LeftTop | Sunny.UI.UICornerRadiusSides.LeftBottom)));
-            this.uiButton2.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton2.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton2.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton2.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton2.Size = new System.Drawing.Size(45, 35);
-            this.uiButton2.Style = Sunny.UI.UIStyle.Custom;
-            this.uiButton2.TabIndex = 5;
-            this.uiButton2.Text = "  正面";
-            this.uiButton2.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.uiButton2.Click += new System.EventHandler(this.TestFrontBtn_Click);
-            // 
-            // uiButton3
-            // 
-            this.uiButton3.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.uiButton3.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.uiButton3.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton3.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton3.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton3.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton3.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton3.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
-            this.uiButton3.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
-            this.uiButton3.Location = new System.Drawing.Point(0, 0);
-            this.uiButton3.Margin = new System.Windows.Forms.Padding(0);
-            this.uiButton3.MinimumSize = new System.Drawing.Size(1, 1);
-            this.uiButton3.Name = "uiButton3";
-            this.uiButton3.Radius = 30;
-            this.uiButton3.RadiusSides = Sunny.UI.UICornerRadiusSides.None;
-            this.uiButton3.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton3.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton3.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton3.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton3.Size = new System.Drawing.Size(45, 35);
-            this.uiButton3.Style = Sunny.UI.UIStyle.Custom;
-            this.uiButton3.TabIndex = 6;
-            this.uiButton3.Text = "端面";
-            this.uiButton3.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.uiButton3.Click += new System.EventHandler(this.TestEndFaceBtn_Click);
-            // 
-            // uiButton4
-            // 
-            this.uiButton4.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.uiButton4.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.uiButton4.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton4.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton4.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton4.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton4.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton4.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
-            this.uiButton4.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
-            this.uiButton4.Location = new System.Drawing.Point(0, 0);
-            this.uiButton4.Margin = new System.Windows.Forms.Padding(0);
-            this.uiButton4.MinimumSize = new System.Drawing.Size(1, 1);
-            this.uiButton4.Name = "uiButton4";
-            this.uiButton4.Radius = 30;
-            this.uiButton4.RadiusSides = Sunny.UI.UICornerRadiusSides.None;
-            this.uiButton4.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton4.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton4.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton4.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton4.Size = new System.Drawing.Size(45, 35);
-            this.uiButton4.Style = Sunny.UI.UIStyle.Custom;
-            this.uiButton4.TabIndex = 6;
-            this.uiButton4.Text = "背面";
-            this.uiButton4.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.uiButton4.Click += new System.EventHandler(this.TestBackBtn_Click);
-            // 
-            // uiButton5
-            // 
-            this.uiButton5.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.uiButton5.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.uiButton5.FillColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton5.FillColor2 = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton5.FillHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton5.FillPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton5.FillSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton5.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
-            this.uiButton5.LightColor = System.Drawing.Color.FromArgb(((int)(((byte)(248)))), ((int)(((byte)(248)))), ((int)(((byte)(248)))));
-            this.uiButton5.Location = new System.Drawing.Point(0, 0);
-            this.uiButton5.Margin = new System.Windows.Forms.Padding(0);
-            this.uiButton5.MinimumSize = new System.Drawing.Size(1, 1);
-            this.uiButton5.Name = "uiButton5";
-            this.uiButton5.Radius = 30;
-            this.uiButton5.RadiusSides = ((Sunny.UI.UICornerRadiusSides)((Sunny.UI.UICornerRadiusSides.RightTop | Sunny.UI.UICornerRadiusSides.RightBottom)));
-            this.uiButton5.RectColor = System.Drawing.Color.FromArgb(((int)(((byte)(140)))), ((int)(((byte)(140)))), ((int)(((byte)(140)))));
-            this.uiButton5.RectHoverColor = System.Drawing.Color.FromArgb(((int)(((byte)(163)))), ((int)(((byte)(163)))), ((int)(((byte)(163)))));
-            this.uiButton5.RectPressColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton5.RectSelectedColor = System.Drawing.Color.FromArgb(((int)(((byte)(112)))), ((int)(((byte)(112)))), ((int)(((byte)(112)))));
-            this.uiButton5.Size = new System.Drawing.Size(45, 35);
-            this.uiButton5.Style = Sunny.UI.UIStyle.Custom;
-            this.uiButton5.TabIndex = 6;
-            this.uiButton5.Text = "侧面  ";
-            this.uiButton5.TipsFont = new System.Drawing.Font("宋体", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.uiButton5.Click += new System.EventHandler(this.TestSideBtn_Click);
+            this.SocketClientCountState.CenterColor = System.Drawing.Color.PaleGreen;
+            this.SocketClientCountState.Dock = System.Windows.Forms.DockStyle.Left;
+            this.SocketClientCountState.Font = new System.Drawing.Font("微软雅黑", 12F);
+            this.SocketClientCountState.ForeColor = System.Drawing.Color.White;
+            this.SocketClientCountState.Location = new System.Drawing.Point(1519, 7);
+            this.SocketClientCountState.MinimumSize = new System.Drawing.Size(1, 1);
+            this.SocketClientCountState.Name = "SocketClientCountState";
+            this.SocketClientCountState.OffCenterColor = System.Drawing.Color.Salmon;
+            this.SocketClientCountState.OffColor = System.Drawing.Color.Red;
+            this.SocketClientCountState.OnCenterColor = System.Drawing.Color.PaleGreen;
+            this.SocketClientCountState.OnColor = System.Drawing.Color.ForestGreen;
+            this.SocketClientCountState.Radius = 21;
+            this.SocketClientCountState.ShowText = true;
+            this.SocketClientCountState.Size = new System.Drawing.Size(156, 21);
+            this.SocketClientCountState.State = Sunny.UI.UILightState.Off;
+            this.SocketClientCountState.TabIndex = 41;
+            this.SocketClientCountState.Text = "客户端连接数：0";
+            this.SocketClientCountState.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // MainFrm
             // 
@@ -3670,6 +3716,12 @@
             this.panel88.ResumeLayout(false);
             this.panel89.ResumeLayout(false);
             this.panel90.ResumeLayout(false);
+            this.panel81.ResumeLayout(false);
+            this.tableLayoutPanel35.ResumeLayout(false);
+            this.panel91.ResumeLayout(false);
+            this.panel92.ResumeLayout(false);
+            this.panel93.ResumeLayout(false);
+            this.panel94.ResumeLayout(false);
             this.tableLayoutPanel3.ResumeLayout(false);
             this.panel4.ResumeLayout(false);
             this.tableLayoutPanel4.ResumeLayout(false);
@@ -3756,12 +3808,6 @@
             this.panel83.ResumeLayout(false);
             this.panel86.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.bindingSource1)).EndInit();
-            this.panel81.ResumeLayout(false);
-            this.tableLayoutPanel35.ResumeLayout(false);
-            this.panel91.ResumeLayout(false);
-            this.panel92.ResumeLayout(false);
-            this.panel93.ResumeLayout(false);
-            this.panel94.ResumeLayout(false);
             this.ResumeLayout(false);
 
 		}
@@ -3988,6 +4034,8 @@
         private Sunny.UI.UIButton uiButton4;
         private System.Windows.Forms.Panel panel94;
         private Sunny.UI.UIButton uiButton5;
+        private Sunny.UI.UILight SocketServerState;
+        private Sunny.UI.UILight SocketClientCountState;
         // private Sunny.UI.UITextBox Result2;
     }
 }

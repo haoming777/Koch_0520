@@ -92,6 +92,15 @@ namespace VisionMeasure
 		private DetectionParameters _detectionParams;
 		private SQLiteHelper _dbHelper;
 
+		// ========== TCP工单接收 ==========
+		private WorkOrderTcpServer _workOrderTcpServer;
+		/// <summary>上次TCP接收到的SKU(变化检测基准, 初始=当前SKU, 避免开机首包重复查库)</summary>
+		private string _lastReceivedSku = "";
+		/// <summary>上次实际应用(来自数据库)的SKU, 用于切换日志四要素记录</summary>
+		private string _lastDbSku = "";
+		/// <summary>SKU获取流程互斥: 手动(弹窗)与TCP(静默)同时只执行一个(仅UI线程访问)</summary>
+		private bool _skuFlowBusy = false;
+
 		// ========== 高速保存器 ==========
 		private HighSpeedImageSaver _imageSaver;
 
@@ -308,6 +317,9 @@ namespace VisionMeasure
 
 				// 刷新显示
 				RefreshCarouselDisplays();
+
+				// 启动TCP工单接收服务(上游每10s下发61字节工单包, SKU变化时静默查库切换)
+				StartWorkOrderTcpServer();
 				// 验证数据是否正确加载
 				var testSku = _skuDb.GetBySkuNumber("181712303");
 				if (testSku != null)
@@ -2775,6 +2787,9 @@ namespace VisionMeasure
 
 				_triggerMgr?.Dispose();         // 释放触发管理器（包含后台线程）
 
+				_workOrderTcpServer?.Dispose(); // 停止TCP工单监听, 释放10001端口
+				SkuTcpLogger.Info("[服务] 程序关闭, TCP工单接收服务已停止");
+
 				// 关闭前复位CameraReady(此时PLC仍连接), 防止PLC侧残留true
 				if (_lastCameraReadySent == true)
 				{
@@ -2954,6 +2969,160 @@ namespace VisionMeasure
 			}
 		}
 
+		#region TCP工单接收(Socket服务端10001)
+
+		/// <summary>
+		/// 启动TCP工单接收服务: 监听10001端口, 上游每10s下发61字节工单包
+		/// SKU变化检测基准初始化为当前SKU(与当前一致不查库); 启动失败状态灯红显+独立日志
+		/// </summary>
+		private void StartWorkOrderTcpServer()
+		{
+			try
+			{
+				_lastReceivedSku = _currentSku?.SkuNumber ?? "";
+				_lastDbSku = _currentSku?.SkuNumber ?? "";
+				_workOrderTcpServer = new WorkOrderTcpServer();
+				_workOrderTcpServer.ClientCountChanged += OnWorkOrderClientCountChanged;
+				_workOrderTcpServer.PacketReceived += OnWorkOrderPacketReceived;
+				_workOrderTcpServer.ServerRecovering += OnWorkOrderTcpRecovering;
+				_workOrderTcpServer.ServerRecovered += OnWorkOrderTcpRecovered;
+				_workOrderTcpServer.Start();
+				Logger.Info($"[SKU-TCP] 工单接收服务已启动, 监听端口10001, 当前SKU={(_lastReceivedSku == "" ? "(无)" : _lastReceivedSku)}");
+				SkuTcpLogger.Info($"[服务] TCP工单接收服务启动成功, 监听端口10001, 当前SKU={(_lastReceivedSku == "" ? "(无)" : _lastReceivedSku)}");
+				SocketServerState.State = UILightState.On;   // 服务端运行指示灯: 绿灯
+				UpdateSocketClientState(0); // 启动时刷新一次(0连接, 灭灯)
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[SKU-TCP] 工单接收服务启动失败(端口10001可能被占用): {ex.Message}");
+				SkuTcpLogger.Error($"[服务] TCP工单接收服务启动失败: {ex.Message}");
+				SocketServerState.State = UILightState.Off; // 启动失败: 红灯
+				SocketServerState.Text = "Socket服务端启动失败!";
+				UpdateSocketClientState(0);
+			}
+		}
+
+		/// <summary>客户端连接数变化(后台线程触发) → 封送UI线程更新状态灯</summary>
+		private void OnWorkOrderClientCountChanged(int count)
+		{
+			if (IsDisposed || _isClosing || !IsHandleCreated) return;
+			if (InvokeRequired)
+			{
+				BeginInvoke(new Action(() => OnWorkOrderClientCountChanged(count)));
+				return;
+			}
+			UpdateSocketClientState(count);
+		}
+
+		/// <summary>更新"客户端连接数"状态灯: count>0亮绿灯+实时数量; 0灭灯</summary>
+		private void UpdateSocketClientState(int count)
+		{
+			if (SocketClientCountState == null) return;
+			SocketClientCountState.State = count > 0 ? UILightState.On : UILightState.Off;
+			SocketClientCountState.Text = $"客户端连接数：{count}";
+		}
+
+		/// <summary>监听失效开始自动重建(后台线程触发) → 封送UI线程: 红灯"重启中"</summary>
+		private void OnWorkOrderTcpRecovering()
+		{
+			if (IsDisposed || _isClosing || !IsHandleCreated) return;
+			if (InvokeRequired)
+			{
+				BeginInvoke(new Action(OnWorkOrderTcpRecovering));
+				return;
+			}
+			SocketServerState.State = UILightState.Off;
+			SocketServerState.Text = "Socket服务端异常, 重启中...";
+			Logger.Error("[SKU-TCP] 监听异常失效, 正在自动重建监听(每2s重试)...");
+			SkuTcpLogger.Error("[服务] 监听异常失效, 正在自动重建监听(每2s重试)...");
+		}
+
+		/// <summary>监听自动重建成功(后台线程触发) → 封送UI线程: 绿灯恢复</summary>
+		private void OnWorkOrderTcpRecovered()
+		{
+			if (IsDisposed || _isClosing || !IsHandleCreated) return;
+			if (InvokeRequired)
+			{
+				BeginInvoke(new Action(OnWorkOrderTcpRecovered));
+				return;
+			}
+			SocketServerState.State = UILightState.On;
+			SocketServerState.Text = "Socket服务端";
+			Logger.Info("[SKU-TCP] 监听自动重建成功, 服务端已恢复");
+			SkuTcpLogger.Info("[服务] 监听自动重建成功, 服务端已恢复");
+		}
+
+		/// <summary>收到协议校验通过的工单包(后台线程触发) → 封送UI线程处理</summary>
+		private void OnWorkOrderPacketReceived(WorkOrderPacket packet)
+		{
+			if (IsDisposed || _isClosing || !IsHandleCreated) return;
+			if (InvokeRequired)
+			{
+				BeginInvoke(new Action(() => OnWorkOrderPacketReceived(packet)));
+				return;
+			}
+			HandleTcpWorkOrderAsync(packet);
+		}
+
+		/// <summary>
+		/// UI线程: SKU变化检测 — 与上次接收一致则忽略; 变化则静默查库应用(无弹窗)
+		/// 切换期间禁用手动按钮防止并发; 查库失败保持旧参数, 等10s后的下一包自动重试
+		/// </summary>
+		private async void HandleTcpWorkOrderAsync(WorkOrderPacket packet)
+		{
+			try
+			{
+				string newSku = packet.Sku;
+				if (string.IsNullOrWhiteSpace(newSku))
+				{
+					SkuTcpLogger.Warn($"[TCP] 收到空SKU包, 忽略 (端点:{packet.Endpoint}, 解析:{packet.DecodedText}, 原始报文:{packet.RawHex})");
+					return;
+				}
+				if (newSku == _lastReceivedSku) return; // 10s周期重复下发同一SKU, 无变化不动作
+
+				if (_skuFlowBusy)
+				{
+					// 手动获取(弹窗)或其他切换进行中: 跳过本次, 基准不变, 下一包会再次触发
+					SkuTcpLogger.Info($"[TCP触发] SKU变化 {_lastReceivedSku}→{newSku}, 但切换流程进行中(手动/自动), 本次跳过等待下一包");
+					return;
+				}
+
+				_skuFlowBusy = true;
+				uiButton1.Enabled = false; // 切换期间禁用手动按钮, 防止并发冲突
+				Logger.Info($"[SKU-TCP] 收到SKU变化 {_lastReceivedSku}→{newSku}, 自动查库 (端点:{packet.Endpoint})");
+				SkuTcpLogger.Info($"[TCP触发] 开始读数据库 | 端点:{packet.Endpoint} | 解析:{packet.DecodedText} | 原始报文:{packet.RawHex}");
+				try
+				{
+					var fetched = await QuerySkuFromDbAsync();
+					if (fetched.Success)
+					{
+						string prevRecv = _lastReceivedSku, prevDb = _lastDbSku;
+						ApplyFetchedSku(fetched.Data);
+						_lastReceivedSku = newSku;
+						_lastDbSku = fetched.Data.Sku;
+						SkuTcpLogger.Info($"[TCP自动-替换成功] 之前接收SKU:{prevRecv} | 之前使用SKU(数据库):{prevDb} | 新接收SKU:{newSku} | 新获取SKU(数据库):{fetched.Data.Sku}");
+					}
+					else
+					{
+						// 失败: 保持旧参数, 基准不更新 → 10s后的下一包自动重试
+						SkuTcpLogger.Error($"[TCP自动-获取失败] SKU变化 {_lastReceivedSku}→{newSku}, 数据库获取失败: {(fetched.Error ?? "").TrimEnd('。', ' ')}, 保持原参数等待下一包重试");
+					}
+				}
+				finally
+				{
+					_skuFlowBusy = false;
+					uiButton1.Enabled = true;
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[SKU-TCP] 处理工单包异常: {ex.Message}\r\n{ex.StackTrace}");
+				SkuTcpLogger.Error($"[TCP] 处理工单包异常: {ex.Message}");
+			}
+		}
+
+		#endregion
+
 		/// <summary>uiButton1 点击：从 SQL Server 下拉 SKU 数据</summary>
 		private async void uiButton1_Click(object sender, EventArgs e)
 		{
@@ -2965,13 +3134,18 @@ namespace VisionMeasure
 				return;
 			}
 
-			// 2. 防连击保护
+			// 2. 防连击保护 + TCP自动流程互斥
+			if (_skuFlowBusy) return; // TCP自动切换进行中, 忽略本次点击
 			uiButton1.Enabled = false;
 
 			try
 			{
 				// 记录点击时的当前状态, 便于现场排错
 				Logger.Info($"[SKU下拉] 用户点击获取检测参数。当前: SKU={_currentSku?.SkuNumber ?? "(无)"} P号={_currentSku?.FrontPCode ?? "(无)"} 条码={_currentSku?.BackBarcode ?? "(无)"} P号转换={_currentSku?.FrontPNumberRep ?? "(未输入)"} 条码转换={_currentSku?.BackBarcodeRep ?? "(未输入)"}");
+
+				// 手动流程与TCP自动流程互斥: 进行中TCP包只记日志跳过
+				_skuFlowBusy = true;
+				SkuTcpLogger.Info("[手动触发] 用户点击获取检测参数按钮, 开始读数据库");
 
 				// 查询/确认/重试循环: 失败→"未获取到，请重新获取"弹窗; 成功→对比(旧→新)+[确认][重新获取]
 				await FetchSkuLoopAsync();
@@ -2985,6 +3159,7 @@ namespace VisionMeasure
 			finally
 			{
 				// 7. 恢复按钮
+				_skuFlowBusy = false;
 				uiButton1.Enabled = true;
 			}
 		}
@@ -3027,8 +3202,16 @@ namespace VisionMeasure
 					Logger.Info("[SKU下拉] 对比弹窗用户选择[重新获取]，重新查询数据库");
 					continue; // 重新获取
 				}
-				if (choice == SkuFetchDialog.DialogChoice.Confirm) ApplyFetchedSku(fetched.Data);
-				else Logger.Info("[SKU下拉] ❌ 用户取消，保持原有数据不变");
+				if (choice == SkuFetchDialog.DialogChoice.Confirm)
+				{
+					string prevRecv = _lastReceivedSku, prevDb = _lastDbSku;
+					ApplyFetchedSku(fetched.Data);
+					// 手动应用成功后同步TCP变化检测基准, 防止下一包同SKU被误判为变化再查一次库
+					_lastReceivedSku = fetched.Data.Sku;
+					_lastDbSku = fetched.Data.Sku;
+					SkuTcpLogger.Info($"[手动-替换成功] 之前接收SKU:{prevRecv} | 之前使用SKU(数据库):{prevDb} | 新接收SKU:(手动触发) | 新获取SKU(数据库):{fetched.Data.Sku}");
+				}
+				else { Logger.Info("[SKU下拉] ❌ 用户取消，保持原有数据不变"); SkuTcpLogger.Info("[手动触发] 用户取消, 保持原有数据不变"); }
 				return;
 			}
 		}

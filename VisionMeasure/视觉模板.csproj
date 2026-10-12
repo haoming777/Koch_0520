@@ -303,6 +303,7 @@
     <Compile Include="Utils\ModelPerfTracker.cs" />
     <Compile Include="Hardware\PlcResultService.cs" />
     <Compile Include="Services\OdbcDatabaseService.cs" />
+    <Compile Include="Services\WorkOrderTcpServer.cs" />
     <Compile Include="Models\AiModelManager.cs" />
     <Compile Include="Models\BatchResult.cs" />
     <Compile Include="Models\ImageContext.cs" />
