@@ -310,8 +310,6 @@ namespace ZmcUniversalLib
 		}
 		#endregion
 
-
-
 		#region 通用位置操作
 		public int SetDpos(int axis, float value)
 		{
@@ -686,8 +684,6 @@ namespace ZmcUniversalLib
 			Disconnect();
 		}
 		#endregion
-
-		// --- 补丁：补齐运动控制底层接口 ---
 
 		public float GetPosition(int axis)
 		{
