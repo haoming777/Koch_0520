@@ -93,6 +93,8 @@ namespace CommonLib
 		public float Sramp = 0f;
 		/// <summary>爬行速度(回零时用)</summary>
 		public float CreepSpeed = 10f;
+		/// <summary>回零(初始化)模式: ZAux_Direct_Single_Datum 的 mode 参数(默认14), PLC监控界面可调整</summary>
+		public int DatumMode = 14;
 		/// <summary>最大速度限制</summary>
 		public int MaxSpeed = 10000;
 

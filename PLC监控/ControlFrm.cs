@@ -18,6 +18,7 @@ namespace PLC监控
 		private IntPtr _handle = IntPtr.Zero;
 		private bool _connected;
 		private bool _sharedHandle;  // 与主程序共享连接(不允许多次连接/断开)
+		private volatile bool _homingAbort;  // 停止回零按钮置位: 通知回零流程中止(不清零坐标/不写完成标志)
 		private bool _in12ManualMode, _in12Prev;
 		private Thread _in12Thread;
 		private bool _simRunning, _simLoop, _simLoopFlag;
@@ -34,6 +35,8 @@ namespace PLC监控
 			_axisCfg = AxisParamConfig.Load();
 			_axisCfg.SafetyLockActiveHigh = false;  // SetInvertIn(8,1)反转后GetIn读0才是关门
 			PopulateUIFromConfig();
+			// 回零模式(0~14号模式)开放调整, 保存/下发时写入AxisParams.json; 其余回零辅助输入保持隐藏
+			cbHomeMode.Visible = true; lblHomeMode.Visible = true;
 			UpdateConnUI();
 
 			// 用System.Threading.Timer替代WinForms Timer:
@@ -57,6 +60,7 @@ namespace PLC监控
 			txtMaxPhoto.Text = (_axisCfg.MaxPhotoCount > 0 ? _axisCfg.MaxPhotoCount : 12).ToString();
 			txtCycleDelay.Text = (_axisCfg.CycleDelayMs > 0 ? _axisCfg.CycleDelayMs : 500).ToString();
 			cbAxis.SelectedIndex = _axisCfg.Axis;
+			cbHomeMode.SelectedIndex = Math.Max(0, Math.Min(cbHomeMode.Items.Count - 1, _axisCfg.DatumMode));
 		}
 
 	/// <summary>后台线程ZAux读取 + BeginInvoke更新UI (不再阻塞UI消息泵)</summary>
@@ -203,156 +207,45 @@ namespace PLC监控
 
 		// ====== 回零 ======
 		/// <summary>
-		/// 轴初始化回零 — 固定模式14, 爬行速度1
-		/// 总线轴(ATYPE=65)用 ZAux_BusCmd_Datum, 普通轴用 ZAux_Direct_Single_Datum
-		/// 回零前严格确认: 正限=14/负限=15/原点=16 与期望值完全一致
-		/// 成功后写 ZMC 变量 Axis_Init_Flag=1 (断电重置, 软件重启保留)
+		/// 轴初始化回零 — 调用共享实现 CommonLib.AxisHomingService(与主程序启动自动初始化共用)
+		/// 回零模式取自AxisParams.json(DatumMode, 本界面可调整); 限位检查: 正限=cfg.FwdIn/负限=cfg.RevIn/原点=cfg.DatumIn
+		/// 成功后写 MODBUS[100]=1 (断电重置, 软件重启保留); 按[停止回零]中止时不写标志
 		/// </summary>
 		private void btnHome_Click(object sender, EventArgs e)
 		{
 			Logger.Info($"[回零-按钮] 被点击 connected={_connected} handle={_handle}");
 			if (!_connected || _handle == IntPtr.Zero) { Logger.Warning($"[回零-按钮] 拒绝: connected={_connected} handle={_handle}"); return; }
-			int a = 0;
+			int a = _axisCfg.Axis;
+			_homingAbort = false;
 
 			// 在后台线程执行，不阻塞UI
 			Task.Run(() =>
 			{
-			const int EXPECT_FWD = 14, EXPECT_REV = 15, EXPECT_DATUM = 16;
-
-			Logger.Info($"========== 轴{a} 开始初始化回零 ==========");
+			Logger.Info($"========== 轴{a} 开始初始化回零 (模式{_axisCfg.DatumMode}) ==========");
 
 			// 0. 打开调试界面时禁用侧面工位
 			AxisParamConfig.SideEnabledOverride = false;
 			Logger.Info("[回零] 临时禁用侧面工位(初始化期间禁止轴运动)");
 
-			// 1. 读取当前限位IO配置
-			int fwdIn = 0, revIn = 0, datumIn = 0;
-			int retFwd = ZAux_Direct_GetFwdIn(_handle, a, ref fwdIn);
-			int retRev = ZAux_Direct_GetRevIn(_handle, a, ref revIn);
-			int retDat = ZAux_Direct_GetDatumIn(_handle, a, ref datumIn);
-			Logger.Info($"[回零-步骤1] 读取限位: FwdIn={fwdIn}(ret={retFwd}) RevIn={revIn}(ret={retRev}) DatumIn={datumIn}(ret={retDat}) 期望={EXPECT_FWD}/{EXPECT_REV}/{EXPECT_DATUM}");
+			// 回零全流程(限位/使能/安全锁/ALM/MODBUS[100]/等待/清零/写标志)由共享服务统一实现
+			var res = AxisHomingService.Home(_handle, _axisCfg, a,
+				msg => Logger.Info(msg),
+				() => _connected && _handle != IntPtr.Zero,
+				true,
+				() => _homingAbort);
 
-			bool limitsOk = (fwdIn == EXPECT_FWD) && (revIn == EXPECT_REV) && (datumIn == EXPECT_DATUM);
-			if (!limitsOk)
+			if (res.IsSuccess)
 			{
-				string msg = $"限位不一致! FwdIn={fwdIn}(期望{EXPECT_FWD}) RevIn={revIn}(期望{EXPECT_REV}) DatumIn={datumIn}(期望{EXPECT_DATUM})\n请先点击[参数下发]设置限位后再回零";
-				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, msg)));
-				Logger.Warning($"[回零-中止] 轴{a} 限位不匹配");
-				return;
+				Logger.Info($"========== 轴{a} 初始化完成 ==========");
+				this.BeginInvoke(new Action(() => UIMessageTip.ShowOk(this, res.Message)));
 			}
-			Logger.Info($"[回零-步骤1] 限位检查通过 ✓");
-
-			// 2. 使能检查
-			if (!CheckAxisEnable()) { Logger.Warning($"[回零-中止] 轴{a} 伺服未使能"); return; }
-			Logger.Info($"[回零-步骤2] 使能检查通过 ✓");
-
-			// 3. 安全锁检查
-			if (!CheckAndWaitSafety())
+			else
 			{
-				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, "安全锁未释放或连接断开, 初始化中止")));
-				Logger.Warning($"[回零-中止] 轴{a} 安全锁未释放");
-				return;
+				Logger.Warning($"[回零-失败] {res.Code}: {res.Message}");
+				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, res.Message)));
 			}
-			Logger.Info($"[回零-步骤3] 安全锁检查通过 ✓");
-
-			// 4. 读取当前轴状态(调试用)
-			float dposB4 = 0, mposB4 = 0;
-			int idleB4 = 0, enableB4 = 0;
-			ZAux_Direct_GetDpos(_handle, a, ref dposB4);
-			ZAux_Direct_GetMpos(_handle, a, ref mposB4);
-			ZAux_Direct_GetIfIdle(_handle, a, ref idleB4);
-			ZAux_Direct_GetAxisEnable(_handle, a, ref enableB4);
-
-			// 3.5 检查轴是否处于ALM告警状态
-			int almSts = 0;
-			ZAux_Direct_GetAxisStatus(_handle, a, ref almSts);
-			bool isAlm = (almSts & 1) != 0;
-			if (isAlm)
-			{
-				Logger.Error($"[回零-中止] 轴{a} 处于ALM告警状态(0x{almSts:X4}), 请先点击[报警清除]");
-				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, $"轴处于ALM告警状态! 请先点击[报警清除]按钮")));
-				return;
-			}
-			Logger.Info($"[回零-步骤4] 回零前状态: DPOS={dposB4:F2} MPOS={mposB4:F2} Idle={idleB4} Enable={enableB4}");
-
-			// 5. 重置初始化标志(开始前先清零, 防止上次异常残留)
-			ushort[] mb0 = { 0 }; ZAux_Modbus_Set4x(_handle, 100, 1, mb0); Logger.Info($"[回零-步骤5] 重置 MODBUS[100]=0 (开始初始化)");
-
-			// 6. 设置回零参数(速度固定30, 爬行固定1)
-			// 写死初始化参数(匹配AxisParams.json)
-			ZAux_Direct_SetAtype(_handle, a, 65);
-			ZAux_Direct_SetUnits(_handle, a, 13107.2f);
-			ZAux_Direct_SetSpeed(_handle, a, 40f);
-			ZAux_Direct_SetAccel(_handle, a, 1000f);
-			ZAux_Direct_SetDecel(_handle, a, 1000f);
-			ZAux_Direct_SetLspeed(_handle, a, 10f);
-			ZAux_Direct_SetSramp(_handle, a, 0f);
-			float creep = 1f;
-			int retCreep = ZAux_Direct_SetCreep(_handle, a, creep);
-			int mode = 14;
-			Logger.Info($"[回零-步骤6] 设置参数: mode={mode} creep={creep} SetCreep ret={retCreep}");
-
-			// 7. 执行回零
-			int retDatum = (int)ZAux_Direct_Single_Datum(_handle, a, mode);
-			Logger.Info($"[回零-步骤7] ZAux_Direct_Single_Datum(handle,{a},{mode}) ret={retDatum}");
-
-			if (retDatum != 0)
-			{
-				Logger.Error($"[回零-失败] ZAux_Direct_Single_Datum ret={retDatum}");
-				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, $"轴{a} 回零失败 ret={retDatum}")));
-				return;
-			}
-
-			// 8. 轮询等待回零完成(最多30秒)
-			Logger.Info($"[回零-步骤8] 等待回零完成...");
-			var sw = System.Diagnostics.Stopwatch.StartNew();
-			bool homeOk = false;
-			while (sw.ElapsedMilliseconds < 30000)
-			{
-				int idle = 0, sts = 0;
-				ZAux_Direct_GetIfIdle(_handle, a, ref idle);
-				ZAux_Direct_GetAxisStatus(_handle, a, ref sts);
-				bool homeAlm = (sts & 1) != 0;
-				if (homeAlm)
-				{
-					Logger.Error($"[回零-步骤8] 回零中检测到ALM(0x{sts:X4}), 中止!");
-					this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, $"轴{a} 回零过程中ALM告警! 请先清除报警后重试")));
-					return;
-				}
-				if (idle == -1) { homeOk = true; break; }
-				Thread.Sleep(100);
-			}
-
-			if (!homeOk)
-			{
-				Logger.Error($"[回零-步骤8] 回零超时(30s)");
-				this.BeginInvoke(new Action(() => UIMessageTip.ShowError(this, $"轴{a} 回零超时, 请检查轴状态")));
-				return;
-			}
-			Logger.Info($"[回零-步骤8] 回零完成 ✓ 耗时={sw.ElapsedMilliseconds}ms");
-
-			// 9. 清零MPOS/DPOS
-			int mposRet = ZAux_Direct_SetMpos(_handle, a, 0f);
-			int dposRet = ZAux_Direct_SetDpos(_handle, a, 0f);
-			Logger.Info($"[回零-步骤9] SetMpos(0) ret={mposRet}, SetDpos(0) ret={dposRet}");
-
-			// 10. 写入初始化完成标志
-			int setRet = (int)ZAux_Modbus_Set4x(_handle, 100, 1, new ushort[] { 1 });
-			Thread.Sleep(100); // 等待TABLE写入生效
-			Logger.Info($"[回零-步骤10] SetTable(10000)=1 ret={setRet}");
-
-			// 11. 回读验证
-			float tblVal = -1; try { ushort[] mbVrf = { 0 }; ZAux_Modbus_Get4x(_handle, 100, 1, mbVrf); tblVal = mbVrf[0]; } catch { }
-			float dposAfter = 0, mposAfter = 0;
-			ZAux_Direct_GetDpos(_handle, a, ref dposAfter);
-			ZAux_Direct_GetMpos(_handle, a, ref mposAfter);
-			Logger.Info($"[回零-步骤11] 验证: MODBUS[100]={tblVal} DPOS={dposAfter:F2} MPOS={mposAfter:F2}");
-
-			Logger.Info($"========== 轴{a} 初始化完成 ==========");
-			this.BeginInvoke(new Action(() => UIMessageTip.ShowOk(this, $"轴{a} 初始化完成 (MODBUS[100]={tblVal})")));
-
 			// 检查侧面工位是否被禁用, 提示恢复
-			if (!AxisParamConfig.SideEnabledOverride)
+			if (res.IsSuccess && !AxisParamConfig.SideEnabledOverride)
 			{
 				this.BeginInvoke(new Action(() =>
 				{
@@ -372,6 +265,7 @@ namespace PLC监控
 		{
 			if (!_connected) return;
 			int a = SelAxis();
+			_homingAbort = true;  // 通知回零流程中止(不再清零坐标/写完成标志)
 			ZAux_Direct_Single_Cancel(_handle, a, 2);
 			Logger.Info($"轴{a} 停止回零");
 			UIMessageTip.ShowOk(this, "回零已停止");
@@ -402,6 +296,7 @@ namespace PLC监控
 			float.TryParse(txtCreep.Text, out _axisCfg.CreepSpeed);
 			int.TryParse(txtMaxSpeed.Text, out _axisCfg.MaxSpeed);
 			_axisCfg.Axis = cbAxis.SelectedIndex >= 0 ? cbAxis.SelectedIndex : 0;
+			if (cbHomeMode != null && cbHomeMode.SelectedIndex >= 0) _axisCfg.DatumMode = cbHomeMode.SelectedIndex;
 			float.TryParse(txtStartPos.Text, out _axisCfg.StartPos);
 			float.TryParse(txtEndPos.Text, out _axisCfg.EndPos);
 			float.TryParse(txtFwdSpeed.Text, out _axisCfg.FwdSpeed);

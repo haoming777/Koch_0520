@@ -184,12 +184,40 @@ namespace VisionMeasure
 			InitializeComponent();
 			this.FormClosing += MainFrm_FormClosing;
 			uiButton1.Click += uiButton1_Click;
+			InitPNumberUpperInputs();
+			// 双击InitState灯(测试用): 清除初始化标志MODBUS[100]=0 → 下次重启程序重新弹初始化询问
+			if (InitState != null)
+			{
+				InitState.UseDoubleClick = true;
+				InitState.DoubleClick += InitState_DoubleClick;
+				InitState.MouseDoubleClick += InitState_DoubleClick;  // 兜底: 部分环境只触发MouseDoubleClick
+				InitState.MouseDown += InitState_MouseDown;           // 兜底: 触摸屏可能不产生标准双击消息
+			}
 		}
 
 		/// <summary>更新Loading画面进度: 调用_loadingForm.UpdateProgress(百分比, 提示文字), 每步初始化后调用</summary>
 		private void UpdateLoadingProgress(int percent, string message)
 		{
 			_loadingForm?.UpdateProgress(percent, message);
+		}
+
+		/// <summary>正面P号码标准/正面P号码转换输入框统一转大写: 操作员常输入小写p, 但P号OCR比对要求大写P</summary>
+		private void InitPNumberUpperInputs()
+		{
+			if (FrontPNumber_Lb != null) FrontPNumber_Lb.TextChanged += PNumberInput_TextChanged;
+			if (FrontPNumber_Rep_Lb != null) FrontPNumber_Rep_Lb.TextChanged += PNumberInput_TextChanged;
+		}
+
+		/// <summary>输入即转大写并保持光标位置(含程序赋值/粘贴); 转大写后再次触发时文本已是大写会直接返回, 不会递归</summary>
+		private void PNumberInput_TextChanged(object sender, EventArgs e)
+		{
+			var tb = sender as Sunny.UI.UITextBox;
+			if (tb == null || string.IsNullOrEmpty(tb.Text)) return;
+			string upper = tb.Text.ToUpper();
+			if (upper == tb.Text) return;
+			int caret = tb.SelectionStart;
+			tb.Text = upper;
+			tb.SelectionStart = Math.Min(caret, upper.Length);
 		}
 
 		#region 窗体加载
@@ -335,8 +363,9 @@ namespace VisionMeasure
 
 				xlPictureBox5.ISRealTimeDisplay = true;
 				xlPictureBox6.ISRealTimeDisplay = true;
-
-
+				// 轴初始化检查挂到Shown之后(见MainFrm_Shown_CheckAxisInit): 弹窗为模态,
+				// 必须等界面完全显示后再弹, 否则会阻塞主界面初始化流程导致卡住
+				this.Shown += MainFrm_Shown_CheckAxisInit;
 
 				//// 添加手动测试按钮
 				//var btnTest = new Sunny.UI.UIButton
@@ -359,6 +388,162 @@ namespace VisionMeasure
 				MessageBox.Show($"系统初始化失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
 				Application.Exit();
 			}
+		}
+
+		#endregion
+
+		#region 轴初始化(启动检查)
+
+		private long _initStateLastClearTicks;  // 双击清除标志去重(500ms): 防止DoubleClick/MouseDown多事件重复触发
+		private long _initStateLastDownTicks;   // 触摸屏双击兜底: 记录上次按下时间
+
+		/// <summary>
+		/// 界面完全显示后(Shown)再延时1s执行轴初始化检查:
+		/// Shown保证主窗体和状态栏已显示; 1s延时让最大化布局/首帧绘制/状态灯首轮刷新先完成,
+		/// 之后才弹初始化询问框(模态弹窗若出现在初始化流程中会阻塞后续步骤)
+		/// </summary>
+		private void MainFrm_Shown_CheckAxisInit(object sender, EventArgs e)
+		{
+			this.Shown -= MainFrm_Shown_CheckAxisInit;  // 只执行一次
+			var delay = new Timer { Interval = 1000 };
+			delay.Tick += (s2, e2) =>
+			{
+				delay.Stop();
+				delay.Dispose();
+				if (IsDisposed) return;
+				CheckAxisInitOnStartup();
+			};
+			delay.Start();
+		}
+
+		/// <summary>
+		/// 双击[初始化]状态灯(测试用): 强制清除初始化标志 MODBUS[100]=0 → 灯变红,
+		/// 下次重启程序会重新弹出初始化询问(免去给ZMC断电复位标志);
+		/// 注意: 清除后侧面工位触发门(IsAxisInitialized)会拒绝触发, 重新回零即可恢复
+		/// </summary>
+		private void InitState_DoubleClick(object sender, EventArgs e)
+		{
+			try
+			{
+				long nowTicks = DateTime.Now.Ticks;
+				if (nowTicks - Interlocked.Read(ref _initStateLastClearTicks) < 5000000) return;  // 500ms去重
+				Interlocked.Exchange(ref _initStateLastClearTicks, nowTicks);
+				if (_motionMgr == null || !_motionMgr.IsConnected || _motionMgr.Handle == IntPtr.Zero)
+				{
+					UIMessageTip.ShowError(this, "运动控制卡未连接, 无法清除初始化标志");
+					return;
+				}
+				cszmcaux.zmcaux.ZAux_Modbus_Set4x(_motionMgr.Handle, 100, 1, new ushort[] { 0 });
+				if (InitState != null) InitState.State = UILightState.Off;
+				Logger.Warning("[测试] 双击InitState: 已清除初始化标志 MODBUS[100]=0, 下次重启程序将弹初始化询问");
+				UIMessageTip.ShowWarning(this, "已清除初始化标志(MODBUS[100]=0), 下次重启程序会弹初始化询问\n(重新回零可恢复)");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[测试] 清除初始化标志失败: {ex.Message}");
+				UIMessageTip.ShowError(this, "清除初始化标志失败: " + ex.Message);
+			}
+		}
+
+		/// <summary>双击兜底(MouseDown路径): 触摸屏不产生WM_LBUTTONDBLCLK时, 用两次快速按下(≤500ms)识别双击</summary>
+		private void InitState_MouseDown(object sender, MouseEventArgs e)
+		{
+			if (e.Button != MouseButtons.Left) return;
+			long nowTicks = DateTime.Now.Ticks;
+			long lastDown = Interlocked.Read(ref _initStateLastDownTicks);
+			Interlocked.Exchange(ref _initStateLastDownTicks, nowTicks);
+			if (e.Clicks >= 2 || (lastDown > 0 && (nowTicks - lastDown) / 10000 <= 500))
+				InitState_DoubleClick(sender, EventArgs.Empty);
+		}
+
+		/// <summary>
+		/// 启动检查(每次打开程序): 读取MODBUS[100], 未初始化则弹窗询问是否立即执行回零初始化
+		/// 【是】→后台执行 AxisHomingService.Home(与PLC监控页同一套回零逻辑, 模式取自AxisParams.json)
+		/// 【否】→忽略, 可稍后在【PLC监控】页面手动初始化
+		/// </summary>
+		private void CheckAxisInitOnStartup()
+		{
+			try
+			{
+				if (IsDisposed || !IsHandleCreated || !Visible)
+				{
+					Logger.Warning("[StartupInit] 界面尚未完全显示, 跳过轴初始化检查");
+					return;
+				}
+				if (_motionMgr == null || !_motionMgr.IsConnected)
+				{
+					Logger.Info("[StartupInit] 运动控制卡未连接, 跳过轴初始化检查");
+					return;
+				}
+				if (AxisHomingService.IsInitialized(_motionMgr.Handle))
+				{
+					Logger.Info("[StartupInit] 轴已初始化(MODBUS[100]=1), 无需处理");
+					return;
+				}
+
+				Logger.Info("[StartupInit] 检测到轴未初始化, 弹窗询问是否立即初始化");
+				var dr = MessageBox.Show(this,
+					"检测到运动轴未初始化!\n\n是否现在执行初始化(回零)?\n\n【是】 立即执行初始化\n【否】 忽略, 请稍后在【PLC监控】页面手动初始化",
+					"轴未初始化", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+				if (dr != DialogResult.Yes)
+				{
+					Logger.Info("[StartupInit] 用户选择忽略, 稍后可在PLC监控页手动初始化");
+					return;
+				}
+				Task.Run(new Action(RunStartupHoming));
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[StartupInit] 检查异常: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// 后台执行启动自动回零: 安全锁未释放等条件不满足时直接失败返回(不阻塞), 结果弹窗提示, 成功后立即刷新状态灯
+		/// </summary>
+		private void RunStartupHoming()
+		{
+			AxisHomingResult res = null;
+			try
+			{
+				var cfg = AxisParamConfig.Load();
+				cfg.SafetyLockActiveHigh = false;  // SetInvertIn(8,1)反转后GetIn读0才是关门安全(与工位/调试页一致)
+				bool prevOverride = AxisParamConfig.SideEnabledOverride;
+				AxisParamConfig.SideEnabledOverride = false;  // 初始化期间禁用侧面工位(与PLC监控页一致)
+				try
+				{
+					Logger.Info($"[StartupInit] 开始自动初始化: 轴={cfg.Axis} 回零模式={cfg.DatumMode}");
+					try { this.BeginInvoke(new Action(() => { if (!IsDisposed) UIMessageTip.ShowWarning(this, "正在执行轴初始化(回零), 请稍候..."); })); } catch { }
+					res = AxisHomingService.Home(_motionMgr == null ? IntPtr.Zero : _motionMgr.Handle, cfg, cfg.Axis,
+						msg => Logger.Info(msg),
+						() => _motionMgr != null && _motionMgr.IsConnected,
+						false);
+				}
+				finally
+				{
+					AxisParamConfig.SideEnabledOverride = prevOverride;
+				}
+				Logger.Info($"[StartupInit] 初始化结果: {res.Code} | {res.Message}");
+			}
+			catch (Exception ex)
+			{
+				Logger.Error($"[StartupInit] 自动初始化异常: {ex.Message}");
+			}
+
+			try
+			{
+				this.BeginInvoke(new Action(() =>
+				{
+					if (IsDisposed) return;
+					bool ok = res != null && res.IsSuccess;
+					if (InitState != null) InitState.State = ok ? UILightState.On : UILightState.Off;
+					if (ok)
+						UIMessageTip.ShowOk(this, res.Message);
+					else
+						UIMessageTip.ShowError(this, "轴初始化失败: " + (res == null ? "未知错误" : res.Message) + "\n可稍后在【PLC监控】页面手动初始化");
+				}));
+			}
+			catch { }
 		}
 
 		#endregion
@@ -1960,10 +2145,10 @@ namespace VisionMeasure
 							if (data.TryGetValue("P", out string rp2) && int.TryParse(rp2, out int rpi) && rpi > 0) _currentSku.P = rpi;
 							if (data.TryGetValue("Z", out string rz2) && int.TryParse(rz2, out int rzi)) _currentSku.Z = rzi;
 							if (data.TryGetValue("MM", out string rm2) && int.TryParse(rm2, out int rmi)) _currentSku.MM = rmi;
-							if (data.TryGetValue("FrontPNumber", out string fp)) _currentSku.FrontPCode = fp;
+							if (data.TryGetValue("FrontPNumber", out string fp)) _currentSku.FrontPCode = fp?.ToUpper();
 							if (data.TryGetValue("BackBarcode", out string bc)) _currentSku.BackBarcode = bc;
 							if (data.TryGetValue("CodingFormat", out string cf)) _currentSku.CodingFormat = cf;
-							if (data.TryGetValue("FrontPNumberRep", out string fpr)) _currentSku.FrontPNumberRep = fpr;
+							if (data.TryGetValue("FrontPNumberRep", out string fpr)) _currentSku.FrontPNumberRep = fpr?.ToUpper();
 							if (data.TryGetValue("BackBarcodeRep", out string bcr)) _currentSku.BackBarcodeRep = bcr;
 							Logger.Debug($"SKU参数已恢复(SKU匹配): P={_currentSku.P} Z={_currentSku.Z} MM={_currentSku.MM} P号={_currentSku.FrontPCode} 条码={_currentSku.BackBarcode} 格式={_currentSku.CodingFormat} P号转换={_currentSku.FrontPNumberRep} 条码转换={_currentSku.BackBarcodeRep}");
 						}
@@ -2438,11 +2623,11 @@ namespace VisionMeasure
 				if (int.TryParse(P_Lb?.Text, out int pv) && pv > 0) _currentSku.P = pv;
 				if (int.TryParse(Z_Lb?.Text, out int zv)) _currentSku.Z = zv;
 				if (int.TryParse(MM_Lb?.Text, out int mv)) _currentSku.MM = mv;
-				if (FrontPNumber_Lb != null && !string.IsNullOrWhiteSpace(FrontPNumber_Lb.Text)) _currentSku.FrontPCode = FrontPNumber_Lb.Text.Trim();
+				if (FrontPNumber_Lb != null && !string.IsNullOrWhiteSpace(FrontPNumber_Lb.Text)) _currentSku.FrontPCode = FrontPNumber_Lb.Text.Trim().ToUpper();
 				if (BackBarcode_Lb != null && !string.IsNullOrWhiteSpace(BackBarcode_Lb.Text)) _currentSku.BackBarcode = BackBarcode_Lb.Text.Trim();
 				if (CodingFormat_Lb != null && !string.IsNullOrWhiteSpace(CodingFormat_Lb.Text)) _currentSku.CodingFormat = CodingFormat_Lb.Text.Trim();
 				// 转换标准(第二标准)直接以输入框为准: 清空输入框即可关闭转换比对
-				if (FrontPNumber_Rep_Lb != null) _currentSku.FrontPNumberRep = FrontPNumber_Rep_Lb.Text.Trim();
+				if (FrontPNumber_Rep_Lb != null) _currentSku.FrontPNumberRep = FrontPNumber_Rep_Lb.Text.Trim().ToUpper();
 				if (BackBarcode_Rep_Lb != null) _currentSku.BackBarcodeRep = BackBarcode_Rep_Lb.Text.Trim();
 				if (_currentSku.P <= 0) _currentSku.P = 12;
 				// 根据最新P值重新匹配裁图比例.csv中的裁图像素
